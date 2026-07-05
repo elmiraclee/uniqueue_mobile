@@ -42,7 +42,6 @@ export default function Window() {
 
   const [selectedDocuments, setSelectedDocuments] = useState<number[]>([]);
   const [queueType, setQueueType] = useState('walkin');
-  const [appointmentDate, setAppointmentDate] = useState('');
 
   const [saving, setSaving] = useState(false);
 
@@ -61,7 +60,7 @@ export default function Window() {
       const parsedUser = JSON.parse(user);
 
       const response = await fetch(
-         `http://192.168.1.9/uniqueue_api/get_windows.php?office_id=${parsedUser.office_id}`
+         `http://192.168.1.26/uniqueue_api/get_windows.php?office_id=${parsedUser.office_id}`
       );
 
       const data = await response.json();
@@ -88,7 +87,7 @@ export default function Window() {
 
       // FIXED: changed 192.168.1.17 -> 192.168.50.5 (consistent IP)
       const response = await fetch(
-          `http://192.168.1.9/uniqueue_api/get_documents.php?office_id=${parsedUser.office_id}`
+          `http://192.168.1.26/uniqueue_api/get_documents.php?office_id=${parsedUser.office_id}`
       );
 
       const data = await response.json();
@@ -108,7 +107,6 @@ export default function Window() {
     setStatus('open');
     setSpeed('normal');
     setQueueType('walkin');
-    setAppointmentDate('');
     setSelectedDocuments([]);
 
     setEditingId(null);
@@ -132,7 +130,6 @@ export default function Window() {
     setStatus(item.status);
     setSpeed(item.speed);
     setQueueType(item.queue_type || 'walkin');
-    setAppointmentDate(item.appointment_date || '');
 
     const ids = item.documents.map((doc: any) => doc.id);
 
@@ -174,17 +171,6 @@ export default function Window() {
       return;
     }
 
-    if (
-      queueType === 'appointment' &&
-      !appointmentDate
-    ) {
-      Alert.alert(
-        'Error',
-        'Please enter appointment date'
-      );
-      return;
-    }
-
     const payload = {
       id: editingId,
       office_id: parsedUser.office_id,
@@ -192,19 +178,15 @@ export default function Window() {
       status,
       speed,
       queue_type: queueType,
-      appointment_date:
-        queueType === 'appointment'
-          ? appointmentDate
-          : null,
       documents:
-        queueType === 'walkin'
+        queueType === 'walkin' || queueType === 'both'
           ? selectedDocuments
           : [],
     };
 
     const url = isEdit
-      ? 'http://192.168.1.9/uniqueue_api/update_windows.php'
-      : 'http://192.168.1.9/uniqueue_api/add_windows.php';
+      ? 'http://192.168.1.26/uniqueue_api/update_windows.php'
+      : 'http://192.168.1.26/uniqueue_api/add_windows.php';
 
     const response = await fetch(url, {
       method: 'POST',
@@ -266,7 +248,7 @@ if (data.success) {
           onPress: async () => {
 
             const response = await fetch(
-              'http://192.168.1.9/uniqueue_api/delete_windows.php',
+              'http://192.168.1.26/uniqueue_api/delete_windows.php',
               {
                 method: 'POST',
                 headers: {
@@ -335,20 +317,16 @@ if (data.success) {
               Queue Type:
               {item.queue_type === 'walkin'
                 ? ' Walk-in'
-                : ' Appointment'}
+                : item.queue_type === 'appointment'
+                ? ' Appointment'
+                : ' Walk-in & Appointment'}
             </Text>
-            
-            {item.queue_type === 'appointment' && (
-            <Text>
-              Appointment Date: {item.appointment_date}
-            </Text>
-          )}
-            
+
           <Text style={styles.docTitle}>
             Documents Handled:
           </Text>
 
-          {item.queue_type === 'walkin' ? (
+          {item.queue_type === 'walkin' || item.queue_type === 'both' ? (
             item.documents?.length > 0 ? (
               item.documents.map((doc: any) => (
                 <Text key={doc.id}>
@@ -483,7 +461,7 @@ if (data.success) {
             {/* Queue Type */}
             <Text style={styles.label}>Queue Type</Text>
             <View style={styles.pillRow}>
-              {['walkin', 'appointment'].map(type => (
+              {['walkin', 'appointment', 'both'].map(type => (
                 <Pressable
                   key={type}
                   style={[
@@ -500,14 +478,16 @@ if (data.success) {
                   >
                     {type === 'walkin'
                     ? 'Walk-in'
-                    : 'Appointment'}
+                    : type === 'appointment'
+                    ? 'Appointment'
+                    : 'Both'}
                   </Text>
                 </Pressable>
               ))}
             </View>
 
             {/* Documents */}
-           {queueType === 'walkin' && (
+           {(queueType === 'walkin' || queueType === 'both') && (
             <>
               <Text style={styles.label}>Documents</Text>
 
@@ -553,22 +533,6 @@ if (data.success) {
               </View>
             </>
           )}
-
-         {queueType === 'appointment' && (
-          <>
-            <Text style={styles.label}>
-              Appointment Date
-            </Text>
-
-            <TextInput
-              placeholder="YYYY-MM-DD"
-              value={appointmentDate}
-              onChangeText={setAppointmentDate}
-              style={styles.input}
-              placeholderTextColor="#aaa"
-            />
-          </>
-        )}
 
             {/* Action buttons */}
             <View style={styles.modalActions}>

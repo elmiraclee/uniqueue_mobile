@@ -1,6 +1,5 @@
 import React from 'react';
 import {
-  Alert,
   StyleSheet,
   Text,
   TextInput,
@@ -15,55 +14,42 @@ interface Props {
   setPriority: (value: boolean) => void;
   priorityReason: string;
   setPriorityReason: (text: string) => void;
-  onNext: () => void;
-  onBack: () => void;
+  // Whether this office offers a priority lane at all. When it's off,
+  // this renders nothing — mirrors office_configs.priority_enabled
+  // gating the option out entirely rather than showing a disabled card.
+  priorityEnabled: boolean;
 }
 
+// No longer its own step (no onNext/onBack, no Continue/Back buttons).
+// This now renders inline inside DocumentStep, right where documents
+// are being picked, since priority lane is just another attribute of
+// that same selection instead of a separate screen.
 export default function PriorityStep({
   priority,
   setPriority,
   priorityReason,
   setPriorityReason,
-  onNext,
-  onBack,
+  priorityEnabled,
 }: Props) {
-  const next = () => {
-    if (priority && !priorityReason.trim()) {
-      Alert.alert('Required', 'Please enter a reason.');
-      return;
-    }
-    onNext();
-  };
+  if (!priorityEnabled) {
+    return null;
+  }
 
   return (
-    <View>
-      <Text style={styles.title}>
-        Priority lane
-      </Text>
+    <View style={styles.wrapper}>
+      <Text style={styles.title}>Priority lane</Text>
 
       <TouchableOpacity
-        style={[
-          styles.card,
-          priority && styles.selected,
-        ]}
+        style={[styles.card, priority && styles.selected]}
         onPress={() => setPriority(!priority)}
       >
         <View style={styles.radioRow}>
-          <View
-            style={[
-              styles.radio,
-              priority && styles.radioActive,
-            ]}
-          >
-            {priority && (
-              <View style={styles.radioDot} />
-            )}
+          <View style={[styles.radio, priority && styles.radioActive]}>
+            {priority && <View style={styles.radioDot} />}
           </View>
 
           <View style={styles.cardContent}>
-            <Text style={styles.cardText}>
-              Apply for priority lane
-            </Text>
+            <Text style={styles.cardText}>Apply for priority lane</Text>
             <Text style={styles.cardSub}>
               For PWD, senior citizens, and pregnant
             </Text>
@@ -72,31 +58,17 @@ export default function PriorityStep({
       </TouchableOpacity>
 
       <TouchableOpacity
-        style={[
-          styles.card,
-          !priority && styles.selected,
-        ]}
+        style={[styles.card, !priority && styles.selected]}
         onPress={() => setPriority(false)}
       >
         <View style={styles.radioRow}>
-          <View
-            style={[
-              styles.radio,
-              !priority && styles.radioActive,
-            ]}
-          >
-            {!priority && (
-              <View style={styles.radioDot} />
-            )}
+          <View style={[styles.radio, !priority && styles.radioActive]}>
+            {!priority && <View style={styles.radioDot} />}
           </View>
 
           <View style={styles.cardContent}>
-            <Text style={styles.cardText}>
-              Regular lane
-            </Text>
-            <Text style={styles.cardSub}>
-              Standard queue placement
-            </Text>
+            <Text style={styles.cardText}>Regular lane</Text>
+            <Text style={styles.cardSub}>Standard queue placement</Text>
           </View>
         </View>
       </TouchableOpacity>
@@ -111,34 +83,21 @@ export default function PriorityStep({
           multiline
         />
       )}
-
-      <TouchableOpacity
-        style={styles.button}
-        onPress={next}
-      >
-        <Text style={styles.buttonText}>
-          Continue
-        </Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.backButton}
-        onPress={onBack}
-      >
-        <Text style={styles.backButtonText}>
-          Back
-        </Text>
-      </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  wrapper: {
+    marginTop: 8,
+    marginBottom: 8,
+  },
+
   title: {
-    fontSize: 20,
+    fontSize: 15,
     fontWeight: '700',
-    marginBottom: 16,
-    color: COLORS.primary,
+    marginBottom: 12,
+    color: COLORS.secondary,
   },
 
   card: {
@@ -207,37 +166,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     fontSize: 14,
     color: COLORS.text,
-    marginBottom: 12,
     minHeight: 80,
     textAlignVertical: 'top',
-  },
-
-  button: {
-    marginTop: 8,
-    backgroundColor: COLORS.primary,
-    padding: 15,
-    borderRadius: 12,
-  },
-
-  buttonText: {
-    color: '#fff',
-    textAlign: 'center',
-    fontWeight: '700',
-    fontSize: 15,
-  },
-
-  backButton: {
-    marginTop: 10,
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: '#ddd',
-  },
-
-  backButtonText: {
-    color: COLORS.gray,
-    textAlign: 'center',
-    fontWeight: '700',
-    fontSize: 14,
   },
 });

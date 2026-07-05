@@ -45,7 +45,7 @@ export default function Signup() {
   const fetchColleges = async () => {
     try {
       const response = await fetch(
-        'http://192.168.1.9/uniqueue_api/get_colleges.php'
+        'http://192.168.1.26/uniqueue_api/get_colleges.php'
       );
 
       const data = await response.json();
@@ -59,7 +59,7 @@ export default function Signup() {
   const fetchPrograms = async (id: string) => {
     try {
       const response = await fetch(
-        `http://192.168.1.9/uniqueue_api/get_programs.php?college_id=${id}`
+        `http://192.168.1.26/uniqueue_api/get_programs.php?college_id=${id}`
       );
 
       const data = await response.json();
@@ -93,7 +93,7 @@ export default function Signup() {
       setLoading(true);
 
       const response = await fetch(
-        'http://192.168.1.9/uniqueue_api/signup.php',
+        'http://192.168.1.26/uniqueue_api/signup.php',
         {
           method: 'POST',
           headers: {

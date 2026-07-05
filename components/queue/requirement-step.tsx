@@ -22,6 +22,13 @@ interface Props {
   setCheckedRequirements: React.Dispatch<
     React.SetStateAction<string[]>
   >;
+  // Appointment holders are verified via their physical Appointment Slip
+  // rather than the per-document requirements checklist, so this step
+  // shows a single mandatory checkbox for them instead — mirrors the
+  // #apptRequirementBox vs #requirementsBox split in queue.php.
+  queueType: 'walkin' | 'appointment';
+  appointmentSlipConfirmed: boolean;
+  setAppointmentSlipConfirmed: (value: boolean) => void;
   onNext: () => void;
   onBack: () => void;
 }
@@ -31,9 +38,79 @@ export default function RequirementStep({
   selectedDocuments,
   checkedRequirements,
   setCheckedRequirements,
+  queueType,
+  appointmentSlipConfirmed,
+  setAppointmentSlipConfirmed,
   onNext,
   onBack,
 }: Props) {
+  if (queueType === 'appointment') {
+    return (
+      <View>
+        <Text style={styles.title}>
+          Requirements checklist
+        </Text>
+
+        <Text style={styles.subtitle}>
+          Make sure you have this ready before proceeding.
+        </Text>
+
+        <TouchableOpacity
+          style={[
+            styles.card,
+            appointmentSlipConfirmed && styles.checkedCard,
+          ]}
+          onPress={() =>
+            setAppointmentSlipConfirmed(!appointmentSlipConfirmed)
+          }
+        >
+          <View
+            style={[
+              styles.checkbox,
+              appointmentSlipConfirmed && styles.checkboxActive,
+            ]}
+          >
+            {appointmentSlipConfirmed && (
+              <Text style={styles.checkmark}>✓</Text>
+            )}
+          </View>
+
+          <Text style={styles.requirementText}>
+            Bring your Appointment Slip / confirmation to present at the
+            window.
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.button}
+          onPress={() => {
+            if (!appointmentSlipConfirmed) {
+              Alert.alert(
+                'Required',
+                'Please confirm you have your Appointment Slip.'
+              );
+              return;
+            }
+            onNext();
+          }}
+        >
+          <Text style={styles.buttonText}>
+            Continue
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={onBack}
+        >
+          <Text style={styles.backButtonText}>
+            Back
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   const requirements = [
     ...new Set(
       documents

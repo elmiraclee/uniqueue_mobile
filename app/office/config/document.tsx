@@ -53,7 +53,7 @@ export default function Document() {
     const parsedUser = JSON.parse(user);
 
     const url =
-      `http://192.168.1.9/uniqueue_api/get_documents.php?office_id=${parsedUser.office_id}`;
+      `http://192.168.1.26/uniqueue_api/get_documents.php?office_id=${parsedUser.office_id}`;
 
     console.log('FETCH URL:', url);
 
@@ -137,8 +137,8 @@ export default function Document() {
   };
 
       const url = isEdit
-        ? 'http://192.168.1.9/uniqueue_api/update_documents.php'
-        : 'http://192.168.1.9/uniqueue_api/add_documents.php';
+        ? 'http://192.168.1.26/uniqueue_api/update_documents.php'
+        : 'http://192.168.1.26/uniqueue_api/add_documents.php';
 
       const body = isEdit
         ? { ...payload, id: editingId }
@@ -175,7 +175,7 @@ export default function Document() {
         onPress: async () => {
           try {
             const res = await fetch(
-          'http://192.168.1.9/uniqueue_api/delete_documents.php',
+          'http://192.168.1.26/uniqueue_api/delete_documents.php',
               {
                 method: 'POST',
                 headers: {

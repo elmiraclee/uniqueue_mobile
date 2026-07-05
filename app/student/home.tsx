@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 
 import { Ionicons } from '@expo/vector-icons';
@@ -55,7 +54,7 @@ export default function StudentHome() {
   const fetchOffices = async () => {
     try {
       const response = await fetch(
-       'http://192.168.1.9/uniqueue_api/get_offices.php'
+       'http://192.168.1.26/uniqueue_api/get_offices.php'
       );
 
       const data = await response.json();
@@ -71,15 +70,7 @@ export default function StudentHome() {
   };
 
  const joinQueue = (office: Office) => {
-  if (office.slug.toLowerCase() === 'registrar') {
-    router.push('/student/queues/registrar-queue');
-    return;
-  }
-
-  Alert.alert(
-    'Join Queue',
-    `You selected ${office.name}`
-  );
+  router.push(`/student/queues/office-queue?office=${office.slug}`);
 };
 
   const getGreeting = () => {

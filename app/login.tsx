@@ -33,7 +33,7 @@ export default function Login() {
       setLoading(true);
 
       const response = await fetch(
-      'http://192.168.1.9/uniqueue_api/login.php',
+      'http://192.168.1.26/uniqueue_api/login.php',
       {
         method: 'POST',
         headers: {

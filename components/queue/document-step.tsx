@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 
 import { COLORS } from '../../constants/theme';
+import PriorityStep from './priority-step';
 
 interface DocumentItem {
   id: number;
@@ -18,9 +19,22 @@ interface DocumentItem {
 interface Props {
   documents: DocumentItem[];
   selectedDocuments: number[];
-  setSelectedDocuments: React.Dispatch<
-    React.SetStateAction<number[]>
-  >;
+  setSelectedDocuments: React.Dispatch<React.SetStateAction<number[]>>;
+
+  // Quantity per selected document, keyed by document id. Folded in
+  // here instead of a separate QuantityStep so quantity is set right
+  // where the document is picked.
+  quantities: Record<number, number>;
+  setQuantities: React.Dispatch<React.SetStateAction<Record<number, number>>>;
+
+  // Priority lane, folded in here instead of its own step. Rendered
+  // via PriorityLane, which no-ops when the office doesn't offer it.
+  priority: boolean;
+  setPriority: (value: boolean) => void;
+  priorityReason: string;
+  setPriorityReason: (text: string) => void;
+  priorityEnabled: boolean;
+
   onNext: () => void;
   onBack: () => void;
 }
@@ -29,86 +43,133 @@ export default function DocumentStep({
   documents,
   selectedDocuments,
   setSelectedDocuments,
+  quantities,
+  setQuantities,
+  priority,
+  setPriority,
+  priorityReason,
+  setPriorityReason,
+  priorityEnabled,
   onNext,
   onBack,
 }: Props) {
   const toggle = (id: number) => {
     if (selectedDocuments.includes(id)) {
-      setSelectedDocuments(
-        selectedDocuments.filter((item) => item !== id)
-      );
+      setSelectedDocuments(selectedDocuments.filter((item) => item !== id));
+
+      // Drop its quantity so a re-selected document starts fresh at 1
+      // instead of remembering a stale count.
+      setQuantities((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
     } else {
       setSelectedDocuments([...selectedDocuments, id]);
+      setQuantities((prev) => ({ ...prev, [id]: prev[id] || 1 }));
     }
+  };
+
+  const updateQuantity = (id: number, action: 'add' | 'minus') => {
+    const current = quantities[id] || 1;
+    let newQty = current;
+
+    if (action === 'add') newQty++;
+    if (action === 'minus' && current > 1) newQty--;
+
+    setQuantities({ ...quantities, [id]: newQty });
   };
 
   const next = () => {
     if (selectedDocuments.length === 0) {
-      Alert.alert(
-        'Required',
-        'Select at least one document.'
-      );
+      Alert.alert('Required', 'Select at least one document.');
       return;
     }
+
+    if (priorityEnabled && priority && !priorityReason.trim()) {
+      Alert.alert('Required', 'Please enter a reason for priority lane.');
+      return;
+    }
+
     onNext();
   };
 
   return (
     <View>
-      <Text style={styles.title}>
-        Select documents
-      </Text>
+      <Text style={styles.title}>Select documents</Text>
 
       <Text style={styles.subtitle}>
-        Choose the documents you need from the registrar.
+        Choose the document or service you need from this office.
       </Text>
 
       {documents.map((doc) => {
         const isSelected = selectedDocuments.includes(doc.id);
 
         return (
-          <TouchableOpacity
+          <View
             key={doc.id}
-            style={[
-              styles.card,
-              isSelected && styles.selected,
-            ]}
-            onPress={() => toggle(doc.id)}
+            style={[styles.card, isSelected && styles.selected]}
           >
-            <View
-              style={[
-                styles.checkbox,
-                isSelected && styles.checkboxActive,
-              ]}
+            <TouchableOpacity
+              style={styles.cardRow}
+              onPress={() => toggle(doc.id)}
             >
-              {isSelected && (
-                <Text style={styles.checkmark}>✓</Text>
-              )}
-            </View>
+              <View
+                style={[styles.checkbox, isSelected && styles.checkboxActive]}
+              >
+                {isSelected && <Text style={styles.checkmark}>✓</Text>}
+              </View>
 
-            <Text style={styles.cardText}>
-              {doc.name}
-            </Text>
-          </TouchableOpacity>
+              <Text style={styles.cardText}>{doc.name}</Text>
+            </TouchableOpacity>
+
+            {isSelected && (
+              <View style={styles.qtyContainer}>
+                <Text style={styles.qtyLabel}>Copies</Text>
+
+                <View style={styles.qtyControls}>
+                  <TouchableOpacity
+                    style={[
+                      styles.qtyButton,
+                      (quantities[doc.id] || 1) <= 1 &&
+                        styles.qtyButtonDisabled,
+                    ]}
+                    onPress={() => updateQuantity(doc.id, 'minus')}
+                  >
+                    <Text style={styles.qtyButtonText}>−</Text>
+                  </TouchableOpacity>
+
+                  <Text style={styles.qtyValue}>
+                    {quantities[doc.id] || 1}
+                  </Text>
+
+                  <TouchableOpacity
+                    style={styles.qtyButton}
+                    onPress={() => updateQuantity(doc.id, 'add')}
+                  >
+                    <Text style={styles.qtyButtonText}>+</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </View>
         );
       })}
 
-      <TouchableOpacity
-        style={styles.button}
-        onPress={next}
-      >
-        <Text style={styles.buttonText}>
-          Continue
-        </Text>
+      <PriorityStep
+        priority={priority}
+        setPriority={setPriority}
+        priorityReason={priorityReason}
+        setPriorityReason={setPriorityReason}
+        priorityEnabled={priorityEnabled}
+      />
+
+      <TouchableOpacity style={styles.button} onPress={next}>
+        <Text style={styles.buttonText}>Continue</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity
-        style={styles.backButton}
-        onPress={onBack}
-      >
-        <Text style={styles.backButtonText}>
-          Back
-        </Text>
+      <TouchableOpacity style={styles.backButton} onPress={onBack}>
+        <Text style={styles.backButtonText}>Back</Text>
       </TouchableOpacity>
     </View>
   );
@@ -130,19 +191,23 @@ const styles = StyleSheet.create({
 
   card: {
     backgroundColor: COLORS.white,
-    padding: 16,
     borderRadius: 14,
     marginBottom: 10,
     borderWidth: 1.5,
     borderColor: '#eee',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+    overflow: 'hidden',
   },
 
   selected: {
     borderColor: COLORS.primary,
     backgroundColor: '#fdf5f5',
+  },
+
+  cardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 16,
   },
 
   checkbox: {
@@ -172,6 +237,57 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: COLORS.secondary,
     flex: 1,
+  },
+
+  qtyContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingBottom: 14,
+    paddingTop: 2,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.05)',
+  },
+
+  qtyLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.gray,
+  },
+
+  qtyControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+
+  qtyButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  qtyButtonDisabled: {
+    backgroundColor: '#ddd',
+  },
+
+  qtyButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+    lineHeight: 19,
+  },
+
+  qtyValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.secondary,
+    minWidth: 20,
+    textAlign: 'center',
   },
 
   button: {

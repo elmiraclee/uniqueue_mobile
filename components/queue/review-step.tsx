@@ -1,8 +1,8 @@
 import React from 'react';
 import {
+  ActivityIndicator,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -17,15 +17,22 @@ interface DocumentItem {
 
 interface Props {
   queueType: 'walkin' | 'appointment';
-  priority: boolean;
-  priorityReason: string;
-  appointmentDate: string;
-  setAppointmentDate: (text: string) => void;
+  // Appointment holders are verified via their physical Appointment Slip
+  // rather than a date picked here — this wizard doesn't collect an
+  // appointment date at all.
+  appointmentSlipConfirmed: boolean;
   documents: DocumentItem[];
   selectedDocuments: number[];
+  // Copies requested per document, keyed by document id. Set in
+  // DocumentStep alongside the selection itself.
   quantities: Record<number, number>;
+  // Priority lane, chosen inline in DocumentStep. priorityReason is
+  // only meaningful when priority is true.
+  priority: boolean;
+  priorityReason: string;
   onSubmit: () => void;
   onBack: () => void;
+  submitting?: boolean;
 }
 
 function InfoRow({
@@ -45,16 +52,20 @@ function InfoRow({
 
 export default function ReviewStep({
   queueType,
-  priority,
-  priorityReason,
-  appointmentDate,
-  setAppointmentDate,
+  appointmentSlipConfirmed,
   documents,
   selectedDocuments,
   quantities,
+  priority,
+  priorityReason,
   onSubmit,
   onBack,
+  submitting,
 }: Props) {
+  const disabled =
+    submitting ||
+    (queueType === 'appointment' && !appointmentSlipConfirmed);
+
   return (
     <View>
       <Text style={styles.title}>
@@ -80,10 +91,10 @@ export default function ReviewStep({
           value={priority ? 'Yes' : 'No'}
         />
 
-        {priority && (
+        {priority && !!priorityReason.trim() && (
           <InfoRow
             label="Reason"
-            value={priorityReason}
+            value={priorityReason.trim()}
           />
         )}
       </View>
@@ -91,89 +102,77 @@ export default function ReviewStep({
       {queueType === 'appointment' && (
         <View style={styles.card}>
           <Text style={styles.sectionLabel}>
-            Appointment date
+            Appointment slip
           </Text>
 
-          <TextInput
-            style={styles.input}
-            placeholder="YYYY-MM-DD"
-            placeholderTextColor={COLORS.gray}
-            value={appointmentDate}
-            onChangeText={setAppointmentDate}
+          <InfoRow
+            label="Confirmed"
+            value={appointmentSlipConfirmed ? 'Yes' : 'No'}
           />
+
+          {!appointmentSlipConfirmed && (
+            <Text style={styles.helperText}>
+              Go back to Requirements and confirm you have your
+              Appointment Slip before joining the queue.
+            </Text>
+          )}
         </View>
       )}
 
-      {queueType === 'walkin' &&
-        selectedDocuments.length > 0 && (
-          <View style={styles.card}>
-            <Text style={styles.sectionLabel}>
-              Documents requested
-            </Text>
+      {selectedDocuments.length > 0 && (
+        <View style={styles.card}>
+          <Text style={styles.sectionLabel}>
+            Documents / services requested
+          </Text>
 
-            {documents
-              .filter((doc) =>
-                selectedDocuments.includes(doc.id)
-              )
-              .map((doc) => (
-                <View
-                  key={doc.id}
-                  style={styles.docRow}
-                >
-                  <Text style={styles.docName}>
-                    {doc.name}
-                  </Text>
+          {documents
+            .filter((doc) =>
+              selectedDocuments.includes(doc.id)
+            )
+            .map((doc) => (
+              <View
+                key={doc.id}
+                style={styles.docRow}
+              >
+                <Text style={styles.docName}>
+                  {doc.name}
+                </Text>
+                <Text style={styles.docQty}>
+                  x{quantities[doc.id] || 1}
+                </Text>
+              </View>
+            ))}
+        </View>
+      )}
 
-                  <View style={styles.qtyBadge}>
-                    <Text style={styles.qtyBadgeText}>
-                      x{quantities[doc.id] || 1}
-                    </Text>
-                  </View>
-                </View>
-              ))}
-          </View>
-        )}
-
-        <TouchableOpacity
-          style={[
-            styles.button,
-            queueType === 'appointment' &&
-            appointmentDate.trim() === ''
-              ? styles.disabledButton
-              : null,
-          ]}
-          disabled={
-            queueType === 'appointment' &&
-            appointmentDate.trim() === ''
-          }
-          onPress={() => {
-            if (
-              queueType === 'appointment' &&
-              appointmentDate.trim() === ''
-            ) {
-              alert('Please select an appointment date.');
-              return;
-            }
-
-            onSubmit();
-          }}
-        >
+      <TouchableOpacity
+        style={[
+          styles.button,
+          disabled && styles.disabledButton,
+        ]}
+        disabled={disabled}
+        onPress={onSubmit}
+      >
+        {submitting ? (
+          <ActivityIndicator color={COLORS.white} />
+        ) : (
           <Text style={styles.buttonText}>
             Join queue
           </Text>
-        </TouchableOpacity>
+        )}
+      </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={onBack}
-        >
-          <Text style={styles.backButtonText}>
-            Back
-          </Text>
-        </TouchableOpacity>
-            </View>
-          );
-        }
+      <TouchableOpacity
+        style={styles.backButton}
+        onPress={onBack}
+      >
+        <Text style={styles.backButtonText}>
+          Back
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
 
 const styles = StyleSheet.create({
   title: {
@@ -223,14 +222,10 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
 
-  input: {
-    borderWidth: 1.5,
-    borderColor: '#ddd',
-    borderRadius: 10,
-    padding: 14,
-    fontSize: 14,
-    color: COLORS.text,
-    marginTop: 4,
+  helperText: {
+    fontSize: 12,
+    color: COLORS.gray,
+    marginTop: 8,
   },
 
   docRow: {
@@ -248,19 +243,11 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  qtyBadge: {
-    backgroundColor: '#fdf5f5',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderWidth: 1,
-    borderColor: '#f5c5c8',
-  },
-
-  qtyBadgeText: {
-    fontSize: 12,
+  docQty: {
+    fontSize: 14,
     fontWeight: '700',
     color: COLORS.primary,
+    marginLeft: 12,
   },
 
   button: {
@@ -293,6 +280,6 @@ const styles = StyleSheet.create({
   },
 
   disabledButton: {
-  opacity: 0.5,
-},
+    opacity: 0.5,
+  },
 });

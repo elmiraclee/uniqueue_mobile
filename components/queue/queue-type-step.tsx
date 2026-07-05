@@ -11,83 +11,106 @@ import { COLORS } from '../../constants/theme';
 interface Props {
   queueType: 'walkin' | 'appointment';
   setQueueType: (type: 'walkin' | 'appointment') => void;
+  // Whether this office currently accepts each queue type. Options the
+  // office has turned off are hidden entirely rather than shown disabled,
+  // matching queue.php only rendering the type-card markup for enabled
+  // types.
+  walkinEnabled: boolean;
+  appointmentEnabled: boolean;
   onNext: () => void;
 }
 
 export default function QueueTypeStep({
   queueType,
   setQueueType,
+  walkinEnabled,
+  appointmentEnabled,
   onNext,
 }: Props) {
+  const noTypesAvailable = !walkinEnabled && !appointmentEnabled;
+
   return (
     <View>
       <Text style={styles.title}>
         Select queue type
       </Text>
 
-      <TouchableOpacity
-        style={[
-          styles.card,
-          queueType === 'walkin' && styles.selected,
-        ]}
-        onPress={() => setQueueType('walkin')}
-      >
-        <View style={styles.radioRow}>
-          <View
-            style={[
-              styles.radio,
-              queueType === 'walkin' && styles.radioActive,
-            ]}
-          >
-            {queueType === 'walkin' && (
-              <View style={styles.radioDot} />
-            )}
-          </View>
+      {walkinEnabled && (
+        <TouchableOpacity
+          style={[
+            styles.card,
+            queueType === 'walkin' && styles.selected,
+          ]}
+          onPress={() => setQueueType('walkin')}
+        >
+          <View style={styles.radioRow}>
+            <View
+              style={[
+                styles.radio,
+                queueType === 'walkin' && styles.radioActive,
+              ]}
+            >
+              {queueType === 'walkin' && (
+                <View style={styles.radioDot} />
+              )}
+            </View>
 
-          <View style={styles.cardContent}>
-            <Text style={styles.cardText}>
-              Walk-in
-            </Text>
-            <Text style={styles.cardSub}>
-              Queue in person at the office
-            </Text>
+            <View style={styles.cardContent}>
+              <Text style={styles.cardText}>
+                Walk-in
+              </Text>
+              <Text style={styles.cardSub}>
+                Queue in person at the office
+              </Text>
+            </View>
           </View>
+        </TouchableOpacity>
+      )}
+
+      {appointmentEnabled && (
+        <TouchableOpacity
+          style={[
+            styles.card,
+            queueType === 'appointment' && styles.selected,
+          ]}
+          onPress={() => setQueueType('appointment')}
+        >
+          <View style={styles.radioRow}>
+            <View
+              style={[
+                styles.radio,
+                queueType === 'appointment' &&
+                  styles.radioActive,
+              ]}
+            >
+              {queueType === 'appointment' && (
+                <View style={styles.radioDot} />
+              )}
+            </View>
+
+            <View style={styles.cardContent}>
+              <Text style={styles.cardText}>
+                Appointment
+              </Text>
+              <Text style={styles.cardSub}>
+                Bring your appointment slip on your scheduled date
+              </Text>
+            </View>
+          </View>
+        </TouchableOpacity>
+      )}
+
+      {noTypesAvailable && (
+        <View style={styles.card}>
+          <Text style={styles.cardSub}>
+            This office isn't accepting queues right now.
+          </Text>
         </View>
-      </TouchableOpacity>
+      )}
 
       <TouchableOpacity
-        style={[
-          styles.card,
-          queueType === 'appointment' && styles.selected,
-        ]}
-        onPress={() => setQueueType('appointment')}
-      >
-        <View style={styles.radioRow}>
-          <View
-            style={[
-              styles.radio,
-              queueType === 'appointment' &&
-                styles.radioActive,
-            ]}
-          >
-            {queueType === 'appointment' && (
-              <View style={styles.radioDot} />
-            )}
-          </View>
-
-          <View style={styles.cardContent}>
-            <Text style={styles.cardText}>
-              Appointment
-            </Text>
-            <Text style={styles.cardSub}>
-              Schedule a specific date and time
-            </Text>
-          </View>
-        </View>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.button}
+        style={[styles.button, noTypesAvailable && styles.buttonDisabled]}
+        disabled={noTypesAvailable}
         onPress={onNext}
       >
         <Text style={styles.buttonText}>
@@ -169,6 +192,10 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     padding: 15,
     borderRadius: 12,
+  },
+
+  buttonDisabled: {
+    opacity: 0.5,
   },
 
   buttonText: {
