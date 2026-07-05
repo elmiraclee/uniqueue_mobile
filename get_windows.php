@@ -31,8 +31,9 @@ while ($row = mysqli_fetch_assoc($result)) {
 
     $docs = [];
 
-    // Kukunin lang ang documents kapag walk-in window
-    if ($row['queue_type'] === 'walkin') {
+    // Kukunin ang documents kapag kaya ng window mag-handle ng walk-in
+    // (either dedicated 'walkin' or a 'both' window)
+    if (in_array($row['queue_type'], ['walkin', 'both'], true)) {
 
         $docStmt = mysqli_prepare($conn, "
             SELECT d.id, d.name

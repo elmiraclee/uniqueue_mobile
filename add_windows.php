@@ -24,6 +24,44 @@ $speed = $data['speed'] ?? '';
 $queue_type = $data['queue_type'] ?? 'walkin';
 $appointment_date = $data['appointment_date'] ?? null;
 
+// A window can now handle walk-in, appointment, or both
+$allowedQueueTypes = ['walkin', 'appointment', 'both'];
+
+if (!in_array($queue_type, $allowedQueueTypes, true)) {
+    echo json_encode([
+        "success" => false,
+        "message" => "Invalid queue_type. Must be one of: walkin, appointment, both"
+    ]);
+    exit;
+}
+
+// Appointment date is only applicable (and required) when the window
+// handles appointments, either exclusively or alongside walk-ins.
+$needsAppointmentDate = in_array($queue_type, ['appointment', 'both'], true);
+
+if ($needsAppointmentDate) {
+
+    // Appointment date is optional; only validate its format if one was provided.
+    if (!empty($appointment_date)) {
+
+        $parsedDate = DateTime::createFromFormat('Y-m-d', $appointment_date);
+
+        if (!$parsedDate || $parsedDate->format('Y-m-d') !== $appointment_date) {
+            echo json_encode([
+                "success" => false,
+                "message" => "Invalid appointment date format. Use YYYY-MM-DD."
+            ]);
+            exit;
+        }
+    } else {
+        $appointment_date = null;
+    }
+
+} else {
+    // Not applicable for a pure walk-in window
+    $appointment_date = null;
+}
+
 $stmt = mysqli_prepare($conn, "
     INSERT INTO windows
     (
@@ -66,9 +104,10 @@ if (!mysqli_stmt_execute($stmt)) {
 
 $window_id = mysqli_insert_id($conn);
 
-// Mag-save lang ng documents kapag walk-in window
+// Mag-save ng documents kapag kaya ng window mag-handle ng walk-in
+// (either dedicated 'walkin' or a 'both' window)
 if (
-    $queue_type === 'walkin' &&
+    in_array($queue_type, ['walkin', 'both'], true) &&
     !empty($data['documents'])
 ) {
 
@@ -93,5 +132,6 @@ if (
 
 echo json_encode([
     "success" => true,
+    "message" => "Window added successfully"
 ]);
 ?>
