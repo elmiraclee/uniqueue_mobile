@@ -9,48 +9,79 @@ include "db.php";
 
 $data = json_decode(file_get_contents("php://input"), true);
 
-$id = $data['id'];
-$name = $data['name'];
-$daily_capacity = $data['daily_capacity'];
-$processing_time = $data['processing_time'];
-$requirements = $data['requirements'];
+$id = $data['id'] ?? 0;
+$name = trim($data['name'] ?? '');
+$processing_time = intval($data['processing_time'] ?? 0);
+$requirements = $data['requirements'] ?? [];
 
 if (!$id) {
-    echo json_encode(["success" => false, "message" => "Missing ID"]);
+    echo json_encode([
+        "success" => false,
+        "message" => "Missing ID"
+    ]);
     exit;
 }
 
-// 1. update document
-$sql = "UPDATE documents 
-        SET name = ?, daily_capacity = ?, processing_time = ?
+if (empty($name) || $processing_time <= 0) {
+    echo json_encode([
+        "success" => false,
+        "message" => "Invalid document data"
+    ]);
+    exit;
+}
+
+/* =========================
+   UPDATE DOCUMENT
+========================= */
+
+$sql = "UPDATE documents
+        SET name = ?, processing_time = ?
         WHERE id = ?";
 
 $stmt = $conn->prepare($sql);
-$stmt->bind_param("siii", $name, $daily_capacity, $processing_time, $id);
+$stmt->bind_param("sii", $name, $processing_time, $id);
 
-if ($stmt->execute()) {
-
-    // 2. delete old requirements
-    $delSql = "DELETE FROM document_requirements WHERE document_id = ?";
-    $delStmt = $conn->prepare($delSql);
-    $delStmt->bind_param("i", $id);
-    $delStmt->execute();
-
-    // 3. insert new requirements
-    if (!empty($requirements)) {
-        $reqSql = "INSERT INTO document_requirements (document_id, requirement)
-                   VALUES (?, ?)";
-
-        $reqStmt = $conn->prepare($reqSql);
-
-        foreach ($requirements as $req) {
-            $reqStmt->bind_param("is", $id, $req);
-            $reqStmt->execute();
-        }
-    }
-
-    echo json_encode(["success" => true]);
-
-} else {
-    echo json_encode(["success" => false, "message" => "Update failed"]);
+if (!$stmt->execute()) {
+    echo json_encode([
+        "success" => false,
+        "message" => $stmt->error
+    ]);
+    exit;
 }
+
+/* =========================
+   DELETE OLD REQUIREMENTS
+========================= */
+
+$delStmt = $conn->prepare(
+    "DELETE FROM document_requirements WHERE document_id = ?"
+);
+$delStmt->bind_param("i", $id);
+$delStmt->execute();
+
+/* =========================
+   INSERT NEW REQUIREMENTS
+========================= */
+
+if (!empty($requirements) && is_array($requirements)) {
+
+    $reqStmt = $conn->prepare(
+        "INSERT INTO document_requirements (document_id, requirement)
+         VALUES (?, ?)"
+    );
+
+    foreach ($requirements as $req) {
+
+        $req = trim($req);
+
+        if ($req === '') continue;
+
+        $reqStmt->bind_param("is", $id, $req);
+        $reqStmt->execute();
+    }
+}
+
+echo json_encode([
+    "success" => true,
+    "message" => "Document updated successfully"
+]);

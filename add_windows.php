@@ -130,8 +130,61 @@ if (
     }
 }
 
+// Assign staff to this newly created window. Each entry is
+// { id: <existing staff id> } picked from the dropdown.
+$staffAssigned = 0;
+$staffSkipped = [];
+
+if (!empty($data['staff'])) {
+
+    $assignStmt = mysqli_prepare($conn, "
+        UPDATE staff
+        SET window_id = ?
+        WHERE id = ? AND office_id = ?
+    ");
+
+    if (!$assignStmt) {
+        // If prepare fails (e.g. a column name mismatch), log it instead
+        // of failing silently - this is the kind of thing that produces
+        // "success: true" responses with window_id never actually set.
+        error_log("add_windows.php: failed to prepare staff assign statement: " . mysqli_error($conn));
+    } else {
+
+        foreach ($data['staff'] as $member) {
+
+            $staffId = $member['id'] ?? null;
+
+            if (empty($staffId)) {
+                continue;
+            }
+
+            mysqli_stmt_bind_param(
+                $assignStmt,
+                "iii",
+                $window_id,
+                $staffId,
+                $office_id
+            );
+
+            mysqli_stmt_execute($assignStmt);
+
+            // affected_rows is 0 when the WHERE clause matched no row -
+            // typically because the staffId's actual office_id in the
+            // staff table doesn't match the office_id sent for this
+            // window. That mismatch updates zero rows with no error.
+            if (mysqli_stmt_affected_rows($assignStmt) > 0) {
+                $staffAssigned++;
+            } else {
+                $staffSkipped[] = $staffId;
+            }
+        }
+    }
+}
+
 echo json_encode([
     "success" => true,
-    "message" => "Window added successfully"
+    "message" => "Window added successfully",
+    "staff_assigned" => $staffAssigned,
+    "staff_skipped" => $staffSkipped, // ids that matched no row for this office_id — useful while debugging
 ]);
 ?>

@@ -53,6 +53,24 @@ while ($row = mysqli_fetch_assoc($result)) {
         }
     }
 
+    // Staff currently assigned to this window
+    $staff = [];
+
+    $staffStmt = mysqli_prepare($conn, "
+        SELECT id, name, position, status
+        FROM staff
+        WHERE window_id = ?
+    ");
+
+    mysqli_stmt_bind_param($staffStmt, "i", $window_id);
+    mysqli_stmt_execute($staffStmt);
+
+    $staffResult = mysqli_stmt_get_result($staffStmt);
+
+    while ($member = mysqli_fetch_assoc($staffResult)) {
+        $staff[] = $member;
+    }
+
     $windows[] = [
         "id" => $row['id'],
         "name" => $row['name'],
@@ -61,7 +79,8 @@ while ($row = mysqli_fetch_assoc($result)) {
         "speed" => $row['speed'],
         "queue_type" => $row['queue_type'],
         "appointment_date" => $row['appointment_date'],
-        "documents" => $docs
+        "documents" => $docs,
+        "staff" => $staff
     ];
 }
 
