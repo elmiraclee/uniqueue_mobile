@@ -68,6 +68,11 @@ export default function OfficeLayout() {
       />
 
       <Tabs.Screen
+        name="config/staff"
+        options={{ href: null }}
+      />
+
+      <Tabs.Screen
         name="config/capacity"
         options={{ href: null }}
       />

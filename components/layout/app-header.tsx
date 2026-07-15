@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { usePathname } from 'expo-router';
 import {
   Image,
   StyleSheet,
@@ -8,56 +8,51 @@ import {
 } from 'react-native';
 
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { COLORS } from '../../constants/theme';
 
 interface HeaderProps {
   title?: string;
   onNotificationPress?: () => void;
+  onBackPress?: () => void;
 }
 
 export default function AppHeader({
-  title = 'UniQueue',
+  title,
   onNotificationPress,
+  onBackPress,
 }: HeaderProps) {
 
-  const [studentName, setStudentName] = useState('');
+  const pathname = usePathname();
 
-  useEffect(() => {
-    loadUser();
-  }, []);
+  const getHeaderTitle = () => {
 
-  const loadUser = async () => {
-    try {
-      const user = await AsyncStorage.getItem('user');
-
-      if (user) {
-        const parsedUser = JSON.parse(user);
-
-        if (parsedUser.first_name) {
-          setStudentName(parsedUser.first_name);
-
-        } else if (parsedUser.name) {
-          setStudentName(parsedUser.name);
-
-        } else {
-          setStudentName(
-            parsedUser.full_name ||
-            parsedUser.username
-          );
-        }
-      }
-
-    } catch (error) {
-      console.log(error);
+    if (title) {
+      return title;
     }
+
+    if (pathname.includes('/home')) {
+      return 'Queue Dashboard';
+    }
+
+    if (pathname.includes('/queue')) {
+      return 'Queue Transactions';
+    }
+
+    if (pathname.includes('/profile')) {
+      return 'Student Profile';
+    }
+
+    return 'UniQueue';
   };
 
+  
   return (
     <View style={styles.container}>
 
       <View style={styles.leftContainer}>
+
+     
 
         <Image
           source={require('../../assets/images/logo.png')}
@@ -65,13 +60,10 @@ export default function AppHeader({
         />
 
         <View>
-          <Text style={styles.title}>
-            {title}
-          </Text>
+         <Text style={styles.title}>
+          {getHeaderTitle()}
+        </Text>
 
-          <Text style={styles.userName}>
-            {studentName}
-          </Text>
         </View>
 
       </View>
@@ -100,7 +92,7 @@ const styles = StyleSheet.create({
   container: {
     backgroundColor: COLORS.white,
     paddingHorizontal: 20,
-    paddingTop: 55,
+    paddingTop: 35,
     paddingBottom: 15,
 
     flexDirection: 'row',
@@ -119,6 +111,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
+  backButton: {
+    marginRight: 10,
+    padding: 4,
+    borderRadius: 999,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
   logo: {
     width: 45,
     height: 45,
@@ -127,7 +127,7 @@ const styles = StyleSheet.create({
   },
 
   title: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
     color: COLORS.primary,
   },

@@ -68,6 +68,13 @@ export default function StudentTabsLayout() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="live-queue"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
+    
   );
 }

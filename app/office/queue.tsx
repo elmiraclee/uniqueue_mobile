@@ -14,7 +14,9 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import AppHeader from '../../components/layout/app-header';
+import { API } from "../../constants/backend";
 import { COLORS } from '../../constants/theme';
+
 
 type QueueEntry = {
   id: number;
@@ -66,7 +68,7 @@ export default function Queue() {
       if (!office_id) return;
 
       const response = await fetch(
-        `http://192.168.1.26/uniqueue_api/get_windows.php?office_id=${office_id}`
+        API.getWindows + `?office_id=${office_id}`
       );
 
       const data = await response.json();
@@ -98,7 +100,7 @@ export default function Queue() {
       }
 
       const response = await fetch(
-        `http://192.168.1.26/uniqueue_api/get_queue.php?${params.toString()}`
+        API.getQueue + `?${params.toString()}`
       );
 
       const data = await response.json();

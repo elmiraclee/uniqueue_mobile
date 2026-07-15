@@ -14,6 +14,7 @@ import { useRouter } from 'expo-router';
 
 import CustomButton from '../components/ui/custom-button';
 import CustomInput from '../components/ui/custom-input';
+import { API } from "../constants/backend";
 import { COLORS } from '../constants/theme';
 
 export default function Signup() {
@@ -45,7 +46,7 @@ export default function Signup() {
   const fetchColleges = async () => {
     try {
       const response = await fetch(
-        'http://192.168.1.26/uniqueue_api/get_colleges.php'
+        API.getColleges,
       );
 
       const data = await response.json();
@@ -59,7 +60,7 @@ export default function Signup() {
   const fetchPrograms = async (id: string) => {
     try {
       const response = await fetch(
-        `http://192.168.1.26/uniqueue_api/get_programs.php?college_id=${id}`
+        `${API.getPrograms}?college_id=${id}`
       );
 
       const data = await response.json();
@@ -93,7 +94,7 @@ export default function Signup() {
       setLoading(true);
 
       const response = await fetch(
-        'http://192.168.1.26/uniqueue_api/signup.php',
+        API.signup,
         {
           method: 'POST',
           headers: {

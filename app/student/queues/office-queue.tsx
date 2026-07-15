@@ -12,11 +12,12 @@ import {
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { API_URL } from '@/constants/backend';
 import AppHeader from '../../../components/layout/app-header';
-import DocumentStep from '../../../components/queue/document-step';
-import QueueTypeStep from '../../../components/queue/queue-type-step';
-import RequirementStep from '../../../components/queue/requirement-step';
-import ReviewStep from '../../../components/queue/review-step';
+import DocumentStep from '../../../components/queue-step/document-step';
+import QueueTypeStep from '../../../components/queue-step/queue-type-step';
+import RequirementStep from '../../../components/queue-step/requirement-step';
+import ReviewStep from '../../../components/queue-step/review-step';
 import { COLORS } from '../../../constants/theme';
 
 export interface Document {
@@ -25,9 +26,6 @@ export interface Document {
   requirements: string[];
 }
 
-// A single office record, resolved dynamically by slug. One screen now
-// serves every office; behavior adapts via these flags instead of the
-// screen being duplicated per office.
 export interface Office {
   id: number;
   name: string;
@@ -38,13 +36,8 @@ export interface Office {
   priorityEnabled: boolean;
 }
 
-const API_BASE = 'http://192.168.1.26/uniqueue_api';
+const API_BASE = API_URL;
 
-// Four steps for every office: Type -> Details (documents + quantity +
-// priority lane, all scoped to this office) -> Requirements -> Confirm.
-// Priority used to be its own step and quantity didn't exist yet; both
-// now live inside Details since they're just more attributes of the
-// same document selection.
 const STEPS = [
   { label: 'Type' },
   { label: 'Details' },
@@ -182,9 +175,7 @@ const indicator = StyleSheet.create({
 export default function OfficeQueue() {
   const router = useRouter();
 
-  // OFFICE — resolved dynamically from the `office` route param instead of
-  // a hardcoded office_id: one screen, many offices, behavior driven by
-  // that office's own config.
+
   const { office: officeSlug } = useLocalSearchParams<{ office?: string }>();
 
   const [office, setOffice] = useState<Office | null>(null);
@@ -196,8 +187,6 @@ export default function OfficeQueue() {
   const [queueType, setQueueType] =
     useState<'walkin' | 'appointment'>('walkin');
 
-  // Appointment holders confirm they have their physical Appointment Slip
-  // instead of picking a date here.
   const [appointmentSlipConfirmed, setAppointmentSlipConfirmed] =
     useState(false);
 
@@ -212,9 +201,6 @@ export default function OfficeQueue() {
   const [submitting, setSubmitting] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
 
-  // Reused from registrar-queue.tsx: the server assigns a window and a
-  // human-facing queue number when the ticket is created, and the
-  // client just displays whatever it's given.
   const [queueNumber, setQueueNumber] = useState('');
   const [assignedWindow, setAssignedWindow] = useState('');
 
@@ -317,9 +303,6 @@ export default function OfficeQueue() {
   const joinQueue = async () => {
     if (!office) return;
 
-    // Re-check against this office's own config client-side too — the
-    // server re-verifies regardless, since a disabled option could still
-    // be submitted directly.
     if (queueType === 'walkin' && !office.walkinEnabled) {
       Alert.alert('Error', 'Walk-in queueing is not available for this office.');
       return;
@@ -348,9 +331,6 @@ export default function OfficeQueue() {
     try {
       setSubmitting(true);
 
-      // Documents go out as { document_id, quantity } pairs (ported from
-      // registrar-queue.tsx) instead of a flat id array, so each item
-      // carries its own copy count.
       const docs = selectedDocuments.map((id) => ({
         document_id: id,
         quantity: quantities[id] || 1,
@@ -374,8 +354,7 @@ export default function OfficeQueue() {
       const data = await response.json();
 
       if (data.success) {
-        // Window + queue number now come back from the server (see
-        // office-queue.php), same contract registrar-queue.tsx used.
+
         setQueueNumber(data.queue_number || '');
         setAssignedWindow(data.window_name || 'Not Assigned');
         setShowSuccessModal(true);

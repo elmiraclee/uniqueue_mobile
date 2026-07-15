@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -14,10 +14,12 @@ import {
 
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 
 import AppHeader from '../../../components/layout/app-header';
 import ConfigDrawer from '../../../components/layout/config-drawer';
+import { API } from '../../../constants/backend';
 import { COLORS } from '../../../constants/theme';
 
 export default function Window() {
@@ -43,13 +45,25 @@ export default function Window() {
   const [selectedDocuments, setSelectedDocuments] = useState<number[]>([]);
   const [queueType, setQueueType] = useState('walkin');
 
+  const [staffRoster, setStaffRoster] = useState<any[]>([]);
+  const [selectedStaffIds, setSelectedStaffIds] = useState<number[]>([]);
+  const [staffDropdownOpen, setStaffDropdownOpen] = useState(false);
+
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    loadWindows();
-    loadDocuments();
-  }, []);
-  
+  // Refetch every time this screen comes into focus (not just on first
+  // mount) — otherwise staff added from the Staff Configuration screen
+  // won't show up here until the app is fully reloaded, since Expo
+  // Router keeps this screen mounted in the background when navigating
+  // away and back.
+  useFocusEffect(
+    useCallback(() => {
+      loadWindows();
+      loadDocuments();
+      loadStaff();
+    }, [])
+  );
+
   const loadWindows = async () => {
     try {
       setLoading(true);
@@ -60,7 +74,7 @@ export default function Window() {
       const parsedUser = JSON.parse(user);
 
       const response = await fetch(
-         `http://192.168.1.26/uniqueue_api/get_windows.php?office_id=${parsedUser.office_id}`
+         API.getWindows + `?office_id=${parsedUser.office_id}`
       );
 
       const data = await response.json();
@@ -87,13 +101,46 @@ export default function Window() {
 
       // FIXED: changed 192.168.1.17 -> 192.168.50.5 (consistent IP)
       const response = await fetch(
-          `http://192.168.1.26/uniqueue_api/get_documents.php?office_id=${parsedUser.office_id}`
+          API.getDocuments + `?office_id=${parsedUser.office_id}`
       );
 
       const data = await response.json();
 
       if (data.success) {
         setDocuments(data.documents);
+      }
+
+    } catch (error) {
+      console.log(error);
+    }
+  };
+
+  const loadStaff = async () => {
+
+    try {
+
+      const user = await AsyncStorage.getItem('user');
+      if (!user) return;
+
+      const parsedUser = JSON.parse(user);
+
+      const response = await fetch(
+        API.getStaff + `?office_id=${parsedUser.office_id}`
+      );
+
+      const data = await response.json();
+
+      if (data.success) {
+        const normalized = (data.staff || []).map((member: any) => ({
+          ...member,
+          id: Number(member.id),
+          window_id:
+            member.window_id === null || member.window_id === undefined
+              ? null
+              : Number(member.window_id),
+        }));
+
+        setStaffRoster(normalized);
       }
 
     } catch (error) {
@@ -108,6 +155,8 @@ export default function Window() {
     setSpeed('normal');
     setQueueType('walkin');
     setSelectedDocuments([]);
+    setSelectedStaffIds([]);
+    setStaffDropdownOpen(false);
 
     setEditingId(null);
   };
@@ -125,7 +174,7 @@ export default function Window() {
     setIsEdit(true);
     setModalVisible(true);
 
-    setEditingId(item.id);
+    setEditingId(Number(item.id));
     setName(item.name);
     setStatus(item.status);
     setSpeed(item.speed);
@@ -134,6 +183,41 @@ export default function Window() {
     const ids = item.documents.map((doc: any) => doc.id);
 
     setSelectedDocuments(ids);
+
+    const assignedStaffIds = (item.staff || []).map((s: any) => Number(s.id));
+
+    setSelectedStaffIds(assignedStaffIds);
+    setStaffDropdownOpen(false);
+  };
+
+  // --- Staff helpers (dropdown-style selection from the office roster) ---
+
+  // A roster member is unavailable if they're already assigned to a
+  // *different* window (their own current window is always fine).
+  const isStaffTaken = (member: any) => {
+    return (
+      member.window_id !== null &&
+      member.window_id !== undefined &&
+      member.window_id !== editingId
+    );
+  };
+
+  const toggleStaff = (member: any) => {
+
+    if (isStaffTaken(member)) {
+      Alert.alert('Unavailable', 'This staff member is already assigned to another window.');
+      return;
+    }
+
+    if (selectedStaffIds.includes(member.id)) {
+      setSelectedStaffIds(selectedStaffIds.filter((id) => id !== member.id));
+    } else {
+      setSelectedStaffIds([...selectedStaffIds, member.id]);
+    }
+  };
+
+  const removeAssignedStaff = (id: number) => {
+    setSelectedStaffIds(selectedStaffIds.filter((staffId) => staffId !== id));
   };
 
   const toggleDocument = (id: number) => {
@@ -182,11 +266,12 @@ export default function Window() {
         queueType === 'walkin' || queueType === 'both'
           ? selectedDocuments
           : [],
+      staff: selectedStaffIds.map((id) => ({ id })),
     };
 
     const url = isEdit
-      ? 'http://192.168.1.26/uniqueue_api/update_windows.php'
-      : 'http://192.168.1.26/uniqueue_api/add_windows.php';
+      ? API.updateWindow
+      : API.addWindow;
 
     const response = await fetch(url, {
       method: 'POST',
@@ -200,9 +285,18 @@ export default function Window() {
 
 if (data.success) {
 
+  // TEMP DIAGNOSTIC: shows staff_assigned/staff_skipped from the backend
+  // (present on update_windows.php responses) so we can see whether the
+  // staff UPDATE actually matched rows or silently skipped some ids.
+  // Remove this block once the window_id bug is root-caused.
+  const debugStaffInfo =
+    data.staff_assigned !== undefined
+      ? `\n\nDebug — assigned: ${data.staff_assigned}, skipped: ${JSON.stringify(data.staff_skipped)}`
+      : '';
+
   Alert.alert(
     'Success',
-    data.message || 'Window saved successfully.',
+    (data.message || 'Window saved successfully.') + debugStaffInfo,
     [
       {
         text: 'OK',
@@ -210,6 +304,7 @@ if (data.success) {
           setModalVisible(false);
           resetForm();
           loadWindows();
+          loadStaff();
         }
       }
     ],
@@ -248,7 +343,7 @@ if (data.success) {
           onPress: async () => {
 
             const response = await fetch(
-              'http://192.168.1.26/uniqueue_api/delete_windows.php',
+              API.deleteWindow,
               {
                 method: 'POST',
                 headers: {
@@ -341,6 +436,23 @@ if (data.success) {
           ) : (
             <Text style={{ color: '#999' }}>
               Not applicable for Appointment
+            </Text>
+          )}
+
+          <Text style={styles.docTitle}>
+            Staff:
+          </Text>
+
+          {item.staff?.length > 0 ? (
+            item.staff.map((s: any) => (
+              <Text key={s.id}>
+                • {s.name}
+                {s.status === 'inactive' ? ' — inactive' : ''}
+              </Text>
+            ))
+          ) : (
+            <Text style={{ color: '#999' }}>
+              No staff assigned
             </Text>
           )}
 
@@ -534,6 +646,114 @@ if (data.success) {
             </>
           )}
 
+            {/* Staff */}
+            <Text style={styles.label}>Assign Staff</Text>
+            <Text style={styles.hint}>
+              Currently assigned staff are listed below — tap the × to
+              remove one. Use the dropdown to add staff from your roster.
+            </Text>
+
+            {selectedStaffIds.length > 0 ? (
+              <View style={styles.assignedStaffWrap}>
+                {staffRoster
+                  .filter((member) => selectedStaffIds.includes(member.id))
+                  .map((member) => (
+                    <View key={member.id} style={styles.assignedStaffChip}>
+                      <Text style={styles.assignedStaffChipText}>
+                        {member.name}
+                        {member.status === 'inactive' ? ' (inactive)' : ''}
+                      </Text>
+                      <Pressable onPress={() => removeAssignedStaff(member.id)}>
+                        <Ionicons
+                          name="close-circle"
+                          size={16}
+                          color={COLORS.primary}
+                        />
+                      </Pressable>
+                    </View>
+                  ))}
+              </View>
+            ) : (
+              <Text style={styles.hint}>No staff currently assigned.</Text>
+            )}
+
+            <Pressable
+              style={[
+                styles.dropdownTrigger,
+                staffDropdownOpen && styles.dropdownTriggerOpen,
+              ]}
+              onPress={() => setStaffDropdownOpen(!staffDropdownOpen)}
+            >
+              <Text style={styles.dropdownTriggerText} numberOfLines={1}>
+                Add Staff
+              </Text>
+
+              <Ionicons
+                name={staffDropdownOpen ? 'chevron-up' : 'chevron-down'}
+                size={18}
+                color="#666"
+              />
+            </Pressable>
+
+            {staffDropdownOpen && (
+              <View style={[styles.docList, styles.staffDropdownList]}>
+                {staffRoster.length === 0 && (
+                  <Text style={{ padding: 12, color: '#999' }}>
+                    No staff in your roster yet.
+                  </Text>
+                )}
+
+                {staffRoster.length > 0 && (
+                  <Text style={styles.dropdownListHint}>
+                    Greyed out names are already assigned to another window.
+                  </Text>
+                )}
+
+                {staffRoster.map((member) => {
+                  const selected = selectedStaffIds.includes(member.id);
+                  const taken = isStaffTaken(member);
+
+                  return (
+                    <Pressable
+                      key={member.id}
+                      style={[
+                        styles.docRow,
+                        selected && styles.docRowActive,
+                        taken && styles.docRowDisabled,
+                      ]}
+                      onPress={() => toggleStaff(member)}
+                    >
+                      <View
+                        style={[
+                          styles.checkbox,
+                          selected && styles.checkboxActive,
+                        ]}
+                      >
+                        {selected && (
+                          <Ionicons
+                            name="checkmark"
+                            size={13}
+                            color="#fff"
+                          />
+                        )}
+                      </View>
+
+                      <Text
+                        style={[
+                          styles.docRowText,
+                          selected && styles.docRowTextActive,
+                        ]}
+                      >
+                        {member.name}
+                        {member.status === 'inactive' ? ' (inactive)' : ''}
+                        {taken ? ' — assigned elsewhere' : ''}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            )}
+
             {/* Action buttons */}
             <View style={styles.modalActions}>
               <Pressable
@@ -579,6 +799,10 @@ if (data.success) {
           router.push('/office/config/document');
         }}
         onWindowPress={() => setDrawerVisible(false)}
+        onStaffPress={() => {
+          setDrawerVisible(false);
+          router.push('/office/config/staff');
+        }}
         onCapacityPress={() => {
           setDrawerVisible(false);
           router.push('/office/config/capacity');
@@ -799,6 +1023,84 @@ const styles = StyleSheet.create({
   },
 
   docRowTextActive: {
+    color: COLORS.primary,
+    fontWeight: '600',
+  },
+
+  docRowDisabled: {
+    opacity: 0.45,
+  },
+
+  hint: {
+    fontSize: 12,
+    color: '#888',
+    marginBottom: 8,
+    marginTop: -4,
+  },
+
+  // Staff dropdown
+  dropdownTrigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderRadius: 10,
+    paddingVertical: 11,
+    paddingHorizontal: 12,
+    backgroundColor: '#fafafa',
+  },
+
+  dropdownTriggerOpen: {
+    borderColor: COLORS.primary,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+  },
+
+  dropdownTriggerText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#222',
+    marginRight: 8,
+  },
+
+  staffDropdownList: {
+    marginTop: 0,
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
+    borderTopWidth: 0,
+    borderColor: COLORS.primary,
+  },
+
+  dropdownListHint: {
+    fontSize: 11,
+    color: '#999',
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 2,
+    backgroundColor: '#fafafa',
+  },
+
+  // Currently assigned staff chips
+  assignedStaffWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 10,
+  },
+
+  assignedStaffChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(102, 8, 16, 0.05)',
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+
+  assignedStaffChipText: {
+    fontSize: 13,
     color: COLORS.primary,
     fontWeight: '600',
   },

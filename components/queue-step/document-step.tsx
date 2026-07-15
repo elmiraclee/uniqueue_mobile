@@ -1,14 +1,14 @@
 import React from 'react';
 import {
-  Alert,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    Alert,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 
 import { COLORS } from '../../constants/theme';
-import PriorityStep from './priority-step';
+import PriorityStep from "./priority-step";
 
 interface DocumentItem {
   id: number;
@@ -21,14 +21,9 @@ interface Props {
   selectedDocuments: number[];
   setSelectedDocuments: React.Dispatch<React.SetStateAction<number[]>>;
 
-  // Quantity per selected document, keyed by document id. Folded in
-  // here instead of a separate QuantityStep so quantity is set right
-  // where the document is picked.
   quantities: Record<number, number>;
   setQuantities: React.Dispatch<React.SetStateAction<Record<number, number>>>;
 
-  // Priority lane, folded in here instead of its own step. Rendered
-  // via PriorityLane, which no-ops when the office doesn't offer it.
   priority: boolean;
   setPriority: (value: boolean) => void;
   priorityReason: string;
@@ -57,8 +52,6 @@ export default function DocumentStep({
     if (selectedDocuments.includes(id)) {
       setSelectedDocuments(selectedDocuments.filter((item) => item !== id));
 
-      // Drop its quantity so a re-selected document starts fresh at 1
-      // instead of remembering a stale count.
       setQuantities((prev) => {
         const next = { ...prev };
         delete next[id];

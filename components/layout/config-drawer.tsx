@@ -16,6 +16,7 @@ interface ConfigDrawerProps {
   onClose: () => void;
   onDocumentPress: () => void;
   onWindowPress: () => void;
+  onStaffPress: () => void;
   onCapacityPress: () => void;
   onLogoutPress: () => void;
 }
@@ -27,6 +28,7 @@ export default function ConfigDrawer({
   onClose,
   onDocumentPress,
   onWindowPress,
+  onStaffPress,
   onCapacityPress,
   onLogoutPress,
 }: ConfigDrawerProps) {
@@ -113,6 +115,39 @@ export default function ConfigDrawer({
               ]}
             >
               Window
+            </Text>
+          </Pressable>
+
+          {/* Staff */}
+          <Pressable
+            style={[
+              styles.item,
+              activeScreen === 'staff' && styles.activeItem,
+            ]}
+            onPress={onStaffPress}
+          >
+            <View style={[
+              styles.iconWrap,
+              activeScreen === 'staff' && styles.activeIconWrap,
+            ]}>
+              <Ionicons
+                name="id-card-outline"
+                size={18}
+                color={
+                  activeScreen === 'staff'
+                    ? COLORS.white
+                    : COLORS.primary
+                }
+              />
+            </View>
+
+            <Text
+              style={[
+                styles.text,
+                activeScreen === 'staff' && styles.activeText,
+              ]}
+            >
+              Staff
             </Text>
           </Pressable>
 

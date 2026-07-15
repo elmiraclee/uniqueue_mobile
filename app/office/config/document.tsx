@@ -15,9 +15,12 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 
+import { API } from '@/constants/backend';
 import AppHeader from '../../../components/layout/app-header';
 import ConfigDrawer from '../../../components/layout/config-drawer';
 import { COLORS } from '../../../constants/theme';
+
+
 
 export default function Document() {
   const router = useRouter();
@@ -53,7 +56,7 @@ export default function Document() {
     const parsedUser = JSON.parse(user);
 
     const url =
-      `http://192.168.1.26/uniqueue_api/get_documents.php?office_id=${parsedUser.office_id}`;
+      API.getDocuments + `?office_id=${parsedUser.office_id}`;
 
     console.log('FETCH URL:', url);
 
@@ -137,8 +140,8 @@ export default function Document() {
   };
 
       const url = isEdit
-        ? 'http://192.168.1.26/uniqueue_api/update_documents.php'
-        : 'http://192.168.1.26/uniqueue_api/add_documents.php';
+        ? API.updateDocument
+        : API.addDocument;
 
       const body = isEdit
         ? { ...payload, id: editingId }
@@ -175,7 +178,7 @@ export default function Document() {
         onPress: async () => {
           try {
             const res = await fetch(
-          'http://192.168.1.26/uniqueue_api/delete_documents.php',
+          API.deleteDocument,
               {
                 method: 'POST',
                 headers: {
@@ -332,6 +335,10 @@ export default function Document() {
       onCapacityPress={() => {
         setDrawerVisible(false);
         router.push('/office/config/capacity');
+      }}
+      onStaffPress={() => {
+        setDrawerVisible(false);
+        router.push('/office/config/staff');
       }}
       onLogoutPress={async () => {
         await AsyncStorage.removeItem('user');
