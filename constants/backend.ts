@@ -1,4 +1,4 @@
-export const IP_ADDRESS = "192.168.50.5";
+export const IP_ADDRESS = "192.168.50.6";
 
 export const API_URL = `http://${IP_ADDRESS}/uniqueue_api`;
 
@@ -16,22 +16,8 @@ export const API = {
   getWindows: `${API_URL}/get_windows.php`,
   getQueue: `${API_URL}/get_queue.php`,
 
-  //DOCUMENT.TSX
   getDocuments: `${API_URL}/get_documents.php`,
-  addDocument: `${API_URL}/add_documents.php`,
-  updateDocument: `${API_URL}/update_documents.php`,
-  deleteDocument: `${API_URL}/delete_documents.php`,
-
-  //STAFF.TSX
   getStaff: `${API_URL}/get_staff.php`,
-  addStaff: `${API_URL}/add_staff.php`,
-  updateStaff: `${API_URL}/update_staff.php`,
-  deleteStaff: `${API_URL}/delete_staff.php`,
-
-  //WINDOW.TSX
-  addWindow: `${API_URL}/add_window.php`,
-  updateWindow: `${API_URL}/update_window.php`,
-  deleteWindow: `${API_URL}/delete_window.php`,
 
   //OFFICE-QUEUE.TSX
   getOffice: `${API_URL}/get_offices.php`,

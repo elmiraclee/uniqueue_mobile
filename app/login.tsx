@@ -14,7 +14,7 @@ import { useRouter } from 'expo-router';
 
 import CustomButton from '../components/ui/custom-button';
 import CustomInput from '../components/ui/custom-input';
-import { API } from "../constants/backend";
+import { API } from '../constants/backend';
 import { COLORS } from '../constants/theme';
 
 export default function Login() {
@@ -33,9 +33,7 @@ export default function Login() {
     try {
       setLoading(true);
 
-      const response = await fetch(
-      API.login,
-      {
+      const response = await fetch(API.login, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -44,8 +42,7 @@ export default function Login() {
           username: srCode,
           password: password,
         }),
-      }
-    );
+      });
 
       console.log('HTTP STATUS:', response.status);
 
@@ -82,30 +79,17 @@ export default function Login() {
 
       await AsyncStorage.setItem(
         'role',
-        data.role
+        'student'
       );
 
       Alert.alert(
         'Success',
-        `Logged in as ${data.role}`
+        'Login successful!'
       );
 
-      // ROUTING
-      if (data.role === 'student') {
-        router.replace('/student/home');
-      }
-      else if (data.role === 'office') {
-        router.replace('/office/home');
-      }
-      else if (data.role === 'admin') {
-        router.replace('/admin/home');
-      }
-      else {
-        Alert.alert(
-          'Error',
-          'Unknown user role'
-        );
-      }
+      // Student only
+      router.replace('/student/home');
+
     } catch (error) {
       console.log('LOGIN ERROR:', error);
 
@@ -136,7 +120,7 @@ export default function Login() {
         </Text>
 
         <CustomInput
-          placeholder="SR-Code/Username"
+          placeholder="SR-Code"
           value={srCode}
           onChangeText={setSrCode}
         />
