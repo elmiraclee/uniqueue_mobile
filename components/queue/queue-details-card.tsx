@@ -13,6 +13,8 @@ interface Props {
     window_name?: string | null;
     people_ahead: number;
     joined_at: string;
+    priority?: number | boolean;
+    priority_reason?: string | null;
   };
 }
 
@@ -26,6 +28,8 @@ const Row = ({ label, value, index }: { label: string; value: string; index: num
 export default function QueueDetailsCard({ queue }: Props) {
   const formatDate = (date: string) => new Date(date).toLocaleString();
 
+  const isPriority = !!queue.priority;
+
   const rows = [
     { label: 'Office', value: queue.office_name },
     { label: 'Queue Type', value: queue.type.toUpperCase() },
@@ -38,8 +42,15 @@ export default function QueueDetailsCard({ queue }: Props) {
     <View style={styles.card}>
       <View style={styles.header}>
         <Text style={styles.queueNumber}>{queue.queue_number}</Text>
-        <View style={styles.badgeWrapper}>
-          <StatusBadge status={queue.status} />
+        <View style={styles.badgeRow}>
+          <View style={styles.badgeWrapper}>
+            <StatusBadge status={queue.status} />
+          </View>
+          {isPriority && (
+            <View style={styles.priorityBadge}>
+              <Text style={styles.priorityBadgeText}>PRIORITY</Text>
+            </View>
+          )}
         </View>
       </View>
 
@@ -63,9 +74,28 @@ const styles = StyleSheet.create({
     gap: SPACING.xs + 2,
     marginBottom: SPACING.sm,
   },
+  badgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.xs,
+  },
   badgeWrapper: {
     alignSelf: 'center',
     alignItems: 'center',
+  },
+  priorityBadge: {
+    backgroundColor: COLORS.primarySoft,
+    paddingVertical: 5,
+    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.full,
+  },
+  priorityBadgeText: {
+    ...TYPOGRAPHY.caption,
+    textTransform: 'none',
+    letterSpacing: 0.2,
+    fontWeight: '800',
+    color: COLORS.primaryDark,
   },
   queueNumber: {
     fontSize: 30,

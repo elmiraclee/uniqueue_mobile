@@ -8,12 +8,7 @@ interface Props {
   status: string;
 }
 
-const formatStatus = (status: string) =>
-  status
-    .replace(/_/g, ' ')
-    .split(' ')
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(' ');
+const formatStatus = (status: string) => status.replace(/_/g, ' ').toUpperCase();
 
 export default function StatusBadge({ status }: Props) {
   const color = STATUS_COLORS[status] ?? '#7A7A7A';
@@ -21,7 +16,6 @@ export default function StatusBadge({ status }: Props) {
 
   return (
     <View style={[styles.badge, { backgroundColor: bg }]}>
-      <View style={[styles.dot, { backgroundColor: color }]} />
       <Text style={[styles.text, { color }]}>{formatStatus(status)}</Text>
     </View>
   );
@@ -35,12 +29,6 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.full,
     paddingVertical: 5,
     paddingHorizontal: SPACING.md,
-    gap: 6,
-  },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
   },
   text: {
     ...TYPOGRAPHY.caption,

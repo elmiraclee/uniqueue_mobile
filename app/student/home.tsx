@@ -1,17 +1,21 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
+  Image,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 
+import FeedbackModal, {
+  PendingFeedbackTransaction,
+} from '@/components/feedback/feedback-modal';
 import CurrentQueueModal from '@/components/queue/current-queue-modal';
-import { API } from '@/constants/backend';
+import { API, API_URL } from '@/constants/backend';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import AppHeader from '../../components/layout/app-header';
 import AnimatedPressable from '../../components/ui/animated-pressable';
 import Skeleton from '../../components/ui/skeleton';
@@ -30,6 +34,18 @@ interface Office {
   name: string;
   slug: string;
   description: string;
+}
+
+// OFFICE EVENT — e.g. "Enrollment", shown nested under its office so a
+// student can jump straight into the event's step flow instead of the
+// regular walk-in/appointment form. Mirrors office_events on the web
+// dashboard.
+interface OfficeEvent {
+  id: number;
+  office_id: number;
+  name: string;
+  description: string | null;
+  office_slug: string;
 }
 
 const OFFICE_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
@@ -72,11 +88,26 @@ function OfficeCardSkeleton() {
 
 export default function StudentHome() {
   const [studentName, setStudentName] = useState('');
+  const [picture, setPicture] = useState<string | null>(null);
   const [offices, setOffices] = useState<Office[]>([]);
+  const [events, setEvents] = useState<OfficeEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentQueue, setCurrentQueue] = useState<any>(null);
   const [showQueueModal, setShowQueueModal] = useState(false);
   const [studentId, setStudentId] = useState<number>(0);
+
+  // Tracks whether the student currently has an active ticket for each
+  // event, keyed by event id — e.g. { [eventId]: true }. This is separate
+  // from `currentQueue` (which only covers the regular walk-in/appointment
+  // queue) because event tickets live under their own
+  // office-queue.php?action=event endpoint with its own active_ticket.
+  const [activeEventTickets, setActiveEventTickets] = useState<Record<number, boolean>>({});
+
+  // The student's most recent completed transaction that hasn't been
+  // rated yet, if any. While this is set, joining any queue (regular
+  // or event) is blocked and the FeedbackModal is shown instead.
+  const [pendingFeedback, setPendingFeedback] = useState<PendingFeedbackTransaction | null>(null);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
 
   const fade = useRef(new Animated.Value(0)).current;
   const slide = useRef(new Animated.Value(16)).current;
@@ -84,6 +115,7 @@ export default function StudentHome() {
   useEffect(() => {
     loadUser();
     fetchOffices();
+    fetchEvents();
 
     Animated.parallel([
       Animated.timing(fade, { toValue: 1, duration: 380, useNativeDriver: true }),
@@ -96,10 +128,71 @@ export default function StudentHome() {
 
       const parsed = JSON.parse(user);
       fetchCurrentQueue(parsed.id);
+      fetchActiveEventTickets(parsed.id);
+      fetchPendingFeedback(parsed.id);
     }, POLL_INTERVAL_MS);
 
     return () => clearInterval(interval);
   }, []);
+
+  // Refetch the moment this screen regains focus — e.g. coming back from
+  // the event step flow after joining/cancelling a queue, or after the
+  // event's queue status changed elsewhere. Without this, the student
+  // only sees the update once the 3s poll below happens to fire, which
+  // can feel like it "needs a reload".
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+
+      (async () => {
+        const user = await AsyncStorage.getItem('user');
+        if (!user || cancelled) return;
+
+        const parsed = JSON.parse(user);
+        fetchCurrentQueue(parsed.id);
+        fetchEvents();
+        fetchActiveEventTickets(parsed.id);
+        fetchPendingFeedback(parsed.id);
+      })();
+
+      return () => {
+        cancelled = true;
+      };
+    }, [events])
+  );
+
+  // Checks, per event, whether the student has an active ticket for it —
+  // using the same office-queue.php?action=event endpoint the event flow
+  // itself relies on for active_ticket, since that's the real source of
+  // truth (currentQueue only tracks the regular walk-in/appointment queue).
+  const fetchActiveEventTickets = async (sid: number) => {
+    if (!sid || events.length === 0) return;
+
+    try {
+      const results = await Promise.all(
+        events.map(async (ev) => {
+          try {
+            const res = await fetch(
+              `${API_URL}/office-queue.php?action=event&event_id=${ev.id}&office_id=${ev.office_id}&student_id=${sid}`
+            );
+            const data = await res.json();
+            return [ev.id, data.success && !!data.active_ticket] as const;
+          } catch {
+            return [ev.id, false] as const;
+          }
+        })
+      );
+
+      setActiveEventTickets(Object.fromEntries(results));
+    } catch (e) {
+      console.log('Fetch Active Event Tickets Error:', e);
+    }
+  };
+
+  useEffect(() => {
+    if (!studentId || events.length === 0) return;
+    fetchActiveEventTickets(studentId);
+  }, [studentId, events]);
 
   const loadUser = async () => {
     try {
@@ -113,8 +206,31 @@ export default function StudentHome() {
           parsed.full_name ||
           `${parsed.first_name ?? ''} ${parsed.last_name ?? ''}`.trim()
       );
+      setPicture(parsed.picture ?? null);
+      try {
+        const res = await fetch(
+          `${API.getStudentProfile}?student_id=${parsed.id}`
+        );
+
+        const data = await res.json();
+
+        if (data.success) {
+          setPicture(data.student.picture);
+
+          await AsyncStorage.setItem(
+            "user",
+            JSON.stringify({
+              ...parsed,
+              picture: data.student.picture,
+            })
+          );
+        }
+      } catch (e) {
+        console.log(e);
+      }
 
       fetchCurrentQueue(parsed.id);
+      fetchPendingFeedback(parsed.id);
     } catch (error) {
       console.log(error);
     }
@@ -135,6 +251,16 @@ export default function StudentHome() {
     }
   };
 
+  const fetchPendingFeedback = async (sid: number) => {
+    try {
+      const res = await fetch(`${API.getPendingFeedback}?student_id=${sid}`);
+      const data = await res.json();
+      setPendingFeedback(data.success && data.pending ? data.transaction : null);
+    } catch (e) {
+      console.log('Fetch Pending Feedback Error:', e);
+    }
+  };
+
   const fetchOffices = async () => {
     try {
       const response = await fetch(API.getOffice);
@@ -150,8 +276,33 @@ export default function StudentHome() {
     }
   };
 
+  const fetchEvents = async () => {
+    try {
+      const response = await fetch(`${API_URL}/office-queue.php?action=events`);
+      const data = await response.json();
+
+      if (data.success) {
+        setEvents(data.events);
+      }
+    } catch (error) {
+      console.log('Fetch Events Error:', error);
+    }
+  };
+
   const joinQueue = (office: Office) => {
+    if (pendingFeedback) {
+      setShowFeedbackModal(true);
+      return;
+    }
     router.push(`/student/queues/office-queue?office=${office.slug}`);
+  };
+
+  const joinEventQueue = (office: Office, event: OfficeEvent) => {
+    if (pendingFeedback) {
+      setShowFeedbackModal(true);
+      return;
+    }
+    router.push(`/student/queues/office-queue?office=${office.slug}&event_id=${event.id}`);
   };
 
   const getGreeting = () => {
@@ -193,11 +344,20 @@ export default function StudentHome() {
   <View style={styles.profileRow}>
 
     <View style={styles.profileIcon}>
-      <Ionicons
-        name="person"
-        size={24}
-        color={COLORS.primary}
-      />
+      {picture ? (
+        <Image
+          source={{
+            uri: `${API_URL}/${picture}`,
+          }}
+          style={styles.profileImage}
+        />
+      ) : (
+        <Ionicons
+          name="person"
+          size={24}
+          color={COLORS.primary}
+        />
+      )}
     </View>
 
     <View style={styles.profileText}>
@@ -273,6 +433,27 @@ export default function StudentHome() {
     </View>
 
   </View>
+          {/* Pending feedback banner — shown until the student rates
+              their last completed transaction. Tapping it opens the
+              same modal that blocks "Join Queue" below. */}
+          {pendingFeedback && (
+            <AnimatedPressable
+              style={styles.feedbackBanner}
+              onPress={() => setShowFeedbackModal(true)}
+            >
+              <View style={styles.feedbackBannerIcon}>
+                <Ionicons name="star" size={18} color={COLORS.warning} />
+              </View>
+              <View style={styles.feedbackBannerTextCol}>
+                <Text style={styles.feedbackBannerTitle}>Rate your last visit</Text>
+                <Text style={styles.feedbackBannerSubtitle} numberOfLines={1}>
+                  {pendingFeedback.office_name} · {pendingFeedback.queue_number} — join a new queue after rating
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={COLORS.gray} />
+            </AnimatedPressable>
+          )}
+
           {/* Current Queue */}
           <AnimatedPressable
             style={styles.currentQueueCard}
@@ -381,6 +562,51 @@ export default function StudentHome() {
                       <Ionicons name="arrow-forward" size={16} color={COLORS.white} />
                     </AnimatedPressable>
                   </View>
+
+                  {/* Office Events — e.g. "Enrollment". Same idea as the
+                      web dashboard's nested event rows: jump straight
+                      into the event's step flow instead of the regular
+                      walk-in/appointment form. */}
+                  {events
+                    .filter((ev) => ev.office_id === office.id)
+                    .map((ev) => {
+                      // Real source of truth for THIS event's ticket status
+                      // — not the generic currentQueue, which only tracks
+                      // the regular walk-in/appointment queue.
+                      const isOnThisEventQueue = !!activeEventTickets[ev.id];
+
+                      return (
+                        <View key={ev.id} style={styles.eventRow}>
+                          <View style={styles.eventRowLeft}>
+                            <View style={styles.eventIconBox}>
+                              <Ionicons name="calendar-outline" size={16} color={COLORS.white} />
+                            </View>
+                            <View style={styles.eventRowInfo}>
+                              <View style={styles.eventBadgeRow}>
+                                <View style={styles.eventBadge}>
+                                  <Text style={styles.eventBadgeText}>EVENT</Text>
+                                </View>
+                                <Text style={styles.eventName} numberOfLines={1}>{ev.name}</Text>
+                              </View>
+                              {!!ev.description && (
+                                <Text style={styles.eventDescription} numberOfLines={1}>
+                                  {ev.description}
+                                </Text>
+                              )}
+                            </View>
+                          </View>
+
+                          <AnimatedPressable
+                            style={[styles.eventJoinButton, isOnThisEventQueue && styles.eventJoinButtonOnQueue]}
+                            onPress={() => joinEventQueue(office, ev)}
+                          >
+                            <Text style={[styles.eventJoinButtonText, isOnThisEventQueue && styles.eventJoinButtonTextOnQueue]}>
+                              {isOnThisEventQueue ? 'On Queue' : 'Join'}
+                            </Text>
+                          </AnimatedPressable>
+                        </View>
+                      );
+                    })}
                 </View>
               ))}
             </View>
@@ -393,6 +619,17 @@ export default function StudentHome() {
         studentId={studentId}
         onClose={() => setShowQueueModal(false)}
         onCancelled={() => fetchCurrentQueue(studentId)}
+      />
+
+      <FeedbackModal
+        visible={showFeedbackModal}
+        transaction={pendingFeedback}
+        studentId={studentId}
+        onClose={() => setShowFeedbackModal(false)}
+        onSubmitted={() => {
+          setShowFeedbackModal(false);
+          fetchPendingFeedback(studentId);
+        }}
       />
     </View>
   );
@@ -424,6 +661,41 @@ const styles = StyleSheet.create({
   subtitle: {
     color: 'rgba(255,255,255,0.7)',
     fontSize: 13,
+    fontWeight: '500',
+  },
+
+  // Pending feedback banner
+  feedbackBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    backgroundColor: COLORS.warningLight,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+    borderWidth: 1,
+    borderColor: COLORS.warning,
+  },
+  feedbackBannerIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  feedbackBannerTextCol: {
+    flex: 1,
+    gap: 2,
+  },
+  feedbackBannerTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.secondary,
+  },
+  feedbackBannerSubtitle: {
+    fontSize: 12,
+    color: COLORS.gray,
     fontWeight: '500',
   },
 
@@ -630,6 +902,89 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 
+  // Office Event row (nested under its office card)
+  eventRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginHorizontal: SPACING.lg,
+    marginBottom: SPACING.lg,
+    marginTop: -SPACING.sm,
+    padding: SPACING.md,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.primarySoft,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderStyle: 'dashed',
+  },
+  eventRowLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm + 2,
+    flex: 1,
+    marginRight: SPACING.sm,
+  },
+  eventIconBox: {
+    width: 30,
+    height: 30,
+    borderRadius: RADIUS.md - 2,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  eventRowInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  eventBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  eventBadge: {
+    backgroundColor: COLORS.primary,
+    borderRadius: RADIUS.full,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  eventBadgeText: {
+    color: COLORS.white,
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+  },
+  eventName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.secondary,
+    flexShrink: 1,
+  },
+  eventDescription: {
+    fontSize: 11,
+    color: COLORS.gray,
+    fontWeight: '500',
+  },
+  eventJoinButton: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    borderRadius: RADIUS.md,
+  },
+  eventJoinButtonOnQueue: {
+    backgroundColor: COLORS.white,
+    borderWidth: 1.5,
+    borderColor: COLORS.primary,
+  },
+  eventJoinButtonText: {
+    color: COLORS.white,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  eventJoinButtonTextOnQueue: {
+    color: COLORS.primary,
+  },
+
   // Empty state
   emptyCard: {
     backgroundColor: COLORS.cream,
@@ -670,6 +1025,11 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     justifyContent: "center",
     alignItems: "center",
+  },
+    profileImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 27,
   },
   profileText: {
     flex: 1,

@@ -1,10 +1,10 @@
 import React from 'react';
 import {
-    Alert,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Alert,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
 import { COLORS } from '../../constants/theme';
@@ -185,7 +185,7 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: COLORS.white,
     borderRadius: 14,
-    marginBottom: 10,
+    marginBottom: 8,
     borderWidth: 1.5,
     borderColor: '#eee',
     overflow: 'hidden',
@@ -199,8 +199,8 @@ const styles = StyleSheet.create({
   cardRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    padding: 16,
+    gap: 10,
+    padding: 12,
   },
 
   checkbox: {
@@ -236,9 +236,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingBottom: 14,
-    paddingTop: 2,
+    paddingHorizontal: 12,
+    paddingBottom: 8,
+    paddingTop: 6,
     borderTopWidth: 1,
     borderTopColor: 'rgba(0,0,0,0.05)',
   },
@@ -252,13 +252,13 @@ const styles = StyleSheet.create({
   qtyControls: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
+    gap: 10,
   },
 
   qtyButton: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     backgroundColor: COLORS.primary,
     justifyContent: 'center',
     alignItems: 'center',

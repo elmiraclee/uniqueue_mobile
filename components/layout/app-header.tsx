@@ -1,4 +1,5 @@
 import { usePathname } from 'expo-router';
+import { useState } from 'react';
 import {
   Image,
   StyleSheet,
@@ -10,6 +11,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 
 import { COLORS } from '../../constants/theme';
+import NotificationModal from '../notification/notification-modal';
+import { useNotifications } from '../notification/use-notification';
 
 interface HeaderProps {
   title?: string;
@@ -22,11 +25,17 @@ export default function AppHeader({
   onNotificationPress,
   onBackPress,
 }: HeaderProps) {
-
   const pathname = usePathname();
 
-  const getHeaderTitle = () => {
+  const [notificationsVisible, setNotificationsVisible] = useState(false);
+  const { unreadCount } = useNotifications();
 
+  const handleNotificationPress = () => {
+    setNotificationsVisible(true);
+    onNotificationPress?.();
+  };
+
+  const getHeaderTitle = () => {
     if (title) {
       return title;
     }
@@ -46,49 +55,50 @@ export default function AppHeader({
     return 'UniQueue';
   };
 
-  
   return (
     <View style={styles.container}>
-
       <View style={styles.leftContainer}>
-
-     
-
         <Image
           source={require('../../assets/images/logo.png')}
           style={styles.logo}
         />
 
         <View>
-         <Text style={styles.title}>
-          {getHeaderTitle()}
-        </Text>
-
+          <Text style={styles.title}>
+            {getHeaderTitle()}
+          </Text>
         </View>
-
       </View>
 
       <View style={styles.rightContainer}>
-
         <TouchableOpacity
           style={styles.iconButton}
-          onPress={onNotificationPress}
+          onPress={handleNotificationPress}
         >
           <Ionicons
             name="notifications-outline"
             size={24}
             color={COLORS.primary}
           />
+          {unreadCount > 0 && (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </Text>
+            </View>
+          )}
         </TouchableOpacity>
-
       </View>
 
+      <NotificationModal
+        visible={notificationsVisible}
+        onClose={() => setNotificationsVisible(false)}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-
   container: {
     backgroundColor: COLORS.white,
     paddingHorizontal: 20,
@@ -139,10 +149,30 @@ const styles = StyleSheet.create({
 
   rightContainer: {
     flexDirection: 'row',
+    alignItems: 'center',
   },
 
   iconButton: {
     marginLeft: 15,
+    padding: 2,
   },
 
+  badge: {
+    position: 'absolute',
+    top: -2,
+    right: -4,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    paddingHorizontal: 3,
+    backgroundColor: COLORS.danger,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  badgeText: {
+    color: COLORS.white,
+    fontSize: 9,
+    fontWeight: '700',
+  },
 });

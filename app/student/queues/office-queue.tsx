@@ -1,11 +1,13 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Modal,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -24,6 +26,51 @@ export interface Document {
   id: number;
   name: string;
   requirements: string[];
+}
+
+// ── OFFICE EVENT MODE ───────────────────────────────────────────────
+// When ?event_id=NN is present, the student is walking through an
+// office event (e.g. "Enrollment") instead of the regular walk-in/
+// appointment form. Each step names its own document(s) + requirement
+// checklist and can route to a different office than the one the
+// event was launched from.
+export interface EventRequirement {
+  id: number;
+  document_id: number;
+  requirement: string;
+}
+
+export interface EventStepDocument {
+  document_id: number;
+  quantity: number;
+  name: string;
+  requirements: EventRequirement[];
+}
+
+export interface EventStep {
+  id: number;
+  step_order: number;
+  title: string;
+  description: string | null;
+  office_id: number;
+  office_name: string;
+  office_slug: string;
+  documents: EventStepDocument[];
+}
+
+export interface EventInfo {
+  id: number;
+  office_id: number;
+  name: string;
+  description: string | null;
+}
+
+export interface ActiveEventTicket {
+  id: number;
+  queue_number: string;
+  status: string;
+  event_step_id: number;
+  window_name: string | null;
 }
 
 export interface Office {
@@ -45,18 +92,30 @@ const STEPS = [
   { label: 'Confirm' },
 ];
 
-function StepIndicator({ current }: { current: number }) {
+function StepIndicator({
+  current,
+  steps = STEPS,
+}: {
+  current: number;
+  steps?: { label: string }[];
+}) {
   const visualIndex = current - 1;
 
   return (
     <View style={indicator.wrapper}>
       <View style={indicator.row}>
-        {STEPS.map((step, i) => {
+        {steps.map((step, i) => {
           const isDone = i < visualIndex;
           const isActive = i === visualIndex;
 
           return (
-            <View key={i} style={indicator.stepGroup}>
+            <View
+              key={i}
+              style={[
+                indicator.stepGroup,
+                i < steps.length - 1 && indicator.stepGroupGrow,
+              ]}
+            >
               <View
                 style={[
                   indicator.dot,
@@ -79,7 +138,7 @@ function StepIndicator({ current }: { current: number }) {
                 )}
               </View>
 
-              {i < STEPS.length - 1 && (
+              {i < steps.length - 1 && (
                 <View
                   style={[indicator.line, isDone && indicator.lineDone]}
                 />
@@ -89,43 +148,47 @@ function StepIndicator({ current }: { current: number }) {
         })}
       </View>
 
-      <Text style={indicator.label}>{STEPS[visualIndex]?.label ?? ''}</Text>
+      <Text style={indicator.label}>{steps[visualIndex]?.label ?? ''}</Text>
     </View>
   );
 }
 
 const indicator = StyleSheet.create({
   wrapper: {
-    marginBottom: 20,
+    marginBottom: 16,
   },
 
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    width: '100%',
+    marginBottom: 6,
   },
 
   stepGroup: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+
+  stepGroupGrow: {
     flex: 1,
   },
 
   dot: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     justifyContent: 'center',
     alignItems: 'center',
   },
 
   dotDone: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: '#22C55E',
   },
 
   dotActive: {
     backgroundColor: COLORS.primary,
-    borderWidth: 3,
+    borderWidth: 2,
     borderColor: '#f5c5c8',
   },
 
@@ -136,7 +199,7 @@ const indicator = StyleSheet.create({
   },
 
   dotText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
     color: '#bbb',
   },
@@ -146,20 +209,21 @@ const indicator = StyleSheet.create({
   },
 
   dotTextDone: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
     color: '#fff',
   },
 
   line: {
     flex: 1,
+    minWidth: 20,
     height: 2,
     backgroundColor: '#ddd',
-    marginHorizontal: 3,
+    marginHorizontal: 6,
   },
 
   lineDone: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: '#22C55E',
   },
 
   label: {
@@ -176,10 +240,39 @@ export default function OfficeQueue() {
   const router = useRouter();
 
 
-  const { office: officeSlug } = useLocalSearchParams<{ office?: string }>();
+  const { office: officeSlug, event_id: eventIdParam } =
+    useLocalSearchParams<{ office?: string; event_id?: string }>();
+
+  const eventId = eventIdParam ? parseInt(eventIdParam, 10) : 0;
+  const isEventMode = !!eventId;
 
   const [office, setOffice] = useState<Office | null>(null);
   const [loadingOffice, setLoadingOffice] = useState(true);
+
+  // Event-mode state
+  const [loadingEvent, setLoadingEvent] = useState(isEventMode);
+  const [eventInfo, setEventInfo] = useState<EventInfo | null>(null);
+  const [eventSteps, setEventSteps] = useState<EventStep[]>([]);
+  const [currentStep, setCurrentStep] = useState<EventStep | null>(null);
+  const [currentStepIndex, setCurrentStepIndex] = useState<number | null>(null);
+  // Which step is being displayed — usually equal to currentStepIndex, but
+  // moves independently when the student browses Back to a prior step.
+  const [viewIndex, setViewIndex] = useState<number | null>(null);
+  const [eventCompleted, setEventCompleted] = useState(false);
+  const [eventActiveTicket, setEventActiveTicket] = useState<ActiveEventTicket | null>(null);
+  const [checkedEventReqIds, setCheckedEventReqIds] = useState<number[]>([]);
+
+  // Mirrors of currentStepIndex/viewIndex for the silent background poll
+  // below, so it always reads the latest values instead of a stale
+  // closure captured when the interval was set up.
+  const currentStepIndexRef = useRef<number | null>(null);
+  const viewIndexRef = useRef<number | null>(null);
+  useEffect(() => {
+    currentStepIndexRef.current = currentStepIndex;
+  }, [currentStepIndex]);
+  useEffect(() => {
+    viewIndexRef.current = viewIndex;
+  }, [viewIndex]);
 
   const [step, setStep] = useState(1);
   const [studentId, setStudentId] = useState(0);
@@ -220,6 +313,28 @@ export default function OfficeQueue() {
     if (!office) return;
     fetchDocuments(office.id);
   }, [office]);
+
+  useEffect(() => {
+    if (!isEventMode || !office || !studentId) return;
+    fetchEventDetail();
+  }, [isEventMode, office, studentId]);
+
+  // Poll in the background while the student has an active ticket for
+  // the current step, so the moment that ticket is served/completed and
+  // the backend advances to the next step, this screen picks it up on
+  // its own — no manual reload needed.
+  useEffect(() => {
+    if (!isEventMode || !office || !studentId) return;
+    const ticketMatchesCurrentStep =
+      !!eventActiveTicket && eventActiveTicket.event_step_id === currentStep?.id;
+    if (!ticketMatchesCurrentStep || eventCompleted) return;
+
+    const interval = setInterval(() => {
+      fetchEventDetail({ silent: true });
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [isEventMode, office, studentId, eventActiveTicket, currentStep, eventCompleted]);
 
   const loadUser = async () => {
     const user = await AsyncStorage.getItem('user');
@@ -284,6 +399,224 @@ export default function OfficeQueue() {
       }
     } catch (error) {
       console.log(error);
+    }
+  };
+
+  const fetchEventDetail = async (opts: { silent?: boolean } = {}) => {
+    if (!office) return;
+    const silent = !!opts.silent;
+
+    try {
+      if (!silent) setLoadingEvent(true);
+
+      const response = await fetch(
+        `${API_BASE}/office-queue.php?action=event&event_id=${eventId}&office_id=${office.id}&student_id=${studentId}`
+      );
+      const data = await response.json();
+
+      if (!data.success) {
+        if (!silent) {
+          Alert.alert('Error', data.message || 'This event is not available.');
+          router.replace('/student/home');
+        }
+        return;
+      }
+
+      const prevCurrentStepIndex = currentStepIndexRef.current;
+      const prevViewIndex = viewIndexRef.current;
+      const nextCurrentStepIndex = data.current_step_index;
+      const stepAdvanced = prevCurrentStepIndex !== nextCurrentStepIndex;
+
+      setEventInfo(data.event);
+      setEventSteps(data.steps || []);
+      setCurrentStep(data.current_step);
+      setCurrentStepIndex(nextCurrentStepIndex);
+      setEventCompleted(!!data.event_completed);
+      setEventActiveTicket(data.active_ticket);
+
+      // Auto-follow the student's view forward when their current-step
+      // ticket completes and the event moves on. If they'd browsed away
+      // to another step, leave their view alone — don't yank them back.
+      const wasViewingCurrent =
+        prevViewIndex === null ||
+        prevCurrentStepIndex === null ||
+        prevViewIndex === prevCurrentStepIndex;
+
+      if (!silent || wasViewingCurrent) {
+        setViewIndex(nextCurrentStepIndex);
+      }
+
+      if (!silent || stepAdvanced) {
+        setCheckedEventReqIds([]);
+      }
+    } catch (error) {
+      console.log(error);
+      if (!silent) {
+        Alert.alert('Error', 'Unable to load this event right now.');
+        router.replace('/student/home');
+      }
+    } finally {
+      if (!silent) setLoadingEvent(false);
+    }
+  };
+
+  const toggleEventRequirement = (id: number) => {
+    setCheckedEventReqIds((prev) =>
+      prev.includes(id) ? prev.filter((r) => r !== id) : [...prev, id]
+    );
+  };
+
+  // The step currently being displayed — may be an earlier step the
+  // student is browsing back to, not necessarily the one they can submit.
+  const viewStep = viewIndex !== null ? eventSteps[viewIndex] ?? currentStep : currentStep;
+  const isViewingCurrentStep =
+    viewIndex === null || currentStepIndex === null || viewIndex === currentStepIndex;
+
+  // True when browsing a step that hasn't been reached yet — separate
+  // from browsing back to an earlier, already-passed step — so the UI
+  // can explain why joining is locked instead of just hiding the button.
+  const isFutureStep =
+    viewIndex !== null && currentStepIndex !== null && viewIndex > currentStepIndex;
+
+  // Whether the Back button should render — purely a function of position
+  // in the list, independent of join/ticket state, so it always works
+  // whenever there's somewhere to go back to.
+  const canGoBackEventStep = viewIndex !== null && viewIndex > 0;
+
+  // Whether there's a next step to browse forward into — the last step
+  // in the sequence has nowhere further to go, so the Next button
+  // shouldn't render there.
+  const canGoNextEventStep =
+    viewIndex !== null && !!eventSteps[viewIndex + 1];
+
+  // The Join button only makes sense on the current step. If a ticket's
+  // already been submitted for it, it stays as the Join button — shown
+  // disabled — instead of turning into Next when there's nowhere further
+  // to go (i.e. this is the last step in the sequence).
+  //
+  // Guard: only treat eventActiveTicket as blocking THIS step if it's
+  // actually tied to it (event_step_id matches). Otherwise a leftover
+  // ticket from an earlier, already-finished step would incorrectly make
+  // the current step look already-queued (checkboxes pre-checked, Join
+  // disabled) before the student has done anything here.
+  const isActiveTicketForCurrentStep =
+    !!eventActiveTicket && eventActiveTicket.event_step_id === currentStep?.id;
+
+  const showJoinEventButton =
+    isViewingCurrentStep && (!isActiveTicketForCurrentStep || !canGoNextEventStep);
+  const showNextEventButton = !showJoinEventButton && canGoNextEventStep;
+
+  // Requirements can only be ticked/unticked on the current step, and
+  // only before a ticket has been submitted for it.
+  const canEditEventRequirements = isViewingCurrentStep && !isActiveTicketForCurrentStep;
+
+  // A step counts as "done" (requirements shown pre-checked + locked)
+  // once its ticket is queued (current step) or it's already behind us
+  // (a past step). A future step is neither done nor editable yet.
+  const isDoneEventStep =
+    (!isViewingCurrentStep && !isFutureStep) ||
+    (isViewingCurrentStep && isActiveTicketForCurrentStep);
+
+  // Step back to the previous step in this event's sequence (view-only —
+  // does not undo an already-submitted ticket for that step).
+  const goToPreviousEventStep = () => {
+    if (viewIndex === null || viewIndex <= 0) return;
+    const prevIndex = viewIndex - 1;
+    if (!eventSteps[prevIndex]) return;
+
+    setViewIndex(prevIndex);
+    setCheckedEventReqIds([]);
+  };
+
+  // Step forward through the sequence — the student can browse ahead
+  // to preview later steps, but can only ever join the queue while
+  // viewIndex === currentStepIndex (see canJoinEventQueue below).
+  const goToNextEventStep = () => {
+    if (viewIndex === null) return;
+    const nextIndex = viewIndex + 1;
+    if (!eventSteps[nextIndex]) return;
+
+    setViewIndex(nextIndex);
+    setCheckedEventReqIds([]);
+  };
+
+  // Every requirement across every document this step needs — the
+  // student must check all of them before joining, mirrored server-
+  // side in office-queue.php since this guard can be bypassed.
+  const stepRequirementIds = (viewStep?.documents ?? []).flatMap((d) =>
+    (d.requirements ?? []).map((r) => r.id)
+  );
+  const allEventRequirementsChecked =
+    stepRequirementIds.length === 0 ||
+    stepRequirementIds.every((id) => checkedEventReqIds.includes(id));
+
+  // Gate the Join Queue button until requirements are checked and,
+  // if priority is toggled on, a reason has been entered. Also blocked
+  // while the student already has an active ticket for this step.
+  const canJoinEventQueue =
+    isViewingCurrentStep &&
+    !isActiveTicketForCurrentStep &&
+    allEventRequirementsChecked &&
+    (!priority || priorityReason.trim().length > 0) &&
+    !submitting;
+
+  const joinEventQueue = async () => {
+    if (!currentStep) return;
+
+    if (isActiveTicketForCurrentStep) {
+      Alert.alert('Error', 'You already have an active queue for this step.');
+      return;
+    }
+
+    if (office?.priorityEnabled && priority && !priorityReason.trim()) {
+      Alert.alert('Error', 'Please enter a reason for priority lane.');
+      return;
+    }
+
+    if (!allEventRequirementsChecked) {
+      Alert.alert('Error', 'Please confirm all requirements are met before joining the queue.');
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+
+      const response = await fetch(`${API_BASE}/office-queue.php`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'event',
+          student_id: studentId,
+          event_id: eventId,
+          event_step_id: currentStep.id,
+          priority: office?.priorityEnabled ? priority : false,
+          priority_reason: office?.priorityEnabled ? priorityReason : '',
+          req_check: checkedEventReqIds,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setQueueNumber(data.queue_number || '');
+        setAssignedWindow(data.window_name || 'Not Assigned');
+
+        // Refresh immediately so eventActiveTicket/currentStep reflect
+        // the ticket we just created right away — otherwise the Join
+        // button and banner would keep showing the pre-join state
+        // until the next 8s poll (or a manual reload) picks it up.
+        await fetchEventDetail({ silent: true });
+        setPriority(false);
+        setPriorityReason('');
+
+        setShowSuccessModal(true);
+      } else {
+        Alert.alert('Error', data.message);
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Unable to join queue');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -383,9 +716,187 @@ export default function OfficeQueue() {
 
   return (
     <View style={styles.container}>
-      <AppHeader title={`${office.name} Queue`} />
+      <AppHeader title={isEventMode ? (eventInfo?.name ?? 'Event Queue') : `${office.name} Queue`} />
 
       <ScrollView contentContainerStyle={styles.content}>
+        {isEventMode ? (
+          loadingEvent ? (
+            <View style={styles.eventLoadingBox}>
+              <ActivityIndicator size="large" color={COLORS.primary} />
+            </View>
+          ) : eventCompleted ? (
+            <View style={styles.eventCard}>
+              <Text style={styles.eventCardStepTitle}>All steps completed 🎉</Text>
+              <Text style={styles.eventCardDescription}>
+                You've finished every step of {eventInfo?.name}.
+              </Text>
+              <TouchableOpacity
+                style={styles.modalButton}
+                onPress={() => router.replace('/student/home')}
+              >
+                <Text style={styles.modalButtonText}>Back to Dashboard</Text>
+              </TouchableOpacity>
+            </View>
+          ) : currentStep ? (
+            <View style={styles.eventCard}>
+              <Text style={styles.eventCardName}>{eventInfo?.name}</Text>
+              {!!eventInfo?.description && (
+                <Text style={styles.eventCardDescription}>{eventInfo.description}</Text>
+              )}
+
+              {isViewingCurrentStep && isActiveTicketForCurrentStep && (
+                <View style={styles.eventStepBadge}>
+                  <Text style={styles.eventStepBadgeText}>Current Step Ongoing</Text>
+                </View>
+              )}
+
+              {isFutureStep && (
+                <View style={styles.eventStepBadge}>
+                  <Text style={styles.eventStepBadgeText}>Complete the Current Queue</Text>
+                </View>
+              )}
+
+              {!isViewingCurrentStep && !isFutureStep && (
+                <View style={styles.eventStepBadgeFinished}>
+                  <Text style={styles.eventStepBadgeTextFinished}>Finished Queue</Text>
+                </View>
+              )}
+
+              <StepIndicator
+                current={(viewIndex ?? currentStepIndex ?? 0) + 1}
+                steps={eventSteps.map((s) => ({ label: s.title }))}
+              />
+
+              <Text style={styles.eventCardStepTitle}>{viewStep?.title}</Text>
+              {!!viewStep?.description && (
+                <Text style={styles.eventCardDescription}>{viewStep.description}</Text>
+              )}
+              <Text style={styles.eventCardOffice}>at {viewStep?.office_name}</Text>
+
+              {!isViewingCurrentStep && !isFutureStep && (
+                <Text style={styles.eventDocNoReq}>
+                  Viewing a previous step. Tap Next to return to your current step.
+                </Text>
+              )}
+
+              {!!viewStep && viewStep.documents.length > 0 && (
+                <View style={styles.eventDocsBox}>
+                  <Text style={styles.eventDocsLabel}>Please confirm you have these ready</Text>
+
+                  {viewStep.documents.map((doc) => (
+                    <View key={doc.document_id} style={styles.eventDocGroup}>
+                      <Text style={styles.eventDocName}>
+                        {doc.name}
+                        {doc.quantity > 1 ? ` (x${doc.quantity})` : ''}
+                      </Text>
+
+                      {(doc.requirements ?? []).length === 0 ? (
+                        <Text style={styles.eventDocNoReq}>No additional requirements.</Text>
+                      ) : (
+                        doc.requirements.map((req) => {
+                          const checked = canEditEventRequirements
+                            ? checkedEventReqIds.includes(req.id)
+                            : isDoneEventStep;
+                          return (
+                            <TouchableOpacity
+                              key={req.id}
+                              style={styles.eventReqRow}
+                              activeOpacity={canEditEventRequirements ? 0.7 : 1}
+                              disabled={!canEditEventRequirements}
+                              onPress={() => toggleEventRequirement(req.id)}
+                            >
+                              <View
+                                style={[
+                                  styles.eventCheckbox,
+                                  checked && styles.eventCheckboxChecked,
+                                  !canEditEventRequirements && styles.eventCheckboxDisabled,
+                                ]}
+                              >
+                                {checked && <Text style={styles.eventCheckMark}>✓</Text>}
+                              </View>
+                              <Text style={styles.eventReqText}>{req.requirement}</Text>
+                            </TouchableOpacity>
+                          );
+                        })
+                      )}
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {isViewingCurrentStep && office.priorityEnabled && (
+                <View style={styles.eventPriorityBox}>
+                  <TouchableOpacity
+                    style={styles.eventReqRow}
+                    activeOpacity={0.7}
+                    onPress={() => setPriority(!priority)}
+                  >
+                    <View
+                      style={[styles.eventCheckbox, priority && styles.eventCheckboxChecked]}
+                    >
+                      {priority && <Text style={styles.eventCheckMark}>✓</Text>}
+                    </View>
+                    <Text style={styles.eventReqText}>
+                      Priority Lane (PWD, pregnant, or senior citizen)
+                    </Text>
+                  </TouchableOpacity>
+
+                  {priority && (
+                    <TextInput
+                      style={styles.eventPriorityInput}
+                      placeholder="Reason for priority"
+                      placeholderTextColor={COLORS.gray}
+                      value={priorityReason}
+                      onChangeText={setPriorityReason}
+                    />
+                  )}
+                </View>
+              )}
+
+              <View style={styles.eventStepActions}>
+                {showJoinEventButton ? (
+                  <TouchableOpacity
+                    style={[styles.eventNextButton, !canJoinEventQueue && styles.eventSubmitButtonDisabled]}
+                    disabled={!canJoinEventQueue}
+                    onPress={joinEventQueue}
+                  >
+                    <Text style={styles.modalButtonText}>
+                      {submitting ? 'Joining…' : 'Confirm & Join Queue'}
+                    </Text>
+                  </TouchableOpacity>
+                ) : (
+                  showNextEventButton && (
+                    <TouchableOpacity
+                      style={styles.eventNextButton}
+                      onPress={goToNextEventStep}
+                    >
+                      <Text style={styles.modalButtonText}>Next</Text>
+                    </TouchableOpacity>
+                  )
+                )}
+                {canGoBackEventStep && (
+                  <TouchableOpacity
+                    style={styles.eventBackButton}
+                    onPress={goToPreviousEventStep}
+                  >
+                    <Text style={styles.eventBackButtonText}>Back</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          ) : (
+            <View style={styles.eventCard}>
+              <Text style={styles.eventCardStepTitle}>No steps configured for this event.</Text>
+              <TouchableOpacity
+                style={styles.modalButton}
+                onPress={() => router.replace('/student/home')}
+              >
+                <Text style={styles.modalButtonText}>Back to Dashboard</Text>
+              </TouchableOpacity>
+            </View>
+          )
+        ) : (
+        <>
         <StepIndicator current={step} />
 
         {step === 1 && (
@@ -443,12 +954,16 @@ export default function OfficeQueue() {
             submitting={submitting}
           />
         )}
+        </>
+        )}
       </ScrollView>
 
       <Modal visible={showSuccessModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>You're in the queue!</Text>
+            <Text style={styles.modalTitle}>
+              {isEventMode ? "Step joined!" : "You're in the queue!"}
+            </Text>
 
             {!!queueNumber && (
               <Text style={styles.queueNumberText}>{queueNumber}</Text>
@@ -458,7 +973,9 @@ export default function OfficeQueue() {
             <Text style={styles.windowText}>{assignedWindow}</Text>
 
             <Text style={styles.modalSubtitle}>
-              Your request has been submitted to {office.name}.
+              {isEventMode
+                ? `Your request for "${currentStep?.title ?? 'this step'}" has been submitted to ${currentStep?.office_name ?? eventInfo?.name}.`
+                : `Your request has been submitted to ${office.name}.`}
             </Text>
 
             <TouchableOpacity
@@ -551,5 +1068,249 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '700',
+  },
+
+  // ── Event mode ──
+  eventLoadingBox: {
+    paddingVertical: 60,
+    alignItems: 'center',
+  },
+
+  eventCard: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 20,
+  },
+
+  eventActiveTicketBanner: {
+    backgroundColor: '#F8F8F8',
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 12,
+    marginBottom: 4,
+    alignItems: 'center',
+  },
+
+  eventActiveTicketLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.secondary,
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+
+  eventCardName: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: COLORS.primary,
+    marginBottom: 4,
+  },
+
+  eventCardDescription: {
+    fontSize: 13,
+    color: COLORS.gray,
+    marginBottom: 10,
+    lineHeight: 19,
+  },
+
+  eventStepBadge: {
+    alignSelf: 'center',
+    backgroundColor: COLORS.primarySoft,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    marginBottom: 10,
+  },
+
+  eventStepBadgeFinished: {
+    alignSelf: 'center',
+    backgroundColor: '#DCFCE7',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    marginBottom: 10,
+  },
+
+  eventStepBadgeTextFinished: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#22C55E',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+
+  eventStepBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.primary,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+
+  eventCardStepTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.secondary,
+    marginBottom: 2,
+  },
+
+  eventCardOffice: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.gray,
+    marginBottom: 16,
+  },
+
+  eventDocsBox: {
+    marginBottom: 16,
+  },
+
+  eventDocsLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.secondary,
+    marginBottom: 10,
+  },
+
+  eventDocGroup: {
+    marginBottom: 14,
+  },
+
+  eventDocName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.primary,
+    marginBottom: 6,
+  },
+
+  eventDocNoReq: {
+    fontSize: 12,
+    color: COLORS.gray,
+    fontStyle: 'italic',
+  },
+
+  eventReqRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 7,
+  },
+
+  eventCheckbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    borderColor: '#ddd',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+
+  eventCheckboxChecked: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+
+  eventCheckboxDisabled: {
+    opacity: 0.6,
+  },
+
+  eventCheckMark: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  eventReqText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.secondary,
+  },
+
+  eventPriorityBox: {
+    backgroundColor: '#F8F8F8',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 20,
+  },
+
+  eventPriorityInput: {
+    marginTop: 8,
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 13,
+    color: COLORS.secondary,
+  },
+
+  eventSubmitButton: {
+    backgroundColor: COLORS.primary,
+    paddingVertical: 15,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+
+  eventSubmitButtonDisabled: {
+    opacity: 0.6,
+  },
+
+  eventStepActions: {
+    flexDirection: 'column',
+    gap: 12,
+    marginTop: 8,
+  },
+
+  eventBackButton: {
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+
+  eventBackButtonText: {
+    color: COLORS.secondary,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+
+  eventNextButton: {
+    backgroundColor: COLORS.primary,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+
+  eventReviewCard: {
+    backgroundColor: '#F8F8F8',
+    borderRadius: 14,
+    padding: 12,
+    marginTop: 14,
+    marginBottom: 8,
+  },
+
+  eventReviewRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 9,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+
+  modalRowLast: {
+    borderBottomWidth: 0,
+  },
+
+  eventReviewValue: {
+    flex: 1,
+    textAlign: 'right',
+    color: COLORS.secondary,
+    fontWeight: '700',
+    fontSize: 13,
   },
 });

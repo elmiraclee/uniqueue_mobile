@@ -1,4 +1,4 @@
-export const IP_ADDRESS = "192.168.50.6";
+export const IP_ADDRESS = "192.168.1.11";
 
 export const API_URL = `http://${IP_ADDRESS}/uniqueue_api`;
 
@@ -28,7 +28,7 @@ export const API = {
 
   //PROFILE.TSX
   getStudentProfile: `${API_URL}/get_student_profile.php`,
-
+  uploadProfilePicture:`${API_URL}/upload_profile_picture.php`,
   //HOME
    getCurrentQueue: `${API_URL}/get_current_queue.php`,
    cancelQueue: `${API_URL}/cancel_queue.php`,
@@ -37,8 +37,15 @@ export const API = {
   //LIVE QUEUE
   getLiveQueue: `${API_URL}/get_live_queue.php`,
 
+  //FEEDBACK
+  getPendingFeedback: `${API_URL}/get_pending_feedback.php`,
+  submitFeedback: `${API_URL}/submit_feedback.php`,
 
-
-
+  //NOTIFICATIONS
+  // NOTE: filenames are singular ("notification", not "notifications")
+  // to match the files you actually have in uniqueue_api/.
+  checkNotifications: `${API_URL}/check_notification.php`,
+  getNotifications: `${API_URL}/get_notification.php`,
+  markNotificationsRead: `${API_URL}/mark_notification_read.php`,
 
 };

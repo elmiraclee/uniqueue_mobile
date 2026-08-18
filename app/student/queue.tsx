@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 
+import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { API } from '@/constants/backend';
@@ -24,6 +25,7 @@ interface Transaction {
   window_name: string | null;
 
   documents: string;
+  event_name: string | null;
 
   status: string;
   type: string;
@@ -34,6 +36,28 @@ interface Transaction {
   created_at: string;
   transaction_date: string;
   transaction_time: string;
+
+  // Star rating (1-5) the student gave this transaction, or null if
+  // it's completed but hasn't been rated yet.
+  feedback_rating: number | null;
+}
+
+// Renders a row of 5 stars, filling in `rating` of them. Used on both
+// the queue history card and inside the details modal.
+function StarRow({ rating, size = 14 }: { rating: number; size?: number }) {
+  return (
+    <View style={styles.starRow}>
+      {[1, 2, 3, 4, 5].map((star) => (
+        <Ionicons
+          key={star}
+          name={star <= rating ? 'star' : 'star-outline'}
+          size={size}
+          color={star <= rating ? COLORS.warning : COLORS.gray}
+          style={styles.starIcon}
+        />
+      ))}
+    </View>
+  );
 }
 
 const STATUS_STYLES: Record<string, { bg: string; text: string }> = {
@@ -52,15 +76,103 @@ const getStatusStyle = (status: string) => {
   return STATUS_STYLES[key] ?? { bg: '#F0F0F0', text: COLORS.gray };
 };
 
+type TypeFilter = 'all' | 'walkin' | 'appointment';
+type StatusFilter = 'all' | 'completed' | 'cancelled';
+
+const TYPE_OPTIONS: { value: TypeFilter; label: string }[] = [
+  { value: 'all', label: 'All Types' },
+  { value: 'walkin', label: 'Walk-in' },
+  { value: 'appointment', label: 'Appointment' },
+];
+
+const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
+  { value: 'all', label: 'All Status' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'cancelled', label: 'Cancelled' },
+];
+
+function FilterDropdown<T extends string>({
+  value,
+  options,
+  onChange,
+}: {
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (value: T) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = options.find((o) => o.value === value);
+
+  return (
+    <View style={styles.dropdownWrapper}>
+      <TouchableOpacity
+        style={[styles.dropdownTrigger, open && styles.dropdownTriggerOpen]}
+        onPress={() => setOpen(true)}
+        activeOpacity={0.85}
+      >
+        <Text style={styles.dropdownTriggerText} numberOfLines={1}>
+          {selected?.label}
+        </Text>
+        <Text style={styles.dropdownChevron}>{open ? '▲' : '▼'}</Text>
+      </TouchableOpacity>
+
+      <Modal
+        visible={open}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setOpen(false)}
+      >
+        <TouchableOpacity
+          style={styles.dropdownOverlay}
+          activeOpacity={1}
+          onPress={() => setOpen(false)}
+        >
+          <View style={styles.dropdownMenu}>
+            {options.map((option) => {
+              const isActive = option.value === value;
+              return (
+                <TouchableOpacity
+                  key={option.value}
+                  style={[
+                    styles.dropdownOption,
+                    isActive && styles.dropdownOptionActive,
+                  ]}
+                  onPress={() => {
+                    onChange(option.value);
+                    setOpen(false);
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.dropdownOptionText,
+                      isActive && styles.dropdownOptionTextActive,
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+
+                  {isActive && (
+                    <Text style={styles.dropdownCheck}>✓</Text>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+    </View>
+  );
+}
+
 export default function Queue() {
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const [filter, setFilter] = useState<
-    'all' | 'walkin' | 'appointment'
-  >('all');
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
+
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
   const [selectedTransaction, setSelectedTransaction] =
     useState<Transaction | null>(null);
@@ -118,12 +230,25 @@ export default function Queue() {
     fetchTransactions();
   }, []);
 
-  const filteredTransactions =
-    filter === 'all'
-      ? transactions
-      : transactions.filter(
-          item => item.type === filter
-        );
+  const filteredTransactions = transactions.filter(item => {
+
+    const typeMatch =
+      typeFilter === 'all'
+        ? true
+        : item.type === typeFilter;
+
+    const status = item.status.toLowerCase();
+
+    const statusMatch =
+      statusFilter === 'all'
+        ? true
+        : statusFilter === 'completed'
+          ? status === 'completed' || status === 'done'
+          : status === 'cancelled' || status === 'canceled';
+
+    return typeMatch && statusMatch;
+
+  });
 
   const formatDate = (date: string) => {
     return new Date(date).toLocaleDateString(undefined, {
@@ -131,6 +256,13 @@ export default function Queue() {
       day: 'numeric',
       year: 'numeric',
     });
+  };
+
+  const getDocumentList = (documents: string) => {
+    return (documents || '')
+      .split(',')
+      .map((doc) => doc.trim())
+      .filter(Boolean);
   };
 
   const formatTime = (time: string) => {
@@ -145,12 +277,6 @@ export default function Queue() {
         minute: '2-digit',
       });
 
-  };
-
-  const counts = {
-    all: transactions.length,
-    walkin: transactions.filter(t => t.type === 'walkin').length,
-    appointment: transactions.filter(t => t.type === 'appointment').length,
   };
 
   if (loading) {
@@ -184,107 +310,18 @@ export default function Queue() {
         }
       >
 
-        <View style={styles.filterContainer}>
+        <View style={styles.filterRow}>
+          <FilterDropdown
+            value={typeFilter}
+            options={TYPE_OPTIONS}
+            onChange={setTypeFilter}
+          />
 
-          <TouchableOpacity
-            style={[
-              styles.filterButton,
-              filter === 'all' && styles.filterActive,
-            ]}
-            onPress={() => setFilter('all')}
-            activeOpacity={0.8}
-          >
-            <Text
-              style={[
-                styles.filterText,
-                filter === 'all' && styles.filterTextActive,
-              ]}
-            >
-              All
-            </Text>
-            <View
-              style={[
-                styles.filterBadge,
-                filter === 'all' && styles.filterBadgeActive,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.filterBadgeText,
-                  filter === 'all' && styles.filterBadgeTextActive,
-                ]}
-              >
-                {counts.all}
-              </Text>
-            </View>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.filterButton,
-              filter === 'walkin' && styles.filterActive,
-            ]}
-            onPress={() => setFilter('walkin')}
-            activeOpacity={0.8}
-          >
-            <Text
-              style={[
-                styles.filterText,
-                filter === 'walkin' && styles.filterTextActive,
-              ]}
-            >
-              Walk-in
-            </Text>
-            <View
-              style={[
-                styles.filterBadge,
-                filter === 'walkin' && styles.filterBadgeActive,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.filterBadgeText,
-                  filter === 'walkin' && styles.filterBadgeTextActive,
-                ]}
-              >
-                {counts.walkin}
-              </Text>
-            </View>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.filterButton,
-              filter === 'appointment' && styles.filterActive,
-            ]}
-            onPress={() => setFilter('appointment')}
-            activeOpacity={0.8}
-          >
-            <Text
-              style={[
-                styles.filterText,
-                filter === 'appointment' && styles.filterTextActive,
-              ]}
-            >
-              Appointment
-            </Text>
-            <View
-              style={[
-                styles.filterBadge,
-                filter === 'appointment' && styles.filterBadgeActive,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.filterBadgeText,
-                  filter === 'appointment' && styles.filterBadgeTextActive,
-                ]}
-              >
-                {counts.appointment}
-              </Text>
-            </View>
-          </TouchableOpacity>
-
+          <FilterDropdown
+            value={statusFilter}
+            options={STATUS_OPTIONS}
+            onChange={setStatusFilter}
+          />
         </View>
 
         {filteredTransactions.length === 0 ? (
@@ -299,7 +336,7 @@ export default function Queue() {
             </Text>
 
             <Text style={styles.emptySubtitle}>
-              No completed transactions found{filter !== 'all' ? ` for ${filter === 'walkin' ? 'walk-in' : 'appointment'} queues` : ''}.
+              No matching queue history found.
             </Text>
           </View>
 
@@ -330,26 +367,32 @@ export default function Queue() {
                     </Text>
                   </View>
 
-                  <View
-                    style={[
-                      styles.statusBadge,
-                      { backgroundColor: statusStyle.bg },
-                    ]}
-                  >
+                  <View style={styles.cardRight}>
                     <View
                       style={[
-                        styles.statusDot,
-                        { backgroundColor: statusStyle.text },
-                      ]}
-                    />
-                    <Text
-                      style={[
-                        styles.statusBadgeText,
-                        { color: statusStyle.text },
+                        styles.statusBadge,
+                        { backgroundColor: statusStyle.bg },
                       ]}
                     >
-                      {item.status?.toUpperCase()}
-                    </Text>
+                      <View
+                        style={[
+                          styles.statusDot,
+                          { backgroundColor: statusStyle.text },
+                        ]}
+                      />
+                      <Text
+                        style={[
+                          styles.statusBadgeText,
+                          { color: statusStyle.text },
+                        ]}
+                      >
+                        {item.status?.toUpperCase()}
+                      </Text>
+                    </View>
+
+                    {!!item.feedback_rating && (
+                      <StarRow rating={item.feedback_rating} size={11} />
+                    )}
                   </View>
                 </View>
 
@@ -363,7 +406,7 @@ export default function Queue() {
 
                     {isPriority && (
                       <View style={styles.priorityPill}>
-                        <Text style={styles.priorityPillText}>Priority</Text>
+                        <Text style={styles.priorityPillText}>PRIORITY</Text>
                       </View>
                     )}
                   </View>
@@ -439,10 +482,7 @@ export default function Queue() {
                     </View>
                   </View>
 
-                  <ScrollView
-                    style={styles.modalScroll}
-                    showsVerticalScrollIndicator={false}
-                  >
+                  <View>
                     <View style={styles.modalRow}>
                       <Text style={styles.modalLabel}>
                         Office
@@ -463,15 +503,50 @@ export default function Queue() {
                       </Text>
                     </View>
 
-                    <View style={styles.modalRow}>
-                      <Text style={styles.modalLabel}>
-                        Documents
-                      </Text>
+                    {!!selectedTransaction.feedback_rating && (
+                      <View style={styles.modalRow}>
+                        <Text style={styles.modalLabel}>
+                          Your Rating
+                        </Text>
 
-                      <Text style={styles.modalValue}>
-                        {selectedTransaction.documents}
-                      </Text>
-                    </View>
+                        <View style={styles.modalValueStarWrap}>
+                          <StarRow rating={selectedTransaction.feedback_rating} size={16} />
+                        </View>
+                      </View>
+                    )}
+
+                    {getDocumentList(selectedTransaction.documents).length > 0 ? (
+                      <View style={styles.modalSection}>
+                        <Text style={styles.modalSectionLabel}>
+                          Documents Requested
+                        </Text>
+
+                        <View style={styles.documentsList}>
+                          {getDocumentList(selectedTransaction.documents).map(
+                            (doc, index) => (
+                              <View key={index} style={styles.documentItem}>
+                                <View style={styles.documentIndex}>
+                                  <Text style={styles.documentIndexText}>
+                                    {index + 1}
+                                  </Text>
+                                </View>
+                                <Text style={styles.documentText}>{doc}</Text>
+                              </View>
+                            )
+                          )}
+                        </View>
+                      </View>
+                    ) : selectedTransaction.event_name ? (
+                      <View style={styles.modalRow}>
+                        <Text style={styles.modalLabel}>
+                          Event
+                        </Text>
+
+                        <Text style={styles.modalValue}>
+                          {selectedTransaction.event_name}
+                        </Text>
+                      </View>
+                    ) : null}
 
                     <View style={styles.modalRow}>
                       <Text style={styles.modalLabel}>
@@ -527,7 +602,7 @@ export default function Queue() {
                         {formatTime(selectedTransaction.transaction_time)}
                       </Text>
                     </View>
-                  </ScrollView>
+                  </View>
 
                 </>
               )}
@@ -585,63 +660,87 @@ const styles = StyleSheet.create({
 
   // ----- Filters -----
 
-  filterContainer: {
+  filterRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 22,
     gap: 10,
+    marginBottom: 16,
   },
 
-  filterButton: {
+  dropdownWrapper: {
     flex: 1,
+  },
+
+  dropdownTrigger: {
     flexDirection: 'row',
-    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 11,
+    paddingHorizontal: 14,
     borderRadius: 12,
     backgroundColor: '#F3F3F3',
-    alignItems: 'center',
-    justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#E5E5E5',
-    gap: 6,
   },
 
-  filterActive: {
-    backgroundColor: COLORS.primary,
+  dropdownTriggerOpen: {
     borderColor: COLORS.primary,
   },
 
-  filterText: {
-    color: COLORS.gray,
+  dropdownTriggerText: {
+    color: COLORS.secondary,
     fontWeight: '600',
     fontSize: 13,
+    flexShrink: 1,
   },
 
-  filterTextActive: {
-    color: '#fff',
-  },
-
-  filterBadge: {
-    minWidth: 20,
-    height: 20,
-    paddingHorizontal: 5,
-    borderRadius: 10,
-    backgroundColor: '#E5E5E5',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  filterBadgeActive: {
-    backgroundColor: 'rgba(255,255,255,0.25)',
-  },
-
-  filterBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
+  dropdownChevron: {
+    fontSize: 10,
     color: COLORS.gray,
+    marginLeft: 8,
   },
 
-  filterBadgeTextActive: {
-    color: '#fff',
+  dropdownOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 30,
+  },
+
+  dropdownMenu: {
+    width: '100%',
+    maxWidth: 300,
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    paddingVertical: 6,
+    overflow: 'hidden',
+  },
+
+  dropdownOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 13,
+    paddingHorizontal: 16,
+  },
+
+  dropdownOptionActive: {
+    backgroundColor: '#fdf5f5',
+  },
+
+  dropdownOptionText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.secondary,
+  },
+
+  dropdownOptionTextActive: {
+    color: COLORS.primary,
+  },
+
+  dropdownCheck: {
+    color: COLORS.primary,
+    fontWeight: '700',
   },
 
   // ----- Empty state -----
@@ -690,9 +789,9 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: COLORS.white,
     borderRadius: 16,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    marginBottom: 10,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    marginBottom: 8,
     borderWidth: 1,
     borderColor: '#ECECEC',
     shadowColor: '#000',
@@ -717,13 +816,32 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 6,
+  },
+
+  cardRight: {
+    alignItems: 'flex-end',
+    gap: 6,
+  },
+
+  starRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  starIcon: {
+    marginRight: 2,
+  },
+
+  modalValueStarWrap: {
+    flex: 1,
+    alignItems: 'flex-end',
   },
 
   chipRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 5,
   },
 
   cardMeta: {
@@ -735,10 +853,10 @@ const styles = StyleSheet.create({
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderRadius: 20,
-    gap: 6,
+    gap: 5,
   },
 
   statusDot: {
@@ -756,7 +874,7 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '800',
     color: COLORS.primary,
-    marginBottom: 2,
+    marginBottom: 1,
   },
 
   office: {
@@ -767,8 +885,8 @@ const styles = StyleSheet.create({
 
   typeChip: {
     alignSelf: 'flex-start',
-    paddingHorizontal: 9,
-    paddingVertical: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
     borderRadius: 7,
     backgroundColor: '#F3F3F3',
   },
@@ -781,16 +899,16 @@ const styles = StyleSheet.create({
 
   priorityPill: {
     alignSelf: 'flex-start',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
     borderRadius: 7,
-    backgroundColor: '#FBE8E8',
+    backgroundColor: COLORS.primarySoft,
   },
 
   priorityPillText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#D3453B',
+    color: COLORS.primaryDark,
   },
 
   // ----- Modal -----
@@ -805,7 +923,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    padding: 22,
+    padding: 18,
     maxHeight: '85%',
   },
 
@@ -815,15 +933,15 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     backgroundColor: '#E5E5E5',
     alignSelf: 'center',
-    marginBottom: 14,
+    marginBottom: 10,
   },
 
   modalTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
     color: COLORS.primary,
     textAlign: 'center',
-    marginBottom: 18,
+    marginBottom: 12,
   },
 
   modalHeroRow: {
@@ -832,24 +950,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#F8F8F8',
     borderRadius: 14,
-    padding: 16,
-    marginBottom: 14,
+    padding: 12,
+    marginBottom: 10,
   },
 
   modalHeroQueueNumber: {
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: '700',
     color: COLORS.primary,
-  },
-
-  modalScroll: {
-    maxHeight: 340,
   },
 
   modalRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 11,
+    paddingVertical: 9,
     borderBottomWidth: 1,
     borderBottomColor: '#F0F0F0',
   },
@@ -862,7 +976,7 @@ const styles = StyleSheet.create({
     width: '40%',
     color: COLORS.gray,
     fontWeight: '600',
-    fontSize: 14,
+    fontSize: 13,
   },
 
   modalValue: {
@@ -870,13 +984,64 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     color: COLORS.secondary,
     fontWeight: '700',
-    fontSize: 14,
+    fontSize: 13,
+  },
+
+  // ----- Documents list (inside modal) -----
+
+  modalSection: {
+    paddingVertical: 9,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+
+  modalSectionLabel: {
+    color: COLORS.gray,
+    fontWeight: '600',
+    fontSize: 13,
+    marginBottom: 8,
+  },
+
+  documentsList: {
+    gap: 6,
+  },
+
+  documentItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8F8F8',
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    gap: 8,
+  },
+
+  documentIndex: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  documentIndexText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#fff',
+  },
+
+  documentText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.secondary,
   },
 
   closeButton: {
-    marginTop: 18,
+    marginTop: 14,
     backgroundColor: COLORS.primary,
-    paddingVertical: 14,
+    paddingVertical: 13,
     borderRadius: 12,
     alignItems: 'center',
   },

@@ -1,11 +1,11 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
-    ActivityIndicator,
-    FlatList,
-    SafeAreaView,
-    StyleSheet,
-    Text,
-    View,
+  ActivityIndicator,
+  FlatList,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
 
 import { router, useLocalSearchParams } from "expo-router";
@@ -14,11 +14,11 @@ import AppHeader from "@/components/layout/app-header";
 import { API } from "@/constants/backend";
 
 import {
-    COLORS,
-    RADIUS,
-    SHADOWS,
-    SPACING,
-    TYPOGRAPHY,
+  COLORS,
+  RADIUS,
+  SHADOWS,
+  SPACING,
+  TYPOGRAPHY,
 } from "@/constants/theme";
 
 interface QueueItem {
@@ -94,6 +94,37 @@ const loadQueue = async () => {
     return () => clearInterval(interval);
   }, []);
 
+  const queueList = liveQueue?.queue_list ?? [];
+
+  // Base sa eksaktong enum ng `status` column sa `queue_tickets` table:
+  // 'waiting', 'called', 'in_progress', 'completed', 'cancelled'
+  const STATUS_PRIORITY: Record<string, number> = {
+    in_progress: 0, // kasalukuyang pinapapasok — laging nasa taas
+    called: 1,      // sunod na tatawagin / papasok
+    waiting: 2,     // naghihintay pa sa likod
+    completed: 3,   // tapos na
+    cancelled: 4,   // kinansela
+  };
+
+  const getStatusPriority = (status: string) => {
+    const key = status.toLowerCase().trim();
+    return key in STATUS_PRIORITY ? STATUS_PRIORITY[key] : 2.5; // fallback kung may bagong status na hindi pa listed
+  };
+
+  // Re-sort tuwing may bagong data mula sa polling (loadQueue every 3s) —
+  // kaya kahit walang reload, automatic na naaayos ang pagkakasunod-sunod.
+  // NOTE: itong useMemo ay dapat palaging tumakbo bago ang anumang early
+  // return (tulad ng loading check sa ibaba), para consistent lagi ang
+  // bilang ng hooks sa bawat render — kung hindi, "Rendered more hooks
+  // than during the previous render" ang lalabas.
+  const sortedQueueList = useMemo(() => {
+    return [...queueList].sort((a, b) => {
+      const priorityDiff = getStatusPriority(a.status) - getStatusPriority(b.status);
+      if (priorityDiff !== 0) return priorityDiff;
+      return 0; // stable sort — mananatili ang orihinal na pagkakasunod-sunod kapag parehong priority
+    });
+  }, [queueList]);
+
   if (loading) {
     return (
       <SafeAreaView style={styles.safeArea}>
@@ -106,8 +137,6 @@ const loadQueue = async () => {
       </SafeAreaView>
     );
   }
-
-  const queueList = liveQueue?.queue_list ?? [];
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -183,7 +212,7 @@ const loadQueue = async () => {
         {/* Queue list header */}
         <View style={styles.listHeaderRow}>
           <Text style={styles.sectionTitle}>Live Queue</Text>
-          <Text style={styles.listCount}>{queueList.length} in line</Text>
+          <Text style={styles.listCount}>{sortedQueueList.length} in line</Text>
         </View>
 
       </View>
@@ -192,7 +221,7 @@ const loadQueue = async () => {
       <FlatList
         style={styles.list}
         contentContainerStyle={styles.listContent}
-        data={queueList}
+        data={sortedQueueList}
         keyExtractor={(item) => item.id.toString()}
         showsVerticalScrollIndicator={false}
         renderItem={({ item }) => (

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Modal, StyleSheet, View } from 'react-native';
 
 import { API } from '@/constants/backend';
@@ -14,6 +14,7 @@ interface Props {
   studentId: number;
   onClose: () => void;
   onCancelled: () => void;
+  onCompleted?: () => void;
 }
 
 interface QueueDetails {
@@ -26,19 +27,33 @@ interface QueueDetails {
   window_name?: string | null;
   people_ahead: number;
   documents: { name: string; quantity: number }[];
+  event_step_title?: string | null;
+  event_name?: string | null;
+  priority?: number | boolean;
+  priority_reason?: string | null;
 }
 
-export default function CurrentQueueModal({ visible, studentId, onClose, onCancelled }: Props) {
+export default function CurrentQueueModal({ visible, studentId, onClose, onCancelled, onCompleted }: Props) {
   const [loading, setLoading] = useState(false);
   const [queue, setQueue] = useState<QueueDetails | null>(null);
+  const queueRef = useRef<QueueDetails | null>(null);
 
   useEffect(() => {
-    if (visible) loadQueue();
+    if (!visible) return;
+
+    loadQueue();
+
+    // Keep polling in the background while the modal is open so we can
+    // notice on our own when the ticket wraps up (marked done on the
+    // backend) and dissolve the modal instead of leaving it stuck open.
+    const interval = setInterval(() => loadQueue(true), 5000);
+
+    return () => clearInterval(interval);
   }, [visible]);
 
-  const loadQueue = async () => {
+  const loadQueue = async (silent: boolean = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
 
       const response = await fetch(API.getQueueDetails, {
         method: 'POST',
@@ -50,15 +65,28 @@ export default function CurrentQueueModal({ visible, studentId, onClose, onCance
 
       if (data.success) {
         setQueue(data.queue);
+        queueRef.current = data.queue;
       } else {
-        Alert.alert('Error', data.message);
+        const hadActiveQueue = queueRef.current !== null;
+
         setQueue(null);
+        queueRef.current = null;
+
+        if (hadActiveQueue) {
+          // The ticket we were showing is no longer active (it was
+          // completed, cleared, etc. on the backend) — dissolve the
+          // modal on its own rather than leaving stale details on screen.
+          onClose();
+          (onCompleted ?? onCancelled)();
+        } else if (!silent) {
+          Alert.alert('Error', data.message);
+        }
       }
     } catch (error) {
       console.log('QUEUE DETAILS ERROR:', error);
-      Alert.alert('Error', 'Unable to load queue details.');
+      if (!silent) Alert.alert('Error', 'Unable to load queue details.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -87,6 +115,7 @@ export default function CurrentQueueModal({ visible, studentId, onClose, onCance
 
       if (data.success) {
         Alert.alert('Success', data.message);
+        queueRef.current = null;
         onCancelled();
         onClose();
       } else {

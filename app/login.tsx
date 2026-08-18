@@ -2,8 +2,11 @@ import { useState } from 'react';
 import {
   Alert,
   Image,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -104,6 +107,16 @@ export default function Login() {
 
   return (
     <SafeAreaView style={styles.container}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
+      >
+      <ScrollView
+        contentContainerStyle={styles.scrollContainer}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
       <View style={styles.card}>
 
         <Image
@@ -140,12 +153,14 @@ export default function Login() {
         <Pressable
           onPress={() => router.push('/signup')}
         >
-          <Text style={styles.signup}>
-            Don't have an account? Sign Up
+          <Text style={styles.linkText}>
+            Don't have an account? <Text style={styles.linkTextStrong}>Sign Up</Text>
           </Text>
         </Pressable>
 
       </View>
+      </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -154,6 +169,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
+  },
+
+  scrollContainer: {
+    flexGrow: 1,
     justifyContent: 'center',
     padding: 15,
   },
@@ -162,6 +181,8 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     padding: 25,
     borderRadius: 20,
+    borderTopWidth: 3,
+    borderTopColor: COLORS.primary,
     elevation: 4,
   },
 
@@ -187,10 +208,14 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
 
-  signup: {
+  linkText: {
     textAlign: 'center',
     marginTop: 20,
+    color: COLORS.gray,
+    fontSize: 15,
+  },
+  linkTextStrong: {
     color: COLORS.primary,
-    fontWeight: '600',
+    fontWeight: '700',
   },
 });

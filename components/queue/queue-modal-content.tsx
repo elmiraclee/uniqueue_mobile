@@ -1,5 +1,5 @@
 import React from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import AnimatedPressable from '@/components/ui/animated-pressable';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,6 +17,10 @@ interface QueueDetails {
   window_name?: string | null;
   people_ahead: number;
   documents: { name: string; quantity: number }[];
+  event_step_title?: string | null;
+  event_name?: string | null;
+  priority?: number | boolean;
+  priority_reason?: string | null;
 }
 
 interface Props {
@@ -53,8 +57,19 @@ export default function QueueModalContent({ loading, queue, onCancel, onClose, o
     <View style={styles.content}>
       <Text style={styles.title}>Queue Details</Text>
 
-      <QueueDetailsCard queue={queue} />
-      <QueueDocumentsList documents={queue.documents} />
+      <ScrollView
+        style={styles.scrollArea}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+      >
+        <QueueDetailsCard queue={queue} />
+        <QueueDocumentsList
+          documents={queue.documents}
+          eventStepTitle={queue.event_step_title}
+          eventName={queue.event_name}
+        />
+      </ScrollView>
 
       <AnimatedPressable
         style={styles.liveQueueButton}
@@ -87,6 +102,12 @@ const styles = StyleSheet.create({
     padding: SPACING.lg,
     paddingTop: SPACING.sm,
     paddingBottom: SPACING.lg,
+  },
+  scrollArea: {
+    maxHeight: 420,
+  },
+  scrollContent: {
+    gap: SPACING.sm,
   },
   loadingContainer: {
     paddingVertical: 60,
