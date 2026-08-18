@@ -16,6 +16,7 @@ s.id,
 s.first_name,
 s.last_name,
 s.sr_code,
+s.picture,
 s.year_level,
 
 c.name AS college_name,

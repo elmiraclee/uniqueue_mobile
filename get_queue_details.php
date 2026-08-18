@@ -33,12 +33,16 @@ SELECT
     qt.queue_number,
     qt.status,
     qt.type,
+    qt.priority,
+    qt.event_step_title,
+    qt.priority_reason,
     qt.joined_at,
     qt.called_at,
     qt.done_at,
 
     o.name AS office_name,
-    w.name AS window_name
+    w.name AS window_name,
+    ev.name AS event_name
 
 FROM queue_tickets qt
 
@@ -47,6 +51,9 @@ INNER JOIN offices o
 
 LEFT JOIN windows w
     ON qt.window_id = w.id
+
+LEFT JOIN events ev
+    ON qt.event_id = ev.id
 
 WHERE
     qt.student_id = ?

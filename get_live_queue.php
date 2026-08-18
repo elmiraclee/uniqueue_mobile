@@ -139,7 +139,9 @@ FROM queue_tickets qt
 WHERE
     qt.window_id = ?
 AND qt.status IN ('waiting','in_progress')
-ORDER BY qt.joined_at ASC
+ORDER BY
+    FIELD(qt.status, 'in_progress', 'waiting'),
+    qt.joined_at ASC
 ";
 
 $stmt = $conn->prepare($sql);

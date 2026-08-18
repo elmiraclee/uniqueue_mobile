@@ -41,6 +41,7 @@ SELECT
 
     o.name AS office_name,
     w.name AS window_name,
+    e.name AS event_name,
 
     GROUP_CONCAT(
         CONCAT(
@@ -50,7 +51,9 @@ SELECT
             ')'
         )
         SEPARATOR ', '
-    ) AS documents
+    ) AS documents,
+
+    f.rating AS feedback_rating
 
 FROM queue_tickets qt
 
@@ -60,11 +63,17 @@ INNER JOIN offices o
 LEFT JOIN windows w
     ON qt.window_id = w.id
 
+LEFT JOIN events e
+    ON qt.event_id = e.id
+
 LEFT JOIN queue_ticket_document qtd
     ON qt.id = qtd.ticket_id
 
 LEFT JOIN documents d
     ON qtd.document_id = d.id
+
+LEFT JOIN feedbacks f
+    ON f.ticket_id = qt.id
 
 WHERE qt.student_id = ?
 AND qt.status IN ('completed', 'cancelled')
@@ -100,6 +109,7 @@ $transactions = [];
 while ($row = $result->fetch_assoc()) {
 
     $row["priority"] = (int)$row["priority"];
+    $row["feedback_rating"] = $row["feedback_rating"] !== null ? (int)$row["feedback_rating"] : null;
 
     $transactions[] = $row;
 }
