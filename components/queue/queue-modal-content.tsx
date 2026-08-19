@@ -5,7 +5,7 @@ import AnimatedPressable from '@/components/ui/animated-pressable';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, ICON_SIZES, RADIUS, SPACING, TYPOGRAPHY } from '../../constants/theme';
 import QueueDetailsCard from './queue-details-card';
-import QueueDocumentsList from './queue-document-list';
+import QueueServiceItemsList from './queue-service-items-list';
 
 interface QueueDetails {
   id: number;
@@ -16,7 +16,7 @@ interface QueueDetails {
   joined_at: string;
   window_name?: string | null;
   people_ahead: number;
-  documents: { name: string; quantity: number }[];
+  service_items: { name: string; quantity: number }[];
   event_step_title?: string | null;
   event_name?: string | null;
   priority?: number | boolean;
@@ -64,8 +64,8 @@ export default function QueueModalContent({ loading, queue, onCancel, onClose, o
         bounces={false}
       >
         <QueueDetailsCard queue={queue} />
-        <QueueDocumentsList
-          documents={queue.documents}
+        <QueueServiceItemsList
+          service_items={queue.service_items}
           eventStepTitle={queue.event_step_title}
           eventName={queue.event_name}
         />

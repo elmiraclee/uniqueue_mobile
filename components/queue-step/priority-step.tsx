@@ -21,7 +21,7 @@ interface Props {
 }
 
 // No longer its own step (no onNext/onBack, no Continue/Back buttons).
-// This now renders inline inside DocumentStep, right where documents
+// This now renders inline inside ServiceItemStep, right where service items
 // are being picked, since priority lane is just another attribute of
 // that same selection instead of a separate screen.
 export default function PriorityStep({

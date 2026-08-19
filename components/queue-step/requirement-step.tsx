@@ -9,21 +9,21 @@ import {
 
 import { COLORS } from '../../constants/theme';
 
-interface DocumentItem {
+interface ServiceItem {
   id: number;
   name: string;
   requirements: string[];
 }
 
 interface Props {
-  documents: DocumentItem[];
-  selectedDocuments: number[];
+  service_items: ServiceItem[];
+  selectedServiceItems: number[];
   checkedRequirements: string[];
   setCheckedRequirements: React.Dispatch<
     React.SetStateAction<string[]>
   >;
   // Appointment holders are verified via their physical Appointment Slip
-  // rather than the per-document requirements checklist, so this step
+  // rather than the per-service-item requirements checklist, so this step
   // shows a single mandatory checkbox for them instead — mirrors the
   // #apptRequirementBox vs #requirementsBox split in queue.php.
   queueType: 'walkin' | 'appointment';
@@ -34,8 +34,8 @@ interface Props {
 }
 
 export default function RequirementStep({
-  documents,
-  selectedDocuments,
+  service_items,
+  selectedServiceItems,
   checkedRequirements,
   setCheckedRequirements,
   queueType,
@@ -113,9 +113,9 @@ export default function RequirementStep({
 
   const requirements = [
     ...new Set(
-      documents
-        .filter((doc) => selectedDocuments.includes(doc.id))
-        .flatMap((doc) => doc.requirements)
+      service_items
+        .filter((item) => selectedServiceItems.includes(item.id))
+        .flatMap((item) => item.requirements)
     ),
   ];
 

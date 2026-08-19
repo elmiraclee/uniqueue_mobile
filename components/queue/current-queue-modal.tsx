@@ -26,7 +26,7 @@ interface QueueDetails {
   joined_at: string;
   window_name?: string | null;
   people_ahead: number;
-  documents: { name: string; quantity: number }[];
+  service_items: { name: string; quantity: number }[];
   event_step_title?: string | null;
   event_name?: string | null;
   priority?: number | boolean;

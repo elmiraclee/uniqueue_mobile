@@ -16,13 +16,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { API_URL } from '@/constants/backend';
 import AppHeader from '../../../components/layout/app-header';
-import DocumentStep from '../../../components/queue-step/document-step';
+import ServiceItemStep from '../../../components/queue-step/service-item-step';
 import QueueTypeStep from '../../../components/queue-step/queue-type-step';
 import RequirementStep from '../../../components/queue-step/requirement-step';
 import ReviewStep from '../../../components/queue-step/review-step';
 import { COLORS } from '../../../constants/theme';
 
-export interface Document {
+export interface ServiceItem {
   id: number;
   name: string;
   requirements: string[];
@@ -31,17 +31,17 @@ export interface Document {
 // ── OFFICE EVENT MODE ───────────────────────────────────────────────
 // When ?event_id=NN is present, the student is walking through an
 // office event (e.g. "Enrollment") instead of the regular walk-in/
-// appointment form. Each step names its own document(s) + requirement
+// appointment form. Each step names its own service item(s) + requirement
 // checklist and can route to a different office than the one the
 // event was launched from.
 export interface EventRequirement {
   id: number;
-  document_id: number;
+  service_item_id: number;
   requirement: string;
 }
 
-export interface EventStepDocument {
-  document_id: number;
+export interface EventStepServiceItem {
+  service_item_id: number;
   quantity: number;
   name: string;
   requirements: EventRequirement[];
@@ -55,7 +55,7 @@ export interface EventStep {
   office_id: number;
   office_name: string;
   office_slug: string;
-  documents: EventStepDocument[];
+  service_items: EventStepServiceItem[];
 }
 
 export interface EventInfo {
@@ -283,8 +283,8 @@ export default function OfficeQueue() {
   const [appointmentSlipConfirmed, setAppointmentSlipConfirmed] =
     useState(false);
 
-  const [documents, setDocuments] = useState<Document[]>([]);
-  const [selectedDocuments, setSelectedDocuments] = useState<number[]>([]);
+  const [serviceItems, setServiceItems] = useState<ServiceItem[]>([]);
+  const [selectedServiceItems, setSelectedServiceItems] = useState<number[]>([]);
   const [checkedRequirements, setCheckedRequirements] = useState<string[]>([]);
   const [quantities, setQuantities] = useState<Record<number, number>>({});
 
@@ -311,7 +311,7 @@ export default function OfficeQueue() {
 
   useEffect(() => {
     if (!office) return;
-    fetchDocuments(office.id);
+    fetchServiceItems(office.id);
   }, [office]);
 
   useEffect(() => {
@@ -387,15 +387,15 @@ export default function OfficeQueue() {
     }
   };
 
-  // DOCUMENTS — scoped to this office only, and used by both queue types.
-  const fetchDocuments = async (officeId: number) => {
+  // SERVICE ITEMS — scoped to this office only, and used by both queue types.
+  const fetchServiceItems = async (officeId: number) => {
     try {
       const response = await fetch(
-        `${API_BASE}/get_documents.php?office_id=${officeId}`
+        `${API_BASE}/get_service_items.php?office_id=${officeId}`
       );
       const data = await response.json();
       if (data.success) {
-        setDocuments(data.documents);
+        setServiceItems(data.service_items);
       }
     } catch (error) {
       console.log(error);
@@ -540,11 +540,11 @@ export default function OfficeQueue() {
     setCheckedEventReqIds([]);
   };
 
-  // Every requirement across every document this step needs — the
+  // Every requirement across every service item this step needs — the
   // student must check all of them before joining, mirrored server-
   // side in office-queue.php since this guard can be bypassed.
-  const stepRequirementIds = (viewStep?.documents ?? []).flatMap((d) =>
-    (d.requirements ?? []).map((r) => r.id)
+  const stepRequirementIds = (viewStep?.service_items ?? []).flatMap((item) =>
+    (item.requirements ?? []).map((r) => r.id)
   );
   const allEventRequirementsChecked =
     stepRequirementIds.length === 0 ||
@@ -624,7 +624,7 @@ export default function OfficeQueue() {
     setStep(1);
     setQueueType('walkin');
     setAppointmentSlipConfirmed(false);
-    setSelectedDocuments([]);
+    setSelectedServiceItems([]);
     setCheckedRequirements([]);
     setQuantities({});
     setPriority(false);
@@ -646,8 +646,8 @@ export default function OfficeQueue() {
       return;
     }
 
-    if (!selectedDocuments.length) {
-      Alert.alert('Error', 'Please select at least one document or service.');
+    if (!selectedServiceItems.length) {
+      Alert.alert('Error', 'Please select at least one service item or service.');
       return;
     }
 
@@ -664,8 +664,8 @@ export default function OfficeQueue() {
     try {
       setSubmitting(true);
 
-      const docs = selectedDocuments.map((id) => ({
-        document_id: id,
+      const items = selectedServiceItems.map((id) => ({
+        service_item_id: id,
         quantity: quantities[id] || 1,
       }));
 
@@ -680,7 +680,7 @@ export default function OfficeQueue() {
             queueType === 'appointment' ? appointmentSlipConfirmed : false,
           priority: office.priorityEnabled ? priority : false,
           priority_reason: office.priorityEnabled ? priorityReason : '',
-          documents: docs,
+          service_items: items,
         }),
       });
 
@@ -779,21 +779,21 @@ export default function OfficeQueue() {
                 </Text>
               )}
 
-              {!!viewStep && viewStep.documents.length > 0 && (
+              {!!viewStep && viewStep.service_items.length > 0 && (
                 <View style={styles.eventDocsBox}>
                   <Text style={styles.eventDocsLabel}>Please confirm you have these ready</Text>
 
-                  {viewStep.documents.map((doc) => (
-                    <View key={doc.document_id} style={styles.eventDocGroup}>
+                  {viewStep.service_items.map((item) => (
+                    <View key={item.service_item_id} style={styles.eventDocGroup}>
                       <Text style={styles.eventDocName}>
-                        {doc.name}
-                        {doc.quantity > 1 ? ` (x${doc.quantity})` : ''}
+                        {item.name}
+                        {item.quantity > 1 ? ` (x${item.quantity})` : ''}
                       </Text>
 
-                      {(doc.requirements ?? []).length === 0 ? (
+                      {(item.requirements ?? []).length === 0 ? (
                         <Text style={styles.eventDocNoReq}>No additional requirements.</Text>
                       ) : (
-                        doc.requirements.map((req) => {
+                        item.requirements.map((req) => {
                           const checked = canEditEventRequirements
                             ? checkedEventReqIds.includes(req.id)
                             : isDoneEventStep;
@@ -910,10 +910,10 @@ export default function OfficeQueue() {
         )}
 
         {step === 2 && (
-          <DocumentStep
-            documents={documents}
-            selectedDocuments={selectedDocuments}
-            setSelectedDocuments={setSelectedDocuments}
+          <ServiceItemStep
+            service_items={serviceItems}
+            selectedServiceItems={selectedServiceItems}
+            setSelectedServiceItems={setSelectedServiceItems}
             quantities={quantities}
             setQuantities={setQuantities}
             priority={priority}
@@ -928,8 +928,8 @@ export default function OfficeQueue() {
 
         {step === 3 && (
           <RequirementStep
-            documents={documents}
-            selectedDocuments={selectedDocuments}
+            service_items={serviceItems}
+            selectedServiceItems={selectedServiceItems}
             checkedRequirements={checkedRequirements}
             setCheckedRequirements={setCheckedRequirements}
             queueType={queueType}
@@ -944,8 +944,8 @@ export default function OfficeQueue() {
           <ReviewStep
             queueType={queueType}
             appointmentSlipConfirmed={appointmentSlipConfirmed}
-            documents={documents}
-            selectedDocuments={selectedDocuments}
+            service_items={serviceItems}
+            selectedServiceItems={selectedServiceItems}
             quantities={quantities}
             priority={priority}
             priorityReason={priorityReason}

@@ -9,7 +9,7 @@ import {
 
 import { COLORS } from '../../constants/theme';
 
-interface DocumentItem {
+interface ServiceItem {
   id: number;
   name: string;
   requirements: string[];
@@ -21,12 +21,12 @@ interface Props {
   // rather than a date picked here — this wizard doesn't collect an
   // appointment date at all.
   appointmentSlipConfirmed: boolean;
-  documents: DocumentItem[];
-  selectedDocuments: number[];
-  // Copies requested per document, keyed by document id. Set in
-  // DocumentStep alongside the selection itself.
+  service_items: ServiceItem[];
+  selectedServiceItems: number[];
+  // Copies requested per service item, keyed by service item id. Set in
+  // ServiceItemStep alongside the selection itself.
   quantities: Record<number, number>;
-  // Priority lane, chosen inline in DocumentStep. priorityReason is
+  // Priority lane, chosen inline in ServiceItemStep. priorityReason is
   // only meaningful when priority is true.
   priority: boolean;
   priorityReason: string;
@@ -53,8 +53,8 @@ function InfoRow({
 export default function ReviewStep({
   queueType,
   appointmentSlipConfirmed,
-  documents,
-  selectedDocuments,
+  service_items,
+  selectedServiceItems,
   quantities,
   priority,
   priorityReason,
@@ -119,26 +119,26 @@ export default function ReviewStep({
         </View>
       )}
 
-      {selectedDocuments.length > 0 && (
+      {selectedServiceItems.length > 0 && (
         <View style={styles.card}>
           <Text style={styles.sectionLabel}>
-            Documents / services requested
+            Service items / services requested
           </Text>
 
-          {documents
-            .filter((doc) =>
-              selectedDocuments.includes(doc.id)
+          {service_items
+            .filter((item) =>
+              selectedServiceItems.includes(item.id)
             )
-            .map((doc) => (
+            .map((item) => (
               <View
-                key={doc.id}
+                key={item.id}
                 style={styles.docRow}
               >
                 <Text style={styles.docName}>
-                  {doc.name}
+                  {item.name}
                 </Text>
                 <Text style={styles.docQty}>
-                  x{quantities[doc.id] || 1}
+                  x{quantities[item.id] || 1}
                 </Text>
               </View>
             ))}

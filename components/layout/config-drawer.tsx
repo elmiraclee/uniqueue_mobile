@@ -14,7 +14,7 @@ interface ConfigDrawerProps {
   activeScreen: string;
 
   onClose: () => void;
-  onDocumentPress: () => void;
+  onServiceItemPress: () => void;
   onWindowPress: () => void;
   onStaffPress: () => void;
   onCapacityPress: () => void;
@@ -26,7 +26,7 @@ export default function ConfigDrawer({
   activeScreen,
 
   onClose,
-  onDocumentPress,
+  onServiceItemPress,
   onWindowPress,
   onStaffPress,
   onCapacityPress,
@@ -52,23 +52,23 @@ export default function ConfigDrawer({
         {/* Nav items */}
         <View style={styles.navItems}>
 
-          {/* Document */}
+          {/* Service Item */}
           <Pressable
             style={[
               styles.item,
-              activeScreen === 'document' && styles.activeItem,
+              activeScreen === 'service-item' && styles.activeItem,
             ]}
-            onPress={onDocumentPress}
+            onPress={onServiceItemPress}
           >
             <View style={[
               styles.iconWrap,
-              activeScreen === 'document' && styles.activeIconWrap,
+              activeScreen === 'service-item' && styles.activeIconWrap,
             ]}>
               <Ionicons
                 name="document-text-outline"
                 size={18}
                 color={
-                  activeScreen === 'document'
+                  activeScreen === 'service-item'
                     ? COLORS.white
                     : COLORS.primary
                 }
@@ -78,10 +78,10 @@ export default function ConfigDrawer({
             <Text
               style={[
                 styles.text,
-                activeScreen === 'document' && styles.activeText,
+                activeScreen === 'service-item' && styles.activeText,
               ]}
             >
-              Document
+              Service Item
             </Text>
           </Pressable>
 

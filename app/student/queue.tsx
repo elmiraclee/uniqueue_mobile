@@ -24,7 +24,7 @@ interface Transaction {
   office_name: string;
   window_name: string | null;
 
-  documents: string;
+  service_items: string;
   event_name: string | null;
 
   status: string;
@@ -258,10 +258,10 @@ export default function Queue() {
     });
   };
 
-  const getDocumentList = (documents: string) => {
-    return (documents || '')
+  const getServiceItemList = (service_items: string) => {
+    return (service_items || '')
       .split(',')
-      .map((doc) => doc.trim())
+      .map((item) => item.trim())
       .filter(Boolean);
   };
 
@@ -515,22 +515,22 @@ export default function Queue() {
                       </View>
                     )}
 
-                    {getDocumentList(selectedTransaction.documents).length > 0 ? (
+                    {getServiceItemList(selectedTransaction.service_items).length > 0 ? (
                       <View style={styles.modalSection}>
                         <Text style={styles.modalSectionLabel}>
-                          Documents Requested
+                          Service Items Requested
                         </Text>
 
-                        <View style={styles.documentsList}>
-                          {getDocumentList(selectedTransaction.documents).map(
-                            (doc, index) => (
-                              <View key={index} style={styles.documentItem}>
-                                <View style={styles.documentIndex}>
-                                  <Text style={styles.documentIndexText}>
+                        <View style={styles.serviceItemsList}>
+                          {getServiceItemList(selectedTransaction.service_items).map(
+                            (item, index) => (
+                              <View key={index} style={styles.serviceItemRow}>
+                                <View style={styles.serviceItemIndex}>
+                                  <Text style={styles.serviceItemIndexText}>
                                     {index + 1}
                                   </Text>
                                 </View>
-                                <Text style={styles.documentText}>{doc}</Text>
+                                <Text style={styles.serviceItemText}>{item}</Text>
                               </View>
                             )
                           )}
@@ -987,7 +987,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
 
-  // ----- Documents list (inside modal) -----
+  // ----- Service items list (inside modal) -----
 
   modalSection: {
     paddingVertical: 9,
@@ -1002,11 +1002,11 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
 
-  documentsList: {
+  serviceItemsList: {
     gap: 6,
   },
 
-  documentItem: {
+  serviceItemRow: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F8F8F8',
@@ -1016,7 +1016,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
 
-  documentIndex: {
+  serviceItemIndex: {
     width: 18,
     height: 18,
     borderRadius: 9,
@@ -1025,13 +1025,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  documentIndexText: {
+  serviceItemIndexText: {
     fontSize: 10,
     fontWeight: '700',
     color: '#fff',
   },
 
-  documentText: {
+  serviceItemText: {
     flex: 1,
     fontSize: 13,
     fontWeight: '600',

@@ -8,15 +8,15 @@ import {
 
 import { COLORS } from '../../constants/theme';
 
-interface DocumentItem {
+interface ServiceItem {
   id: number;
   name: string;
   requirements: string[];
 }
 
 interface Props {
-  documents: DocumentItem[];
-  selectedDocuments: number[];
+  service_items: ServiceItem[];
+  selectedServiceItems: number[];
   quantities: Record<number, number>;
   setQuantities: React.Dispatch<
     React.SetStateAction<Record<number, number>>
@@ -26,8 +26,8 @@ interface Props {
 }
 
 export default function QuantityStep({
-  documents,
-  selectedDocuments,
+  service_items,
+  selectedServiceItems,
   quantities,
   setQuantities,
   onNext,
@@ -49,45 +49,45 @@ export default function QuantityStep({
   return (
     <View>
       <Text style={styles.title}>
-        Document quantity
+        Service item quantity
       </Text>
 
       <Text style={styles.subtitle}>
-        Set how many copies you need for each document.
+        Set how many copies you need for each service item.
       </Text>
 
-      {documents
-        .filter((doc) =>
-          selectedDocuments.includes(doc.id)
+      {service_items
+        .filter((item) =>
+          selectedServiceItems.includes(item.id)
         )
-        .map((doc) => (
-          <View key={doc.id} style={styles.card}>
+        .map((item) => (
+          <View key={item.id} style={styles.card}>
             <Text style={styles.docName}>
-              {doc.name}
+              {item.name}
             </Text>
 
             <View style={styles.qtyContainer}>
               <TouchableOpacity
                 style={[
                   styles.qtyButton,
-                  (quantities[doc.id] || 1) <= 1 &&
+                  (quantities[item.id] || 1) <= 1 &&
                     styles.qtyButtonDisabled,
                 ]}
                 onPress={() =>
-                  updateQuantity(doc.id, 'minus')
+                  updateQuantity(item.id, 'minus')
                 }
               >
                 <Text style={styles.qtyText}>−</Text>
               </TouchableOpacity>
 
               <Text style={styles.quantity}>
-                {quantities[doc.id] || 1}
+                {quantities[item.id] || 1}
               </Text>
 
               <TouchableOpacity
                 style={styles.qtyButton}
                 onPress={() =>
-                  updateQuantity(doc.id, 'add')
+                  updateQuantity(item.id, 'add')
                 }
               >
                 <Text style={styles.qtyText}>+</Text>
