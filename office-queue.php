@@ -2,20 +2,442 @@
 
 header("Content-Type: application/json");
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: POST");
+header("Access-Control-Allow-Methods: GET, POST");
 header("Access-Control-Allow-Headers: Content-Type");
 
 include "db.php";
 
-// PHP 8.1+ makes mysqli throw an exception on SQL errors by default
-// (MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT) instead of returning
-// false. Without this try/catch, any SQL error (bad table/column name,
-// etc.) fatals with an HTML error page, which breaks response.json()
-// on the client and shows a generic "Unable to join queue" instead of
-// the real reason.
 try {
 
+// =====================================================
+function findBestWindow($conn, $officeId, $serviceItemIds, $type) {
+
+    $officeId = intval($officeId);
+    $type = mysqli_real_escape_string($conn, $type);
+    $window = null;
+
+    $serviceItemIds = array_values(array_unique(array_map('intval', $serviceItemIds ?? [])));
+
+    if (!empty($serviceItemIds)) {
+        $serviceItemIdsList = implode(',', $serviceItemIds);
+        $serviceItemCount = count($serviceItemIds);
+
+        $windowSql = "SELECT w.id, w.name,
+                        (SELECT COUNT(*) FROM queue_tickets qt
+                         WHERE qt.window_id = w.id
+                         AND qt.status IN ('waiting', 'called', 'in_progress')) AS load_count
+                      FROM windows w
+                      WHERE w.office_id = '$officeId'
+                      AND w.status = 'open'
+                      AND (w.queue_type = 'both' OR w.queue_type = '$type')
+                      AND (
+                        SELECT COUNT(DISTINCT wd.service_item_id)
+                        FROM window_item wd
+                        WHERE wd.window_id = w.id
+                        AND wd.service_item_id IN ($serviceItemIdsList)
+                      ) = $serviceItemCount
+                      ORDER BY load_count ASC, w.id ASC
+                      LIMIT 1";
+        $windowResult = mysqli_query($conn, $windowSql);
+        $window = $windowResult ? mysqli_fetch_assoc($windowResult) : null;
+    }
+
+    if (!$window) {
+        $fallbackSql = "SELECT w.id, w.name,
+                        (SELECT COUNT(*) FROM queue_tickets qt
+                         WHERE qt.window_id = w.id
+                         AND qt.status IN ('waiting', 'called', 'in_progress')) AS load_count
+                      FROM windows w
+                      WHERE w.office_id = '$officeId'
+                      AND w.status = 'open'
+                      AND (w.queue_type = 'both' OR w.queue_type = '$type')
+                      ORDER BY load_count ASC, w.id ASC
+                      LIMIT 1";
+        $fallbackResult = mysqli_query($conn, $fallbackSql);
+        $window = $fallbackResult ? mysqli_fetch_assoc($fallbackResult) : null;
+    }
+
+    return $window; // ['id'=>.., 'name'=>.., 'load_count'=>..] or null
+}
+
+
+function get_office_queue_prefix($conn, $officeId) {
+
+    static $prefixMap = null;
+
+    if ($prefixMap === null) {
+
+        $prefixMap = [];
+        $used = [];
+
+        $officesResult = mysqli_query($conn, "SELECT id, name FROM offices WHERE is_active = 1 ORDER BY id ASC");
+
+        while ($o = mysqli_fetch_assoc($officesResult)) {
+
+            $words  = preg_split('/\s+/', trim($o['name']));
+            $letter = null;
+
+            // Try the first letter of each word in the office name first
+            // (e.g. "Student Affairs" -> S, then A if S is taken).
+            foreach ($words as $word) {
+                $candidate = strtoupper(substr($word, 0, 1));
+                if ($candidate !== '' && !isset($used[$candidate])) {
+                    $letter = $candidate;
+                    break;
+                }
+            }
+
+            // All single letters from the name are taken — extend to a
+            // longer prefix (RE, REG, ...) built from the letters of the
+            // name until it's unique.
+            if ($letter === null) {
+
+                $base = strtoupper(preg_replace('/[^A-Za-z]/', '', $o['name']));
+                $len  = 2;
+
+                do {
+                    $candidate = substr($base, 0, $len);
+                    $len++;
+                } while ($candidate !== '' && isset($used[$candidate]) && $len <= strlen($base) + 1);
+
+                $letter = $candidate !== '' ? $candidate : 'OFC';
+
+                // Still colliding (e.g. two offices with identical names) —
+                // guarantee uniqueness with the office id as a last resort.
+                if (isset($used[$letter])) {
+                    $letter .= $o['id'];
+                }
+            }
+
+            $used[$letter]      = true;
+            $prefixMap[$o['id']] = $letter;
+        }
+    }
+
+    return $prefixMap[$officeId] ?? 'Q';
+}
+
+function nextQueueNumber($conn, $officeId) {
+
+    $officeId = intval($officeId);
+
+    $countSql = "SELECT COUNT(*) AS total
+                 FROM queue_tickets
+                 WHERE office_id = '$officeId'
+                 AND DATE(created_at) = CURDATE()";
+    $countResult = mysqli_query($conn, $countSql);
+    $countRow = $countResult ? mysqli_fetch_assoc($countResult) : ['total' => 0];
+    $nextSeq = intval($countRow['total']) + 1;
+
+    $prefix = get_office_queue_prefix($conn, $officeId);
+
+    return $prefix . '-' . str_pad($nextSeq, 3, '0', STR_PAD_LEFT);
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+
+    $action = $_GET['action'] ?? '';
+
+    if ($action === 'events') {
+
+        $sql = "SELECT e.id, e.office_id, e.name, e.description,
+                       e.start_date, e.end_date, o.slug AS office_slug
+                FROM events e
+                JOIN offices o ON o.id = e.office_id
+                WHERE e.status = 'active'
+                AND o.is_active = 1
+                AND (e.start_date IS NULL OR CURDATE() BETWEEN e.start_date AND e.end_date)
+                ORDER BY e.created_at DESC";
+        $result = mysqli_query($conn, $sql);
+        $events = $result ? mysqli_fetch_all($result, MYSQLI_ASSOC) : [];
+
+        echo json_encode(["success" => true, "events" => $events]);
+        exit;
+    }
+
+    if ($action === 'event') {
+
+        $eventId = intval($_GET['event_id'] ?? 0);
+        $officeId = intval($_GET['office_id'] ?? 0);
+        $studentId = intval($_GET['student_id'] ?? 0);
+
+        if (!$eventId || !$officeId) {
+            echo json_encode(["success" => false, "message" => "Missing event or office."]);
+            exit;
+        }
+
+        $evResult = mysqli_query($conn, "
+            SELECT * FROM events
+            WHERE id = '$eventId' AND office_id = '$officeId' AND status = 'active'
+            AND (start_date IS NULL OR CURDATE() BETWEEN start_date AND end_date)
+            LIMIT 1
+        ");
+        $event = $evResult ? mysqli_fetch_assoc($evResult) : null;
+
+        if (!$event) {
+            echo json_encode(["success" => false, "message" => "This event is not available."]);
+            exit;
+        }
+
+        $stepsResult = mysqli_query($conn, "
+            SELECT es.id, es.step_order, es.title, es.description, es.office_id,
+                   o.name AS office_name, o.slug AS office_slug
+            FROM event_steps es
+            LEFT JOIN offices o ON o.id = es.office_id
+            WHERE es.event_id = '$eventId'
+            ORDER BY es.step_order ASC, es.id ASC
+        ");
+        $steps = $stepsResult ? mysqli_fetch_all($stepsResult, MYSQLI_ASSOC) : [];
+
+        if ($steps) {
+            $stepIdsList = implode(',', array_map('intval', array_column($steps, 'id')));
+
+            $esdResult = mysqli_query($conn, "
+                SELECT esd.event_step_id, esd.service_item_id, esd.quantity, d.name
+                FROM event_step_items esd
+                INNER JOIN service_items d ON d.id = esd.service_item_id
+                WHERE esd.event_step_id IN ($stepIdsList)
+            ");
+            $esdRows = $esdResult ? mysqli_fetch_all($esdResult, MYSQLI_ASSOC) : [];
+
+            $docIds = array_values(array_unique(array_map('intval', array_column($esdRows, 'service_item_id'))));
+            $requirementsBySvc = [];
+            if ($docIds) {
+                $docIdsList = implode(',', $docIds);
+                $reqResult = mysqli_query($conn, "
+                    SELECT id, service_item_id, requirement
+                    FROM service_item_requirements
+                    WHERE service_item_id IN ($docIdsList)
+                    ORDER BY id ASC
+                ");
+                $reqRows = $reqResult ? mysqli_fetch_all($reqResult, MYSQLI_ASSOC) : [];
+                foreach ($reqRows as $row) {
+                    $requirementsBySvc[$row['service_item_id']][] = $row;
+                }
+            }
+
+            $docsByStep = [];
+            foreach ($esdRows as $row) {
+                $row['requirements'] = $requirementsBySvc[$row['service_item_id']] ?? [];
+                $docsByStep[$row['event_step_id']][] = $row;
+            }
+
+            foreach ($steps as &$s) {
+                $s['service_items'] = $docsByStep[$s['id']] ?? [];
+            }
+            unset($s);
+        }
+
+        $currentStep = null;
+        $currentStepIndex = null;
+        $completedStepIds = [];
+
+        if ($studentId) {
+
+            $doneResult = mysqli_query($conn, "
+                SELECT event_step_id FROM queue_tickets
+                WHERE student_id = '$studentId' AND event_id = '$eventId'
+                AND status = 'completed'
+            ");
+            $doneRows = $doneResult ? mysqli_fetch_all($doneResult, MYSQLI_ASSOC) : [];
+            $completedStepIds = array_map('intval', array_column($doneRows, 'event_step_id'));
+        }
+
+        foreach ($steps as $i => $s) {
+            if (!in_array((int)$s['id'], $completedStepIds, true)) {
+                $currentStep = $s;
+                $currentStepIndex = $i;
+                break;
+            }
+        }
+
+        $eventCompleted = ($currentStep === null && !empty($steps));
+
+        $activeTicket = null;
+        if ($studentId) {
+            $activeResult = mysqli_query($conn, "
+                SELECT qt.id, qt.queue_number, qt.status, qt.event_step_id, w.name AS window_name
+                FROM queue_tickets qt
+                LEFT JOIN windows w ON w.id = qt.window_id
+                WHERE qt.student_id = '$studentId' AND qt.event_id = '$eventId'
+                AND qt.status IN ('waiting', 'called', 'in_progress')
+                ORDER BY qt.created_at DESC
+                LIMIT 1
+            ");
+            $activeTicket = $activeResult ? mysqli_fetch_assoc($activeResult) : null;
+        }
+
+        echo json_encode([
+            "success" => true,
+            "event" => $event,
+            "steps" => $steps,
+            "current_step" => $currentStep,
+            "current_step_index" => $currentStepIndex,
+            "event_completed" => $eventCompleted,
+            "active_ticket" => $activeTicket,
+        ]);
+        exit;
+    }
+
+    echo json_encode(["success" => false, "message" => "Unknown action."]);
+    exit;
+}
+
+
+// =====================================================
+// POST
+// =====================================================
+
 $data = json_decode(file_get_contents("php://input"), true);
+$mode = $data['mode'] ?? 'regular';
+
+if ($mode === 'event') {
+
+    $student_id = intval($data['student_id'] ?? 0);
+    $event_id = intval($data['event_id'] ?? 0);
+    $event_step_id = intval($data['event_step_id'] ?? 0);
+    $priority = !empty($data['priority']);
+    $priority_reason = trim($data['priority_reason'] ?? '');
+    $checked_requirement_ids = array_map('intval', $data['req_check'] ?? []);
+
+    if (!$student_id || !$event_id || !$event_step_id) {
+        echo json_encode(["success" => false, "message" => "Missing required fields."]);
+        exit;
+    }
+
+    $evResult = mysqli_query($conn, "
+        SELECT * FROM events
+        WHERE id = '$event_id' AND status = 'active'
+        AND (start_date IS NULL OR CURDATE() BETWEEN start_date AND end_date)
+        LIMIT 1
+    ");
+    $event = $evResult ? mysqli_fetch_assoc($evResult) : null;
+
+    if (!$event) {
+        echo json_encode(["success" => false, "message" => "This event is no longer available."]);
+        exit;
+    }
+
+    $stepsResult = mysqli_query($conn, "
+        SELECT es.id, es.step_order, es.title, es.office_id
+        FROM event_steps es
+        WHERE es.event_id = '$event_id'
+        ORDER BY es.step_order ASC, es.id ASC
+    ");
+    $steps = $stepsResult ? mysqli_fetch_all($stepsResult, MYSQLI_ASSOC) : [];
+
+    // Same note as the GET branch above: only 'completed' is a real
+    // status value for this column.
+    $doneResult = mysqli_query($conn, "
+        SELECT event_step_id FROM queue_tickets
+        WHERE student_id = '$student_id' AND event_id = '$event_id'
+        AND status = 'completed'
+    ");
+    $doneRows = $doneResult ? mysqli_fetch_all($doneResult, MYSQLI_ASSOC) : [];
+    $completedStepIds = array_map('intval', array_column($doneRows, 'event_step_id'));
+
+    $currentStep = null;
+    foreach ($steps as $s) {
+        if (!in_array((int)$s['id'], $completedStepIds, true)) {
+            $currentStep = $s;
+            break;
+        }
+    }
+
+    if (!$currentStep || (int)$currentStep['id'] !== $event_step_id) {
+        echo json_encode(["success" => false, "message" => "That step is not currently available for you to join."]);
+        exit;
+    }
+
+    $stepDocsResult = mysqli_query($conn, "
+        SELECT service_item_id, quantity FROM event_step_items WHERE event_step_id = '$event_step_id'
+    ");
+    $stepDocs = $stepDocsResult ? mysqli_fetch_all($stepDocsResult, MYSQLI_ASSOC) : [];
+    $stepDocIds = array_map('intval', array_column($stepDocs, 'service_item_id'));
+
+    if ($stepDocIds) {
+        $docIdsList = implode(',', $stepDocIds);
+        $reqResult = mysqli_query($conn, "SELECT id FROM service_item_requirements WHERE service_item_id IN ($docIdsList)");
+        $reqRows = $reqResult ? mysqli_fetch_all($reqResult, MYSQLI_ASSOC) : [];
+        $requiredIds = array_map('intval', array_column($reqRows, 'id'));
+
+        $missing = array_diff($requiredIds, $checked_requirement_ids);
+        if ($missing) {
+            echo json_encode(["success" => false, "message" => "Please confirm all requirements are met before joining the queue."]);
+            exit;
+        }
+    }
+
+    $activeResult = mysqli_query($conn, "
+        SELECT id FROM queue_tickets
+        WHERE student_id = '$student_id' AND status IN ('waiting','called','in_progress')
+        LIMIT 1
+    ");
+    $activeRow = $activeResult ? mysqli_fetch_assoc($activeResult) : null;
+    if ($activeRow) {
+        echo json_encode(["success" => false, "message" => "You already have an active queue. Finish or cancel it first."]);
+        exit;
+    }
+
+    $step_office_id = intval($currentStep['office_id']);
+    $priority_reason_escaped = mysqli_real_escape_string($conn, $priority_reason);
+
+    $window = findBestWindow($conn, $step_office_id, $stepDocIds, 'walkin');
+    if (!$window) {
+        echo json_encode(["success" => false, "message" => "No window currently handles this step. Please contact the office."]);
+        exit;
+    }
+    $windowId = intval($window['id']);
+    $windowName = $window['name'];
+
+    $priorityFlagInt = $priority ? 1 : 0;
+    $queueNumber = nextQueueNumber($conn, $step_office_id);
+
+    $eventStepTitle = empty($stepDocs) ? $currentStep['title'] : null;
+    $eventStepTitleSql = $eventStepTitle !== null
+        ? "'" . mysqli_real_escape_string($conn, $eventStepTitle) . "'"
+        : "NULL";
+
+    $sql = "INSERT INTO queue_tickets(
+                student_id, office_id, event_id, event_step_id, event_step_title, type,
+                queue_number, status, priority, priority_reason,
+                window_id, created_at, updated_at
+            )
+            VALUES(
+                '$student_id', '$step_office_id', '$event_id', '$event_step_id', $eventStepTitleSql, 'walkin',
+                '$queueNumber', 'waiting', '$priorityFlagInt',
+                " . ($priority_reason_escaped !== '' ? "'$priority_reason_escaped'" : "NULL") . ",
+                '$windowId', NOW(), NOW()
+            )";
+
+    if (mysqli_query($conn, $sql)) {
+
+        $ticketId = mysqli_insert_id($conn);
+
+        foreach ($stepDocs as $sd) {
+            $docId = intval($sd['service_item_id']);
+            $qty = max(1, intval($sd['quantity']));
+            mysqli_query($conn, "
+                INSERT INTO queue_ticket_item(ticket_id, service_item_id, quantity)
+                VALUES('$ticketId', '$docId', '$qty')
+            ");
+        }
+
+        echo json_encode([
+            "success" => true,
+            "message" => "You have joined the queue.",
+            "queue_number" => $queueNumber,
+            "window_name" => $windowName,
+            "step_title" => $currentStep['title'],
+        ]);
+
+    } else {
+        echo json_encode(["success" => false, "message" => mysqli_error($conn)]);
+    }
+
+    exit;
+}
+
 
 $student_id = $data['student_id'] ?? null;
 $office_id = $data['office_id'] ?? null;
@@ -51,13 +473,6 @@ $office_id = intval($office_id);
 $type = mysqli_real_escape_string($conn, $type);
 
 
-// =====================================================
-// APPOINTMENT SLIP CONFIRMATION
-// Appointment holders are verified via their physical Appointment Slip
-// (not a date picked here), so this is the one mandatory requirement
-// for that type — re-checked server-side.
-// =====================================================
-
 if ($type === 'appointment' && !$appointment_slip_confirmed) {
     echo json_encode([
         "success" => false,
@@ -65,14 +480,6 @@ if ($type === 'appointment' && !$appointment_slip_confirmed) {
     ]);
     exit;
 }
-
-
-// =====================================================
-// PRIORITY LANE
-// Re-verify against this office's own config server-side (mirrors the
-// appointment_slip_confirmed check above) — a disabled option could
-// still be submitted directly.
-// =====================================================
 
 $configResult = mysqli_query(
     $conn,
@@ -97,13 +504,6 @@ if ($priority && $priority_reason === '') {
 }
 
 $priority_reason_escaped = mysqli_real_escape_string($conn, $priority_reason);
-
-
-// =====================================================
-// NORMALIZE SERVICE ITEMS
-// Accepts either [{service_item_id, quantity}] (current) or a flat array
-// of ids (legacy), defaulting quantity to 1.
-// =====================================================
 
 $normalizedServiceItems = [];
 
@@ -137,75 +537,18 @@ if (empty($normalizedServiceItems)) {
 
 // =====================================================
 // QUEUE NUMBER
-// Sequential per office, per day, per lane (priority vs regular) so
-// each lane has its own numbering — e.g. P-001, N-014.
 // =====================================================
 
 $priorityFlagInt = $priority ? 1 : 0;
-
-$countSql = "SELECT COUNT(*) AS total
-             FROM queue_tickets
-             WHERE office_id = '$office_id'
-             AND priority = '$priorityFlagInt'
-             AND DATE(created_at) = CURDATE()";
-$countResult = mysqli_query($conn, $countSql);
-$countRow = $countResult ? mysqli_fetch_assoc($countResult) : ['total' => 0];
-$nextSeq = intval($countRow['total']) + 1;
-
-$queueNumber = ($priority ? 'P-' : 'N-') . str_pad($nextSeq, 3, '0', STR_PAD_LEFT);
+$queueNumber = nextQueueNumber($conn, $office_id);
 
 
 // =====================================================
 // WINDOW ASSIGNMENT
-// Real schema: the table is `windows` (status enum open/closed,
-// queue_type enum walkin/appointment/both), and window_item maps
-// which service_items each window can actually handle. A window only
-// qualifies if it's open, accepts this ticket's type, and can handle
-// every requested service item. Among qualifying windows, pick the one
-// with the fewest currently unresolved tickets (waiting/called/
-// in_progress) assigned to it.
 // =====================================================
 
-$serviceItemIds = array_values(array_unique(array_column($normalizedServiceItems, 'service_item_id')));
-$serviceItemIdsList = implode(',', $serviceItemIds);
-$serviceItemCount = count($serviceItemIds);
-
-$windowSql = "SELECT w.id, w.name,
-                (SELECT COUNT(*) FROM queue_tickets qt
-                 WHERE qt.window_id = w.id
-                 AND qt.status IN ('waiting', 'called', 'in_progress')) AS load_count
-              FROM windows w
-              WHERE w.office_id = '$office_id'
-              AND w.status = 'open'
-              AND (w.queue_type = 'both' OR w.queue_type = '$type')
-              AND (
-                SELECT COUNT(DISTINCT wd.service_item_id)
-                FROM window_item wd
-                WHERE wd.window_id = w.id
-                AND wd.service_item_id IN ($serviceItemIdsList)
-              ) = $serviceItemCount
-              ORDER BY load_count ASC, w.id ASC
-              LIMIT 1";
-$windowResult = mysqli_query($conn, $windowSql);
-$window = $windowResult ? mysqli_fetch_assoc($windowResult) : null;
-
-// Fallback: no window is set up to handle this exact combination of
-// service_items — assign the least-loaded open window for this type
-// anyway rather than leaving the ticket unassigned.
-if (!$window) {
-    $fallbackSql = "SELECT w.id, w.name,
-                    (SELECT COUNT(*) FROM queue_tickets qt
-                     WHERE qt.window_id = w.id
-                     AND qt.status IN ('waiting', 'called', 'in_progress')) AS load_count
-                  FROM windows w
-                  WHERE w.office_id = '$office_id'
-                  AND w.status = 'open'
-                  AND (w.queue_type = 'both' OR w.queue_type = '$type')
-                  ORDER BY load_count ASC, w.id ASC
-                  LIMIT 1";
-    $fallbackResult = mysqli_query($conn, $fallbackSql);
-    $window = $fallbackResult ? mysqli_fetch_assoc($fallbackResult) : null;
-}
+$serviceItemIds = array_column($normalizedServiceItems, 'service_item_id');
+$window = findBestWindow($conn, $office_id, $serviceItemIds, $type);
 
 $windowId = $window ? intval($window['id']) : null;
 $windowName = $window ? $window['name'] : 'Not Assigned';
@@ -282,9 +625,7 @@ if (mysqli_query($conn, $sql)) {
 }
 
 } catch (\Throwable $e) {
-    // Surfaces the real cause (e.g. "Table 'office_windows' doesn't
-    // exist" or "Unknown column 'queue_number'") instead of a blank/HTML
-    // fatal-error response that the app can't parse as JSON.
+
     echo json_encode([
         "success" => false,
         "message" => "Server error: " . $e->getMessage()

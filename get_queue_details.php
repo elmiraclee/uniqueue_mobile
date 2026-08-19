@@ -33,12 +33,16 @@ SELECT
     qt.queue_number,
     qt.status,
     qt.type,
+    qt.priority,
+    qt.event_step_title,
+    qt.priority_reason,
     qt.joined_at,
     qt.called_at,
     qt.done_at,
 
     o.name AS office_name,
-    w.name AS window_name
+    w.name AS window_name,
+    ev.name AS event_name
 
 FROM queue_tickets qt
 
@@ -47,6 +51,9 @@ INNER JOIN offices o
 
 LEFT JOIN windows w
     ON qt.window_id = w.id
+
+LEFT JOIN events ev
+    ON qt.event_id = ev.id
 
 WHERE
     qt.student_id = ?
@@ -92,7 +99,7 @@ $queue_id = intval($queue["id"]);
 
 $service_items = [];
 
-$svcSql = "
+$docSql = "
 SELECT
     d.name,
     qtd.quantity
@@ -105,20 +112,20 @@ INNER JOIN service_items d
 WHERE qtd.ticket_id = ?
 ";
 
-$svcStmt = $conn->prepare($svcSql);
+$docStmt = $conn->prepare($docSql);
 
-if ($svcStmt) {
+if ($docStmt) {
 
-    $svcStmt->bind_param("i", $queue_id);
-    $svcStmt->execute();
+    $docStmt->bind_param("i", $queue_id);
+    $docStmt->execute();
 
-    $svcResult = $svcStmt->get_result();
+    $docResult = $docStmt->get_result();
 
-    while ($row = $svcResult->fetch_assoc()) {
+    while ($row = $docResult->fetch_assoc()) {
         $service_items[] = $row;
     }
 
-    $svcStmt->close();
+    $docStmt->close();
 }
 
 $queue["service_items"] = $service_items;

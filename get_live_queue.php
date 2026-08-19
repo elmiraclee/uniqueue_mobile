@@ -139,7 +139,9 @@ FROM queue_tickets qt
 WHERE
     qt.window_id = ?
 AND qt.status IN ('waiting','in_progress')
-ORDER BY qt.joined_at ASC
+ORDER BY
+    FIELD(qt.status, 'in_progress', 'waiting'),
+    qt.joined_at ASC
 ";
 
 $stmt = $conn->prepare($sql);
@@ -195,7 +197,7 @@ while ($ticket = $result->fetch_assoc()) {
 
     $ticketId = $ticket["id"];
 
-    $sqlSvc = "
+    $sqlDocs = "
     SELECT
         qtd.quantity,
         d.processing_time
@@ -207,11 +209,11 @@ while ($ticket = $result->fetch_assoc()) {
     WHERE qtd.ticket_id = ?
     ";
 
-    $stmtSvc = $conn->prepare($sqlSvc);
-    $stmtSvc->bind_param("i", $ticketId);
-    $stmtSvc->execute();
+    $stmtDocs = $conn->prepare($sqlDocs);
+    $stmtDocs->bind_param("i", $ticketId);
+    $stmtDocs->execute();
 
-    $svcResult = $stmtSvc->get_result();
+    $svcResult = $stmtDocs->get_result();
 
     while ($svc = $svcResult->fetch_assoc()) {
 

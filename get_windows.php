@@ -35,7 +35,7 @@ while ($row = mysqli_fetch_assoc($result)) {
     // (either dedicated 'walkin' or a 'both' window)
     if (in_array($row['queue_type'], ['walkin', 'both'], true)) {
 
-        $svcStmt = mysqli_prepare($conn, "
+        $docStmt = mysqli_prepare($conn, "
             SELECT d.id, d.name
             FROM window_item wd
             INNER JOIN service_items d
@@ -43,10 +43,10 @@ while ($row = mysqli_fetch_assoc($result)) {
             WHERE wd.window_id = ?
         ");
 
-        mysqli_stmt_bind_param($svcStmt, "i", $window_id);
-        mysqli_stmt_execute($svcStmt);
+        mysqli_stmt_bind_param($docStmt, "i", $window_id);
+        mysqli_stmt_execute($docStmt);
 
-        $svcResult = mysqli_stmt_get_result($svcStmt);
+        $svcResult = mysqli_stmt_get_result($docStmt);
 
         while ($svc = mysqli_fetch_assoc($svcResult)) {
             $svcItems[] = $svc;
