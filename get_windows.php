@@ -29,27 +29,27 @@ while ($row = mysqli_fetch_assoc($result)) {
 
     $window_id = $row['id'];
 
-    $docs = [];
+    $svcItems = [];
 
-    // Kukunin ang documents kapag kaya ng window mag-handle ng walk-in
+    // Kukunin ang service_items kapag kaya ng window mag-handle ng walk-in
     // (either dedicated 'walkin' or a 'both' window)
     if (in_array($row['queue_type'], ['walkin', 'both'], true)) {
 
         $docStmt = mysqli_prepare($conn, "
             SELECT d.id, d.name
-            FROM window_document wd
-            INNER JOIN documents d
-                ON wd.document_id = d.id
+            FROM window_item wd
+            INNER JOIN service_items d
+                ON wd.service_item_id = d.id
             WHERE wd.window_id = ?
         ");
 
         mysqli_stmt_bind_param($docStmt, "i", $window_id);
         mysqli_stmt_execute($docStmt);
 
-        $docResult = mysqli_stmt_get_result($docStmt);
+        $svcResult = mysqli_stmt_get_result($docStmt);
 
-        while ($doc = mysqli_fetch_assoc($docResult)) {
-            $docs[] = $doc;
+        while ($svc = mysqli_fetch_assoc($svcResult)) {
+            $svcItems[] = $svc;
         }
     }
 
@@ -79,7 +79,7 @@ while ($row = mysqli_fetch_assoc($result)) {
         "speed" => $row['speed'],
         "queue_type" => $row['queue_type'],
         "appointment_date" => $row['appointment_date'],
-        "documents" => $docs,
+        "service_items" => $svcItems,
         "staff" => $staff
     ];
 }

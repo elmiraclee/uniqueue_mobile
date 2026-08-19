@@ -201,10 +201,10 @@ while ($ticket = $result->fetch_assoc()) {
     SELECT
         qtd.quantity,
         d.processing_time
-    FROM queue_ticket_document qtd
+    FROM queue_ticket_item qtd
 
-    INNER JOIN documents d
-    ON d.id = qtd.document_id
+    INNER JOIN service_items d
+    ON d.id = qtd.service_item_id
 
     WHERE qtd.ticket_id = ?
     ";
@@ -213,12 +213,12 @@ while ($ticket = $result->fetch_assoc()) {
     $stmtDocs->bind_param("i", $ticketId);
     $stmtDocs->execute();
 
-    $docsResult = $stmtDocs->get_result();
+    $svcResult = $stmtDocs->get_result();
 
-    while ($doc = $docsResult->fetch_assoc()) {
+    while ($svc = $svcResult->fetch_assoc()) {
 
         $estimatedWait +=
-            ($doc["processing_time"] * $doc["quantity"]);
+            ($svc["processing_time"] * $svc["quantity"]);
 
     }
 
@@ -226,11 +226,11 @@ while ($ticket = $result->fetch_assoc()) {
 
 /*
 |--------------------------------------------------------------------------
-| CURRENT USER DOCUMENTS
+| CURRENT USER SERVICE ITEMS
 |--------------------------------------------------------------------------
 */
 
-$userDocuments = [];
+$userServiceItems = [];
 
 $sql = "
 SELECT
@@ -238,10 +238,10 @@ SELECT
     d.name,
     d.processing_time,
     qtd.quantity
-FROM queue_ticket_document qtd
+FROM queue_ticket_item qtd
 
-INNER JOIN documents d
-ON d.id = qtd.document_id
+INNER JOIN service_items d
+ON d.id = qtd.service_item_id
 
 WHERE qtd.ticket_id = ?
 ";
@@ -254,7 +254,7 @@ $result = $stmt->get_result();
 
 while ($row = $result->fetch_assoc()) {
 
-    $userDocuments[] = [
+    $userServiceItems[] = [
         "id" => intval($row["id"]),
         "name" => $row["name"],
         "quantity" => intval($row["quantity"]),
@@ -287,7 +287,7 @@ echo json_encode([
 
     "estimated_wait" => $estimatedWait,
 
-    "documents" => $userDocuments,
+    "service_items" => $userServiceItems,
 
     "queue_list" => $queueList
 

@@ -93,21 +93,21 @@ $queue_id = intval($queue["id"]);
 
 /*
 |--------------------------------------------------------------------------
-| Documents
+| Service Items
 |--------------------------------------------------------------------------
 */
 
-$documents = [];
+$service_items = [];
 
 $docSql = "
 SELECT
     d.name,
     qtd.quantity
 
-FROM queue_ticket_document qtd
+FROM queue_ticket_item qtd
 
-INNER JOIN documents d
-    ON qtd.document_id = d.id
+INNER JOIN service_items d
+    ON qtd.service_item_id = d.id
 
 WHERE qtd.ticket_id = ?
 ";
@@ -122,13 +122,13 @@ if ($docStmt) {
     $docResult = $docStmt->get_result();
 
     while ($row = $docResult->fetch_assoc()) {
-        $documents[] = $row;
+        $service_items[] = $row;
     }
 
     $docStmt->close();
 }
 
-$queue["documents"] = $documents;
+$queue["service_items"] = $service_items;
 
 /*
 |--------------------------------------------------------------------------

@@ -51,7 +51,7 @@ SELECT
             ')'
         )
         SEPARATOR ', '
-    ) AS documents,
+    ) AS service_items,
 
     f.rating AS feedback_rating
 
@@ -66,11 +66,11 @@ LEFT JOIN windows w
 LEFT JOIN events e
     ON qt.event_id = e.id
 
-LEFT JOIN queue_ticket_document qtd
+LEFT JOIN queue_ticket_item qtd
     ON qt.id = qtd.ticket_id
 
-LEFT JOIN documents d
-    ON qtd.document_id = d.id
+LEFT JOIN service_items d
+    ON qtd.service_item_id = d.id
 
 LEFT JOIN feedbacks f
     ON f.ticket_id = qt.id

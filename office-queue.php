@@ -10,17 +10,17 @@ include "db.php";
 try {
 
 // =====================================================
-function findBestWindow($conn, $officeId, $documentIds, $type) {
+function findBestWindow($conn, $officeId, $serviceItemIds, $type) {
 
     $officeId = intval($officeId);
     $type = mysqli_real_escape_string($conn, $type);
     $window = null;
 
-    $documentIds = array_values(array_unique(array_map('intval', $documentIds ?? [])));
+    $serviceItemIds = array_values(array_unique(array_map('intval', $serviceItemIds ?? [])));
 
-    if (!empty($documentIds)) {
-        $documentIdsList = implode(',', $documentIds);
-        $documentCount = count($documentIds);
+    if (!empty($serviceItemIds)) {
+        $serviceItemIdsList = implode(',', $serviceItemIds);
+        $serviceItemCount = count($serviceItemIds);
 
         $windowSql = "SELECT w.id, w.name,
                         (SELECT COUNT(*) FROM queue_tickets qt
@@ -31,11 +31,11 @@ function findBestWindow($conn, $officeId, $documentIds, $type) {
                       AND w.status = 'open'
                       AND (w.queue_type = 'both' OR w.queue_type = '$type')
                       AND (
-                        SELECT COUNT(DISTINCT wd.document_id)
-                        FROM window_document wd
+                        SELECT COUNT(DISTINCT wd.service_item_id)
+                        FROM window_item wd
                         WHERE wd.window_id = w.id
-                        AND wd.document_id IN ($documentIdsList)
-                      ) = $documentCount
+                        AND wd.service_item_id IN ($serviceItemIdsList)
+                      ) = $serviceItemCount
                       ORDER BY load_count ASC, w.id ASC
                       LIMIT 1";
         $windowResult = mysqli_query($conn, $windowSql);
@@ -193,37 +193,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $stepIdsList = implode(',', array_map('intval', array_column($steps, 'id')));
 
             $esdResult = mysqli_query($conn, "
-                SELECT esd.event_step_id, esd.document_id, esd.quantity, d.name
-                FROM event_step_documents esd
-                INNER JOIN documents d ON d.id = esd.document_id
+                SELECT esd.event_step_id, esd.service_item_id, esd.quantity, d.name
+                FROM event_step_items esd
+                INNER JOIN service_items d ON d.id = esd.service_item_id
                 WHERE esd.event_step_id IN ($stepIdsList)
             ");
             $esdRows = $esdResult ? mysqli_fetch_all($esdResult, MYSQLI_ASSOC) : [];
 
-            $docIds = array_values(array_unique(array_map('intval', array_column($esdRows, 'document_id'))));
-            $requirementsByDoc = [];
+            $docIds = array_values(array_unique(array_map('intval', array_column($esdRows, 'service_item_id'))));
+            $requirementsBySvc = [];
             if ($docIds) {
                 $docIdsList = implode(',', $docIds);
                 $reqResult = mysqli_query($conn, "
-                    SELECT id, document_id, requirement
-                    FROM document_requirements
-                    WHERE document_id IN ($docIdsList)
+                    SELECT id, service_item_id, requirement
+                    FROM service_item_requirements
+                    WHERE service_item_id IN ($docIdsList)
                     ORDER BY id ASC
                 ");
                 $reqRows = $reqResult ? mysqli_fetch_all($reqResult, MYSQLI_ASSOC) : [];
                 foreach ($reqRows as $row) {
-                    $requirementsByDoc[$row['document_id']][] = $row;
+                    $requirementsBySvc[$row['service_item_id']][] = $row;
                 }
             }
 
             $docsByStep = [];
             foreach ($esdRows as $row) {
-                $row['requirements'] = $requirementsByDoc[$row['document_id']] ?? [];
+                $row['requirements'] = $requirementsBySvc[$row['service_item_id']] ?? [];
                 $docsByStep[$row['event_step_id']][] = $row;
             }
 
             foreach ($steps as &$s) {
-                $s['documents'] = $docsByStep[$s['id']] ?? [];
+                $s['service_items'] = $docsByStep[$s['id']] ?? [];
             }
             unset($s);
         }
@@ -350,14 +350,14 @@ if ($mode === 'event') {
     }
 
     $stepDocsResult = mysqli_query($conn, "
-        SELECT document_id, quantity FROM event_step_documents WHERE event_step_id = '$event_step_id'
+        SELECT service_item_id, quantity FROM event_step_items WHERE event_step_id = '$event_step_id'
     ");
     $stepDocs = $stepDocsResult ? mysqli_fetch_all($stepDocsResult, MYSQLI_ASSOC) : [];
-    $stepDocIds = array_map('intval', array_column($stepDocs, 'document_id'));
+    $stepDocIds = array_map('intval', array_column($stepDocs, 'service_item_id'));
 
     if ($stepDocIds) {
         $docIdsList = implode(',', $stepDocIds);
-        $reqResult = mysqli_query($conn, "SELECT id FROM document_requirements WHERE document_id IN ($docIdsList)");
+        $reqResult = mysqli_query($conn, "SELECT id FROM service_item_requirements WHERE service_item_id IN ($docIdsList)");
         $reqRows = $reqResult ? mysqli_fetch_all($reqResult, MYSQLI_ASSOC) : [];
         $requiredIds = array_map('intval', array_column($reqRows, 'id'));
 
@@ -415,10 +415,10 @@ if ($mode === 'event') {
         $ticketId = mysqli_insert_id($conn);
 
         foreach ($stepDocs as $sd) {
-            $docId = intval($sd['document_id']);
+            $docId = intval($sd['service_item_id']);
             $qty = max(1, intval($sd['quantity']));
             mysqli_query($conn, "
-                INSERT INTO queue_ticket_document(ticket_id, document_id, quantity)
+                INSERT INTO queue_ticket_item(ticket_id, service_item_id, quantity)
                 VALUES('$ticketId', '$docId', '$qty')
             ");
         }
@@ -445,7 +445,7 @@ $type = $data['type'] ?? null; // walkin or appointment
 $appointment_slip_confirmed = !empty($data['appointment_slip_confirmed']);
 $priority = !empty($data['priority']);
 $priority_reason = trim($data['priority_reason'] ?? '');
-$documents = $data['documents'] ?? []; // array of { document_id, quantity }
+$service_items = $data['service_items'] ?? []; // array of { service_item_id, quantity }
 
 
 // =====================================================
@@ -460,10 +460,10 @@ if (!$student_id || !$office_id || !$type) {
     exit;
 }
 
-if (empty($documents)) {
+if (empty($service_items)) {
     echo json_encode([
         "success" => false,
-        "message" => "Please select at least one document or service."
+        "message" => "Please select at least one service item or service."
     ]);
     exit;
 }
@@ -505,31 +505,31 @@ if ($priority && $priority_reason === '') {
 
 $priority_reason_escaped = mysqli_real_escape_string($conn, $priority_reason);
 
-$normalizedDocuments = [];
+$normalizedServiceItems = [];
 
-foreach ($documents as $doc) {
-    if (is_array($doc)) {
-        $documentId = intval($doc['document_id'] ?? 0);
-        $quantity = intval($doc['quantity'] ?? 1);
+foreach ($service_items as $svc) {
+    if (is_array($svc)) {
+        $serviceItemId = intval($svc['service_item_id'] ?? 0);
+        $quantity = intval($svc['quantity'] ?? 1);
     } else {
-        $documentId = intval($doc);
+        $serviceItemId = intval($svc);
         $quantity = 1;
     }
 
-    if ($documentId <= 0) {
+    if ($serviceItemId <= 0) {
         continue;
     }
 
-    $normalizedDocuments[] = [
-        'document_id' => $documentId,
+    $normalizedServiceItems[] = [
+        'service_item_id' => $serviceItemId,
         'quantity' => max(1, $quantity),
     ];
 }
 
-if (empty($normalizedDocuments)) {
+if (empty($normalizedServiceItems)) {
     echo json_encode([
         "success" => false,
-        "message" => "Please select at least one document or service."
+        "message" => "Please select at least one service item or service."
     ]);
     exit;
 }
@@ -547,8 +547,8 @@ $queueNumber = nextQueueNumber($conn, $office_id);
 // WINDOW ASSIGNMENT
 // =====================================================
 
-$documentIds = array_column($normalizedDocuments, 'document_id');
-$window = findBestWindow($conn, $office_id, $documentIds, $type);
+$serviceItemIds = array_column($normalizedServiceItems, 'service_item_id');
+$window = findBestWindow($conn, $office_id, $serviceItemIds, $type);
 
 $windowId = $window ? intval($window['id']) : null;
 $windowName = $window ? $window['name'] : 'Not Assigned';
@@ -590,21 +590,21 @@ if (mysqli_query($conn, $sql)) {
     $ticketId = mysqli_insert_id($conn);
 
     // =====================================================
-    // SAVE DOCUMENTS (with quantity)
+    // SAVE SERVICE ITEMS (with quantity)
     // =====================================================
 
-    foreach ($normalizedDocuments as $doc) {
+    foreach ($normalizedServiceItems as $svc) {
         mysqli_query(
             $conn,
-            "INSERT INTO queue_ticket_document(
+            "INSERT INTO queue_ticket_item(
                 ticket_id,
-                document_id,
+                service_item_id,
                 quantity
             )
             VALUES(
                 '$ticketId',
-                '{$doc['document_id']}',
-                '{$doc['quantity']}'
+                '{$svc['service_item_id']}',
+                '{$svc['quantity']}'
             )"
         );
     }

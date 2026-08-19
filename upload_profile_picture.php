@@ -111,7 +111,7 @@ WHERE id=?
 
 $stmt->bind_param(
     "si",
-    $newFileName,
+    $destination,
     $student_id
 );
 
