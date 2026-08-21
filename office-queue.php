@@ -279,6 +279,117 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         exit;
     }
 
+    // =================================================
+    // GET action=cashier_payable
+    // Returns all completed tickets from other offices
+    // that haven't been paid at the cashier yet.
+    // Used by the mobile cashier queue screen to show
+    // the student what they can pay for.
+    //
+    // Required params:
+    //   student_id — the logged-in student
+    //   office_id  — the cashier office id
+    // =================================================
+    if ($action === 'cashier_payable') {
+
+        $studentId = intval($_GET['student_id'] ?? 0);
+        $cashierOfficeId = intval($_GET['office_id'] ?? 0);
+
+        if (!$studentId || !$cashierOfficeId) {
+            echo json_encode(["success" => false, "message" => "Missing student_id or office_id."]);
+            exit;
+        }
+
+        // Verify this office is actually the cashier office
+        $officeCheck = mysqli_query($conn, "
+            SELECT id FROM offices
+            WHERE id = '$cashierOfficeId' AND is_active = 1
+            LIMIT 1
+        ");
+        if (!$officeCheck || mysqli_num_rows($officeCheck) === 0) {
+            echo json_encode(["success" => false, "message" => "Office not found."]);
+            exit;
+        }
+
+        // Fetch completed tickets from other offices that have
+        // at least one service item with an amount, and have
+        // not yet been linked to a cashier ticket (paid).
+        $payStmt = mysqli_prepare($conn, "
+            SELECT
+                qt.id               AS ticket_id,
+                qt.queue_number,
+                qt.done_at,
+                o.id                AS source_office_id,
+                o.name              AS source_office_name,
+                d.id                AS service_item_id,
+                d.name              AS service_item_name,
+                d.amount,
+                qtd.quantity
+            FROM queue_tickets qt
+            JOIN offices o              ON o.id = qt.office_id
+            JOIN queue_ticket_item qtd  ON qtd.ticket_id = qt.id
+            JOIN service_items d        ON d.id = qtd.service_item_id
+            LEFT JOIN queue_tickets paid
+                ON paid.linked_ticket_id = qt.id
+               AND paid.status != 'cancelled'
+            WHERE qt.student_id = ?
+              AND qt.office_id  != ?
+              AND qt.status      = 'completed'
+              AND d.amount       > 0
+              AND paid.id IS NULL
+            ORDER BY qt.done_at DESC
+        ");
+        mysqli_stmt_bind_param($payStmt, "ii", $studentId, $cashierOfficeId);
+        mysqli_stmt_execute($payStmt);
+        $payResult = mysqli_stmt_get_result($payStmt);
+        $payRows = $payResult ? mysqli_fetch_all($payResult, MYSQLI_ASSOC) : [];
+
+        // Group rows by originating ticket — one ticket can
+        // carry several service items, each as its own row.
+        $grouped = [];
+        foreach ($payRows as $row) {
+            $tid = $row['ticket_id'];
+            if (!isset($grouped[$tid])) {
+                $grouped[$tid] = [
+                    'ticket_id'          => intval($tid),
+                    'queue_number'       => $row['queue_number'],
+                    'done_at'            => $row['done_at'],
+                    'source_office_id'   => intval($row['source_office_id']),
+                    'source_office_name' => $row['source_office_name'],
+                    'service_items'      => [],
+                    'total'              => 0.0,
+                ];
+            }
+            $grouped[$tid]['service_items'][] = [
+                'id'       => intval($row['service_item_id']),
+                'name'     => $row['service_item_name'],
+                'amount'   => (float) $row['amount'],
+                'quantity' => intval($row['quantity']),
+                'subtotal' => (float) $row['amount'] * intval($row['quantity']),
+            ];
+            $grouped[$tid]['total'] += (float) $row['amount'] * intval($row['quantity']);
+        }
+
+        $payable = array_values($grouped);
+
+        // Round totals to 2 decimal places for clean JSON
+        foreach ($payable as &$pt) {
+            $pt['total'] = round($pt['total'], 2);
+            foreach ($pt['service_items'] as &$svc) {
+                $svc['amount']   = round($svc['amount'], 2);
+                $svc['subtotal'] = round($svc['subtotal'], 2);
+            }
+            unset($svc);
+        }
+        unset($pt);
+
+        echo json_encode([
+            "success"  => true,
+            "payable"  => $payable,
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     echo json_encode(["success" => false, "message" => "Unknown action."]);
     exit;
 }
@@ -290,6 +401,136 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 
 $data = json_decode(file_get_contents("php://input"), true);
 $mode = $data['mode'] ?? 'regular';
+
+// =====================================================
+// POST mode=cashier
+// Student joins the cashier queue to pay for a
+// completed ticket from another office.
+// Body: { student_id, office_id, source_ticket_id }
+// =====================================================
+if ($mode === 'cashier') {
+
+    $student_id       = intval($data['student_id'] ?? 0);
+    $cashier_office_id = intval($data['office_id'] ?? 0);
+    $source_ticket_id  = intval($data['source_ticket_id'] ?? 0);
+    $priority          = !empty($data['priority']) ? 1 : 0;
+    $priority_reason   = trim($data['priority_reason'] ?? '');
+
+    if (!$student_id || !$cashier_office_id || !$source_ticket_id) {
+        echo json_encode(["success" => false, "message" => "Missing required fields."]);
+        exit;
+    }
+
+    // Server-side priority validation — mirrors the client guard.
+    $priorityReasonEscaped = mysqli_real_escape_string($conn, $priority_reason);
+    if ($priority && $priority_reason === '') {
+        echo json_encode(["success" => false, "message" => "Please enter a reason for priority lane."]);
+        exit;
+    }
+
+    // Capacity check
+    $capResult = mysqli_query($conn, "
+        SELECT oc.daily_capacity,
+               (SELECT COUNT(*) FROM queue_tickets
+                WHERE office_id = '$cashier_office_id'
+                  AND status != 'cancelled'
+                  AND DATE(created_at) = CURDATE()) AS today_count
+        FROM office_configs oc
+        WHERE oc.office_id = '$cashier_office_id'
+        LIMIT 1
+    ");
+    $capRow = $capResult ? mysqli_fetch_assoc($capResult) : null;
+    if ($capRow && $capRow['daily_capacity'] !== null
+        && intval($capRow['today_count']) >= intval($capRow['daily_capacity'])) {
+        echo json_encode(["success" => false, "message" => "This office has reached its full capacity for today. Please try again tomorrow."]);
+        exit;
+    }
+
+    // Re-verify server-side: must be the student's own completed ticket
+    // at a DIFFERENT office, not yet paid (no non-cancelled cashier ticket
+    // linked to it). Never trust the client.
+    $verifyStmt = mysqli_prepare($conn, "
+        SELECT qt.id, qt.office_id
+        FROM queue_tickets qt
+        LEFT JOIN queue_tickets paid
+            ON paid.linked_ticket_id = qt.id
+           AND paid.status != 'cancelled'
+        WHERE qt.id         = ?
+          AND qt.student_id = ?
+          AND qt.office_id != ?
+          AND qt.status     = 'completed'
+          AND paid.id IS NULL
+        LIMIT 1
+    ");
+    mysqli_stmt_bind_param($verifyStmt, "iii", $source_ticket_id, $student_id, $cashier_office_id);
+    mysqli_stmt_execute($verifyStmt);
+    $verifyResult = mysqli_stmt_get_result($verifyStmt);
+    $sourceTicket = $verifyResult ? mysqli_fetch_assoc($verifyResult) : null;
+
+    if (!$sourceTicket) {
+        echo json_encode(["success" => false, "message" => "That request is no longer available for payment."]);
+        exit;
+    }
+
+    // Copy service items from the source ticket onto the new cashier
+    // ticket so staff see exactly what's being paid for + amount.
+    $srcSvcResult = mysqli_query($conn, "
+        SELECT service_item_id, quantity FROM queue_ticket_item WHERE ticket_id = '$source_ticket_id'
+    ");
+    $srcSvcItems = $srcSvcResult ? mysqli_fetch_all($srcSvcResult, MYSQLI_ASSOC) : [];
+
+    // Cashier windows aren't scoped to specific service items —
+    // any open walk-in window can accept payment.
+    $windowResult = mysqli_query($conn, "
+        SELECT id, name,
+               (SELECT COUNT(*) FROM queue_tickets qt
+                WHERE qt.window_id = w.id
+                  AND qt.status IN ('waiting','called','in_progress')) AS load_count
+        FROM windows w
+        WHERE w.office_id = '$cashier_office_id'
+          AND w.status    = 'open'
+          AND (w.queue_type = 'walkin' OR w.queue_type = 'both')
+        ORDER BY load_count ASC, w.id ASC
+        LIMIT 1
+    ");
+    $window = $windowResult ? mysqli_fetch_assoc($windowResult) : null;
+    $windowId   = $window ? intval($window['id']) : null;
+    $windowName = $window ? $window['name'] : 'Not Assigned';
+
+    $queueNumber  = nextQueueNumber($conn, $cashier_office_id);
+    $windowIdSql  = $windowId !== null ? "'$windowId'" : "NULL";
+
+    $insertSql = "INSERT INTO queue_tickets
+                    (student_id, office_id, linked_ticket_id, queue_number, type, status,
+                     priority, priority_reason, window_id, created_at, updated_at)
+                  VALUES
+                    ('$student_id', '$cashier_office_id', '$source_ticket_id',
+                     '$queueNumber', 'walkin', 'waiting', '$priority',
+                     " . ($priorityReasonEscaped !== '' ? "'$priorityReasonEscaped'" : "NULL") . ",
+                     $windowIdSql, NOW(), NOW())";
+
+    if (!mysqli_query($conn, $insertSql)) {
+        echo json_encode(["success" => false, "message" => mysqli_error($conn)]);
+        exit;
+    }
+
+    $ticketId = mysqli_insert_id($conn);
+
+    foreach ($srcSvcItems as $svc) {
+        $svcId  = intval($svc['service_item_id']);
+        $svcQty = intval($svc['quantity']);
+        mysqli_query($conn, "INSERT INTO queue_ticket_item (ticket_id, service_item_id, quantity)
+                             VALUES ('$ticketId', '$svcId', '$svcQty')");
+    }
+
+    echo json_encode([
+        "success"      => true,
+        "message"      => "You have joined the payment queue.",
+        "queue_number" => $queueNumber,
+        "window_name"  => $windowName,
+    ]);
+    exit;
+}
 
 if ($mode === 'event') {
 

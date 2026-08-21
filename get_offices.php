@@ -5,16 +5,27 @@ header("Access-Control-Allow-Origin: *");
 
 include "db.php";
 
-$sql = "SELECT id, name, slug, description
-        FROM offices
-        WHERE is_active = 1
-        ORDER BY name ASC";
+$sql = "SELECT 
+            o.id,
+            o.name,
+            o.slug,
+            o.description,
+            (
+                SELECT COUNT(*)
+                FROM windows w
+                WHERE w.office_id = o.id
+                AND w.status = 'open'
+            ) AS open_windows
+        FROM offices o
+        WHERE o.is_active = 1
+        ORDER BY o.name ASC";
 
 $result = mysqli_query($conn, $sql);
 
 $offices = [];
 
 while($row = mysqli_fetch_assoc($result)){
+    $row['open_windows'] = intval($row['open_windows']);
     $offices[] = $row;
 }
 
