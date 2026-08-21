@@ -1,4 +1,4 @@
-export const IP_ADDRESS = "192.168.1.178";
+export const IP_ADDRESS = "192.168.1.18";
 
 export const API_URL = `http://${IP_ADDRESS}/uniqueue_api`;
 
@@ -36,6 +36,7 @@ export const API = {
 
   //LIVE QUEUE
   getLiveQueue: `${API_URL}/get_live_queue.php`,
+  getOfficeQueue: `${API_URL}/get_office_queue.php`,
 
   //FEEDBACK
   getPendingFeedback: `${API_URL}/get_pending_feedback.php`,

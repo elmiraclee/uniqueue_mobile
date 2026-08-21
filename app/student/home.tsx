@@ -12,6 +12,7 @@ import FeedbackModal, {
   PendingFeedbackTransaction,
 } from '@/components/feedback/feedback-modal';
 import CurrentQueueModal from '@/components/queue/current-queue-modal';
+import LiveQueueModal from '@/components/queue/live-queue-modal';
 import { API, API_URL } from '@/constants/backend';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -34,6 +35,7 @@ interface Office {
   name: string;
   slug: string;
   description: string;
+  open_windows: number;
 }
 
 // OFFICE EVENT — e.g. "Enrollment", shown nested under its office so a
@@ -95,6 +97,7 @@ export default function StudentHome() {
   const [currentQueue, setCurrentQueue] = useState<any>(null);
   const [showQueueModal, setShowQueueModal] = useState(false);
   const [studentId, setStudentId] = useState<number>(0);
+  const [now, setNow] = useState(new Date());
 
   // Tracks whether the student currently has an active ticket for each
   // event, keyed by event id — e.g. { [eventId]: true }. This is separate
@@ -109,6 +112,9 @@ export default function StudentHome() {
   const [pendingFeedback, setPendingFeedback] = useState<PendingFeedbackTransaction | null>(null);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
 
+  const [selectedOffice, setSelectedOffice] = useState<Office | null>(null);
+  const [showLiveQueueModal, setShowLiveQueueModal] = useState(false);
+
   const fade = useRef(new Animated.Value(0)).current;
   const slide = useRef(new Animated.Value(16)).current;
 
@@ -122,6 +128,8 @@ export default function StudentHome() {
       Animated.timing(slide, { toValue: 0, duration: 380, useNativeDriver: true }),
     ]).start();
 
+    const clockInterval = setInterval(() => setNow(new Date()), 1000);
+
     const interval = setInterval(async () => {
       const user = await AsyncStorage.getItem('user');
       if (!user) return;
@@ -132,7 +140,10 @@ export default function StudentHome() {
       fetchPendingFeedback(parsed.id);
     }, POLL_INTERVAL_MS);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(clockInterval);
+      clearInterval(interval);
+    };
   }, []);
 
   // Refetch the moment this screen regains focus — e.g. coming back from
@@ -294,6 +305,7 @@ export default function StudentHome() {
       setShowFeedbackModal(true);
       return;
     }
+    if (showLiveQueueModal) setShowLiveQueueModal(false);
     router.push(`/student/queues/office-queue?office=${office.slug}`);
   };
 
@@ -361,32 +373,37 @@ export default function StudentHome() {
     </View>
 
     <View style={styles.profileText}>
-      <Text style={styles.greetingLabel}>
-        {getGreeting()}
-      </Text>
-
-      <Text
-        numberOfLines={1}
-        style={styles.studentName}
-      >
-        {studentName || "Student"}
-      </Text>
-    </View>
-
-      <View style={styles.todayChip}>
-        <Ionicons
-          name="calendar-outline"
-          size={14}
-          color={COLORS.white}
-        />
+      <View style={styles.greetingTopRow}>
+        <Text style={styles.greetingLabel}>
+          {getGreeting()}
+        </Text>
 
         <Text style={styles.todayChipText}>
-          {new Date().toLocaleDateString("en-US", {
+          {now.toLocaleDateString("en-US", {
             month: "short",
             day: "numeric",
           })}
         </Text>
       </View>
+
+      <View style={styles.greetingTopRow}>
+        <Text
+          numberOfLines={1}
+          style={[styles.studentName, { flex: 1 }]}
+        >
+          {studentName || "Student"}
+        </Text>
+
+        <Text style={styles.todayChipTime}>
+          {now.toLocaleTimeString("en-US", {
+            hour: "numeric",
+            minute: "2-digit",
+            second: "2-digit",
+            hour12: true,
+          })}
+        </Text>
+      </View>
+    </View>
 
     </View>
 
@@ -556,10 +573,35 @@ export default function StudentHome() {
                     {office.description}
                   </Text>
 
+                  {/* Open windows count */}
+                  <View style={styles.windowsRow}>
+                    <Ionicons name="grid-outline" size={13} color={COLORS.gray} />
+                    <Text style={styles.windowsText}>
+                      {office.open_windows > 0
+                        ? `${office.open_windows} window${office.open_windows > 1 ? 's' : ''} open`
+                        : 'No open windows'}
+                    </Text>
+                  </View>
+
                   <View style={styles.cardFooter}>
-                    <AnimatedPressable style={styles.joinButton} onPress={() => joinQueue(office)}>
+                    <AnimatedPressable
+                      style={[styles.joinButton, !!pendingFeedback && styles.joinButtonDisabled]}
+                      onPress={() => joinQueue(office)}
+                      disabled={!!pendingFeedback}
+                    >
                       <Text style={styles.joinButtonText}>Join Queue</Text>
                       <Ionicons name="arrow-forward" size={16} color={COLORS.white} />
+                    </AnimatedPressable>
+
+                    <AnimatedPressable
+                      style={styles.liveQueueButton}
+                      onPress={() => {
+                        setSelectedOffice(office);
+                        setShowLiveQueueModal(true);
+                      }}
+                    >
+                      <Ionicons name="pulse-outline" size={15} color={COLORS.primary} />
+                      <Text style={styles.liveQueueButtonText}>Live Queue</Text>
                     </AnimatedPressable>
                   </View>
 
@@ -631,6 +673,20 @@ export default function StudentHome() {
           fetchPendingFeedback(studentId);
         }}
       />
+
+      <LiveQueueModal
+        visible={showLiveQueueModal}
+        office={selectedOffice}
+        onClose={() => {
+          setShowLiveQueueModal(false);
+          setSelectedOffice(null);
+        }}
+        onJoinQueue={() => {
+          setShowLiveQueueModal(false);
+          if (selectedOffice) joinQueue(selectedOffice);
+        }}
+        pendingFeedback={!!pendingFeedback}
+      />
     </View>
   );
 }
@@ -648,7 +704,7 @@ const styles = StyleSheet.create({
   greetingCard: {
     backgroundColor: COLORS.primary,
     borderRadius: RADIUS.xxl,
-    padding: SPACING.xl,
+    padding: SPACING.lg,
     ...SHADOWS.glow,
   },
 
@@ -901,6 +957,37 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 14,
   },
+  joinButtonDisabled: {
+    opacity: 0.45,
+  },
+  liveQueueButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderWidth: 1.5,
+    borderColor: COLORS.primary,
+    paddingVertical: SPACING.md + 2,
+    borderRadius: RADIUS.md,
+    marginTop: SPACING.sm,
+  },
+  liveQueueButtonText: {
+    color: COLORS.primary,
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  windowsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: SPACING.lg,
+    paddingBottom: SPACING.sm,
+  },
+  windowsText: {
+    fontSize: 12,
+    color: COLORS.gray,
+    fontWeight: '600',
+  },
 
   // Office Event row (nested under its office card)
   eventRow: {
@@ -1035,7 +1122,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   greetingLabel: {
-    fontSize: 13,
+    fontSize: 16,
     color: "rgba(255,255,255,0.75)",
     fontWeight: "600",
   },
@@ -1045,26 +1132,41 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     marginTop: 2,
   },
-  todayChip: {
-  flexDirection: "row",
-  alignItems: "center",
-  backgroundColor: "rgba(255,255,255,0.15)",
-  paddingHorizontal: 10,
-  paddingVertical: 6,
-  borderRadius: 20,
-  gap: 4,
-},
+  greetingTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
 
-todayChipText: {
-  color: COLORS.white,
-  fontSize: 12,
-  fontWeight: "700",
-},
+  todayChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+
+  todayChipDot: {
+    width: 3,
+    height: 5,
+    borderRadius: 1.5,
+    backgroundColor: "rgba(255,255,255,0.5)",
+  },
+
+  todayChipText: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+
+  todayChipTime: {
+    color: "rgba(255,255,255,0.9)",
+    fontSize: 16,
+    fontWeight: "600",
+  },
 
 greetingDivider: {
   height: 1,
   backgroundColor: "rgba(255,255,255,0.15)",
-  marginVertical: 18,
+  marginVertical: 8,
 },
 
 bottomRow: {
