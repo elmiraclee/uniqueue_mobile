@@ -13,6 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 
 import { API } from '../../constants/backend';
+import { fetchJsonOrNull } from '../../utils/api';
 import {
     COLORS,
     OPACITY,

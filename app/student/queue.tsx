@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -6,6 +6,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -14,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { API } from '@/constants/backend';
+import { fetchJsonOrNull, safeFetchJson } from '@/utils/api';
 import AppHeader from '../../components/layout/app-header';
 import { COLORS } from '../../constants/theme';
 
@@ -167,6 +169,12 @@ function FilterDropdown<T extends string>({
 export default function Queue() {
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [txStats, setTxStats] = useState<{
+    total: number;
+    completed: number;
+    cancelled: number;
+    active: number;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -174,13 +182,31 @@ export default function Queue() {
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
+  // Search box — matches web's `?q=` search (queue number, office name,
+  // or service items). Debounced so it doesn't fire a request per
+  // keystroke; the server does the actual filtering via
+  // get_student_transaction.php's new `q` param.
+  const [searchText, setSearchText] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => {
+      setSearchQuery(searchText.trim());
+    }, 400);
+    return () => {
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    };
+  }, [searchText]);
+
   const [selectedTransaction, setSelectedTransaction] =
     useState<Transaction | null>(null);
 
   const [showModal, setShowModal] =
     useState(false);
 
-  const fetchTransactions = async () => {
+  const fetchTransactions = async (query: string = '') => {
 
     try {
 
@@ -193,16 +219,24 @@ export default function Queue() {
 
       const parsed = JSON.parse(user);
 
-      const response = await fetch(
-        `${API.getStudentTransactions}?student_id=${parsed.id}`
+      const qParam = query ? `&q=${encodeURIComponent(query)}` : '';
+
+      const data = await fetchJsonOrNull(
+        `${API.getStudentTransactions}?student_id=${parsed.id}${qParam}`,
+        undefined,
+        'Fetch Transactions Error'
       );
 
-      const data = await response.json();
-
-      console.log(data);
-
-      if (data.success) {
-        setTransactions(data.transactions);
+      if (data?.success) {
+        setTransactions(data.transactions || []);
+        if (data.stats) {
+          setTxStats({
+            total: data.stats.total ?? 0,
+            completed: data.stats.completed ?? 0,
+            cancelled: data.stats.cancelled ?? 0,
+            active: data.stats.active ?? 0,
+          });
+        }
       } else {
         setTransactions([]);
       }
@@ -222,13 +256,13 @@ export default function Queue() {
   };
 
   useEffect(() => {
-    fetchTransactions();
-  }, []);
+    fetchTransactions(searchQuery);
+  }, [searchQuery]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    fetchTransactions();
-  }, []);
+    fetchTransactions(searchQuery);
+  }, [searchQuery]);
 
   const filteredTransactions = transactions.filter(item => {
 
@@ -309,6 +343,50 @@ export default function Queue() {
           />
         }
       >
+
+        {txStats && (
+          <View style={styles.statsRow}>
+            <View style={styles.statCard}>
+              <Text style={styles.statValue}>{txStats.total}</Text>
+              <Text style={styles.statLabel}>Total</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={[styles.statValue, { color: '#1E9E4F' }]}>
+                {txStats.completed}
+              </Text>
+              <Text style={styles.statLabel}>Completed</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={[styles.statValue, { color: '#D3453B' }]}>
+                {txStats.cancelled}
+              </Text>
+              <Text style={styles.statLabel}>Cancelled</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Text style={[styles.statValue, { color: '#C9860A' }]}>
+                {txStats.active}
+              </Text>
+              <Text style={styles.statLabel}>Active</Text>
+            </View>
+          </View>
+        )}
+
+        <View style={styles.searchRow}>
+          <Ionicons name="search-outline" size={16} color={COLORS.gray} style={{ marginRight: 8 }} />
+          <TextInput
+            style={styles.searchInput}
+            value={searchText}
+            onChangeText={setSearchText}
+            placeholder="Search queue #, office, or item"
+            placeholderTextColor={COLORS.gray}
+            returnKeyType="search"
+          />
+          {searchText.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchText('')} hitSlop={8}>
+              <Ionicons name="close-circle" size={18} color={COLORS.gray} />
+            </TouchableOpacity>
+          )}
+        </View>
 
         <View style={styles.filterRow}>
           <FilterDropdown
@@ -659,6 +737,50 @@ const styles = StyleSheet.create({
   },
 
   // ----- Filters -----
+
+  statsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: COLORS.cream ?? '#faf6f3',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 6,
+    alignItems: 'center',
+  },
+  statValue: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: COLORS.primary,
+  },
+  statLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: COLORS.gray,
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#eee',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 12,
+  },
+
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: COLORS.text,
+    padding: 0,
+  },
 
   filterRow: {
     flexDirection: 'row',

@@ -53,9 +53,37 @@ export default function QueueModalContent({ loading, queue, onCancel, onClose, o
     );
   }
 
+  const status = (queue.status || '').toLowerCase();
+  const isCalled = status === 'called' || status === 'in_progress';
+  const isNext = status === 'next';
+  // Only allow cancel while still waiting / next (mirrors web).
+  const canCancel = status === 'waiting' || status === 'next';
+
   return (
     <View style={styles.content}>
       <Text style={styles.title}>Queue Details</Text>
+
+      {/* "Please proceed now" — same behaviour as web's called-info panel */}
+      {isCalled && (
+        <View style={styles.proceedBanner}>
+          <View style={styles.proceedIconWrap}>
+            <Ionicons name="walk-outline" size={28} color={COLORS.white} />
+          </View>
+          <Text style={styles.proceedTitle}>Please Proceed Now</Text>
+          <Text style={styles.proceedSubtitle}>
+            Your number has been called
+            {queue.window_name ? ` — go to ${queue.window_name}` : ''}.
+          </Text>
+        </View>
+      )}
+
+      {/* "You're next" highlight — web keeps waiting view + is-next class */}
+      {isNext && !isCalled && (
+        <View style={styles.nextBanner}>
+          <Ionicons name="alert-circle-outline" size={22} color={COLORS.info} />
+          <Text style={styles.nextText}>You're next in queue — please stay nearby.</Text>
+        </View>
+      )}
 
       <ScrollView
         style={styles.scrollArea}
@@ -86,7 +114,7 @@ export default function QueueModalContent({ loading, queue, onCancel, onClose, o
         </Text>
       </AnimatedPressable>
 
-      {queue.status === 'waiting' && (
+      {canCancel && (
         <AnimatedPressable style={styles.cancelButton} onPress={onCancel}>
           <Ionicons name="close-circle-outline" size={18} color={COLORS.dangerDark} />
           <Text style={styles.cancelText}>Cancel Queue</Text>
@@ -104,7 +132,7 @@ const styles = StyleSheet.create({
     paddingBottom: SPACING.lg,
   },
   scrollArea: {
-    maxHeight: 420,
+    maxHeight: 380,
   },
   scrollContent: {
     gap: SPACING.sm,
@@ -149,6 +177,51 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.md,
     color: COLORS.secondary,
     textAlign: 'center',
+  },
+  proceedBanner: {
+    backgroundColor: COLORS.primary,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.lg,
+    alignItems: 'center',
+    marginBottom: SPACING.md,
+    gap: 6,
+  },
+  proceedIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  proceedTitle: {
+    color: COLORS.white,
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  proceedSubtitle: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  nextBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: COLORS.infoLight,
+    borderRadius: RADIUS.md,
+    paddingVertical: SPACING.sm + 2,
+    paddingHorizontal: SPACING.md,
+    marginBottom: SPACING.md,
+  },
+  nextText: {
+    flex: 1,
+    color: COLORS.info,
+    fontSize: 13,
+    fontWeight: '700',
   },
   cancelButton: {
     flexDirection: 'row',

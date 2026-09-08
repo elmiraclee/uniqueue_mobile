@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Image,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,8 +13,8 @@ import FeedbackModal, {
   PendingFeedbackTransaction,
 } from '@/components/feedback/feedback-modal';
 import CurrentQueueModal from '@/components/queue/current-queue-modal';
-import LiveQueueModal from '@/components/queue/live-queue-modal';
-import { API, API_URL } from '@/constants/backend';
+import RequeueModal from '@/components/queue/requeue-modal';
+import { API, API_URL, ASSET_BASE_URL } from '@/constants/backend';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, useFocusEffect } from 'expo-router';
@@ -29,13 +30,22 @@ import {
   SPACING,
   TYPOGRAPHY,
 } from '../../constants/theme';
+import { fetchJsonOrNull } from '@/utils/api';
 
 interface Office {
   id: number;
   name: string;
   slug: string;
   description: string;
-  open_windows: number;
+  // Config + capacity — same fields the web dashboard uses so Join can
+  // be disabled and a FULL badge shown when the office is at capacity.
+  walkin_enabled?: boolean | null;
+  appointment_enabled?: boolean | null;
+  priority_enabled?: boolean | null;
+  daily_capacity?: number | null;
+  today_ticket_count?: number;
+  is_full?: boolean;
+  transaction_type?: string;
 }
 
 // OFFICE EVENT — e.g. "Enrollment", shown nested under its office so a
@@ -93,11 +103,26 @@ export default function StudentHome() {
   const [picture, setPicture] = useState<string | null>(null);
   const [offices, setOffices] = useState<Office[]>([]);
   const [events, setEvents] = useState<OfficeEvent[]>([]);
+  const [dashStats, setDashStats] = useState<{
+    open_offices: number;
+    total_waiting: number;
+    done_today: number;
+    est_wait_mins: number | null;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [currentQueue, setCurrentQueue] = useState<any>(null);
   const [showQueueModal, setShowQueueModal] = useState(false);
   const [studentId, setStudentId] = useState<number>(0);
-  const [now, setNow] = useState(new Date());
+
+  // Requeue prompt — shown when polling reports is_requeued = true for
+  // the student's active ticket (see fetchCurrentQueue).
+  const [requeueTicket, setRequeueTicket] = useState<any>(null);
+  const [showRequeueModal, setShowRequeueModal] = useState(false);
+  // Tracks the ticket id already responded to / dismissed this session,
+  // so a stale still-requeued poll response right after responding
+  // doesn't immediately reopen the modal.
+  const respondedRequeueTicketId = useRef<number | null>(null);
 
   // Tracks whether the student currently has an active ticket for each
   // event, keyed by event id — e.g. { [eventId]: true }. This is separate
@@ -112,9 +137,6 @@ export default function StudentHome() {
   const [pendingFeedback, setPendingFeedback] = useState<PendingFeedbackTransaction | null>(null);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
 
-  const [selectedOffice, setSelectedOffice] = useState<Office | null>(null);
-  const [showLiveQueueModal, setShowLiveQueueModal] = useState(false);
-
   const fade = useRef(new Animated.Value(0)).current;
   const slide = useRef(new Animated.Value(16)).current;
 
@@ -128,8 +150,6 @@ export default function StudentHome() {
       Animated.timing(slide, { toValue: 0, duration: 380, useNativeDriver: true }),
     ]).start();
 
-    const clockInterval = setInterval(() => setNow(new Date()), 1000);
-
     const interval = setInterval(async () => {
       const user = await AsyncStorage.getItem('user');
       if (!user) return;
@@ -140,10 +160,7 @@ export default function StudentHome() {
       fetchPendingFeedback(parsed.id);
     }, POLL_INTERVAL_MS);
 
-    return () => {
-      clearInterval(clockInterval);
-      clearInterval(interval);
-    };
+    return () => clearInterval(interval);
   }, []);
 
   // Refetch the moment this screen regains focus — e.g. coming back from
@@ -183,11 +200,10 @@ export default function StudentHome() {
       const results = await Promise.all(
         events.map(async (ev) => {
           try {
-            const res = await fetch(
+            const data = await fetchJsonOrNull(
               `${API_URL}/office-queue.php?action=event&event_id=${ev.id}&office_id=${ev.office_id}&student_id=${sid}`
             );
-            const data = await res.json();
-            return [ev.id, data.success && !!data.active_ticket] as const;
+            return [ev.id, !!(data?.success && data.active_ticket)] as const;
           } catch {
             return [ev.id, false] as const;
           }
@@ -219,20 +235,27 @@ export default function StudentHome() {
       );
       setPicture(parsed.picture ?? null);
       try {
-        const res = await fetch(
-          `${API.getStudentProfile}?student_id=${parsed.id}`
+        const data = await fetchJsonOrNull(
+          `${API.getStudentProfile}?student_id=${parsed.id}`,
+          undefined,
+          'Fetch Student Profile Error'
         );
 
-        const data = await res.json();
-
-        if (data.success) {
-          setPicture(data.student.picture);
+        if (data?.success) {
+          // Prefer uploaded picture; fall back to Google account photo
+          // (same resolve order as web resolve_student_avatar).
+          const pic =
+            data.student.picture ||
+            data.student.google_picture ||
+            null;
+          setPicture(pic);
 
           await AsyncStorage.setItem(
             "user",
             JSON.stringify({
               ...parsed,
-              picture: data.student.picture,
+              picture: data.student.picture ?? null,
+              google_picture: data.student.google_picture ?? null,
             })
           );
         }
@@ -249,14 +272,28 @@ export default function StudentHome() {
 
   const fetchCurrentQueue = async (studentId: number) => {
     try {
-      const res = await fetch(API.getCurrentQueue, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ student_id: studentId }),
-      });
+      const data = await fetchJsonOrNull(
+        API.getCurrentQueue,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ student_id: studentId }),
+        },
+        'Fetch Current Queue Error'
+      );
+      const queue = data?.success ? data.queue : null;
+      setCurrentQueue(queue);
 
-      const data = await res.json();
-      setCurrentQueue(data.success ? data.queue : null);
+      // Staff skipped this ticket and it's waiting on the student to
+      // respond — show the requeue prompt (mirrors student-dashboard.js
+      // on web). Don't re-show it if the student already dismissed it
+      // for this exact ticket in this session.
+      if (queue?.is_requeued && respondedRequeueTicketId.current !== queue.id) {
+        setRequeueTicket(queue);
+        setShowRequeueModal(true);
+      } else if (!queue?.is_requeued) {
+        setShowRequeueModal(false);
+      }
     } catch (e) {
       console.log(e);
     }
@@ -264,9 +301,12 @@ export default function StudentHome() {
 
   const fetchPendingFeedback = async (sid: number) => {
     try {
-      const res = await fetch(`${API.getPendingFeedback}?student_id=${sid}`);
-      const data = await res.json();
-      setPendingFeedback(data.success && data.pending ? data.transaction : null);
+      const data = await fetchJsonOrNull(
+        `${API.getPendingFeedback}?student_id=${sid}`,
+        undefined,
+        'Fetch Pending Feedback Error'
+      );
+      setPendingFeedback(data?.success && data.pending ? data.transaction : null);
     } catch (e) {
       console.log('Fetch Pending Feedback Error:', e);
     }
@@ -274,11 +314,12 @@ export default function StudentHome() {
 
   const fetchOffices = async () => {
     try {
-      const response = await fetch(API.getOffice);
-      const data = await response.json();
-
-      if (data.success) {
+      const data = await fetchJsonOrNull(API.getOffice, undefined, 'Fetch Offices Error');
+      if (data?.success) {
         setOffices(data.offices);
+        if (data.stats) {
+          setDashStats(data.stats);
+        }
       }
     } catch (error) {
       console.log('Fetch Offices Error:', error);
@@ -289,10 +330,12 @@ export default function StudentHome() {
 
   const fetchEvents = async () => {
     try {
-      const response = await fetch(`${API_URL}/office-queue.php?action=events`);
-      const data = await response.json();
-
-      if (data.success) {
+      const data = await fetchJsonOrNull(
+        `${API_URL}/office-queue.php?action=events`,
+        undefined,
+        'Fetch Events Error'
+      );
+      if (data?.success) {
         setEvents(data.events);
       }
     } catch (error) {
@@ -300,12 +343,47 @@ export default function StudentHome() {
     }
   };
 
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      // Sequential (not Promise.all) to avoid Hostinger connection limits
+      // that show up as empty HTTP 500 responses under burst traffic.
+      await loadUser();
+      await fetchOffices();
+      await fetchEvents();
+
+      const user = await AsyncStorage.getItem('user');
+      if (user) {
+        try {
+          const parsed = JSON.parse(user);
+          if (parsed?.id) {
+            await fetchCurrentQueue(parsed.id);
+            await fetchPendingFeedback(parsed.id);
+            await fetchActiveEventTickets(parsed.id);
+          }
+        } catch {
+          // ignore storage parse errors
+        }
+      }
+    } finally {
+      setRefreshing(false);
+    }
+  }, [events]);
+
   const joinQueue = (office: Office) => {
+    // Same blocking rules as the web dashboard:
+    // active ticket OR pending feedback OR office full → cannot join.
     if (pendingFeedback) {
       setShowFeedbackModal(true);
       return;
     }
-    if (showLiveQueueModal) setShowLiveQueueModal(false);
+    if (currentQueue) {
+      setShowQueueModal(true);
+      return;
+    }
+    if (office.is_full) {
+      return;
+    }
     router.push(`/student/queues/office-queue?office=${office.slug}`);
   };
 
@@ -314,8 +392,18 @@ export default function StudentHome() {
       setShowFeedbackModal(true);
       return;
     }
+    if (currentQueue) {
+      setShowQueueModal(true);
+      return;
+    }
+    if (office.is_full) {
+      return;
+    }
     router.push(`/student/queues/office-queue?office=${office.slug}&event_id=${event.id}`);
   };
+
+  /** True when the student is blocked from joining any new queue. */
+  const joinBlocked = !!(currentQueue || pendingFeedback);
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -325,17 +413,27 @@ export default function StudentHome() {
   };
 
   const getQueueStatusText = () => {
-    return currentQueue ? "On Queue" : "Ready to Queue";
+    if (!currentQueue) return "Ready to Queue";
+    const s = (currentQueue.status || '').toLowerCase();
+    if (s === 'called' || s === 'in_progress') return "Proceed Now";
+    if (s === 'next') return "Next in Queue";
+    return "On Queue";
   };
 
   const getQueueStatusColor = () => {
-    return currentQueue ? "#F59E0B" : "#22C55E";
+    if (!currentQueue) return "#22C55E";
+    const s = (currentQueue.status || '').toLowerCase();
+    if (s === 'called' || s === 'in_progress') return "#2563EB";
+    if (s === 'next') return "#0EA5E9";
+    return "#F59E0B";
   };
 
   const getQueueStatusBackground = () => {
-    return currentQueue
-      ? "rgba(245,158,11,0.18)"
-      : "rgba(34,197,94,0.18)";
+    if (!currentQueue) return "rgba(34,197,94,0.18)";
+    const s = (currentQueue.status || '').toLowerCase();
+    if (s === 'called' || s === 'in_progress') return "rgba(37,99,235,0.18)";
+    if (s === 'next') return "rgba(14,165,233,0.18)";
+    return "rgba(245,158,11,0.18)";
   };
 
   const getOfficeIcon = (slug: string): keyof typeof Ionicons.glyphMap => {
@@ -347,7 +445,18 @@ export default function StudentHome() {
     <View style={styles.container}>
       <AppHeader />
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[COLORS.primary]}
+            tintColor={COLORS.primary}
+          />
+        }
+      >
         <Animated.View style={{ opacity: fade, transform: [{ translateY: slide }], gap: SPACING.lg }}>
           {/* Greeting */}
        <View style={styles.greetingCard}>
@@ -359,7 +468,11 @@ export default function StudentHome() {
       {picture ? (
         <Image
           source={{
-            uri: `${API_URL}/${picture}`,
+            // google_picture is already an absolute URL; local uploads
+            // are stored relative to the site root.
+            uri: picture.startsWith('http')
+              ? picture
+              : `${ASSET_BASE_URL}/${picture}`,
           }}
           style={styles.profileImage}
         />
@@ -373,37 +486,32 @@ export default function StudentHome() {
     </View>
 
     <View style={styles.profileText}>
-      <View style={styles.greetingTopRow}>
-        <Text style={styles.greetingLabel}>
-          {getGreeting()}
-        </Text>
+      <Text style={styles.greetingLabel}>
+        {getGreeting()}
+      </Text>
+
+      <Text
+        numberOfLines={1}
+        style={styles.studentName}
+      >
+        {studentName || "Student"}
+      </Text>
+    </View>
+
+      <View style={styles.todayChip}>
+        <Ionicons
+          name="calendar-outline"
+          size={14}
+          color={COLORS.white}
+        />
 
         <Text style={styles.todayChipText}>
-          {now.toLocaleDateString("en-US", {
+          {new Date().toLocaleDateString("en-US", {
             month: "short",
             day: "numeric",
           })}
         </Text>
       </View>
-
-      <View style={styles.greetingTopRow}>
-        <Text
-          numberOfLines={1}
-          style={[styles.studentName, { flex: 1 }]}
-        >
-          {studentName || "Student"}
-        </Text>
-
-        <Text style={styles.todayChipTime}>
-          {now.toLocaleTimeString("en-US", {
-            hour: "numeric",
-            minute: "2-digit",
-            second: "2-digit",
-            hour12: true,
-          })}
-        </Text>
-      </View>
-    </View>
 
     </View>
 
@@ -471,6 +579,39 @@ export default function StudentHome() {
             </AnimatedPressable>
           )}
 
+          {/* Proceed now banner — mirrors web's called-info panel */}
+          {currentQueue && ['called', 'in_progress'].includes((currentQueue.status || '').toLowerCase()) && (
+            <AnimatedPressable
+              style={styles.proceedBanner}
+              onPress={() => setShowQueueModal(true)}
+            >
+              <View style={styles.proceedBannerIcon}>
+                <Ionicons name="walk-outline" size={22} color={COLORS.white} />
+              </View>
+              <View style={styles.feedbackBannerTextCol}>
+                <Text style={styles.proceedBannerTitle}>Please Proceed Now</Text>
+                <Text style={styles.proceedBannerSubtitle} numberOfLines={1}>
+                  {currentQueue.queue_number}
+                  {currentQueue.window_name ? ` · ${currentQueue.window_name}` : ''}
+                  {' — your turn'}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.85)" />
+            </AnimatedPressable>
+          )}
+
+          {/* Next-in-queue highlight */}
+          {currentQueue && (currentQueue.status || '').toLowerCase() === 'next' && (
+            <AnimatedPressable
+              style={styles.nextBanner}
+              onPress={() => setShowQueueModal(true)}
+            >
+              <Ionicons name="alert-circle-outline" size={20} color={COLORS.info} />
+              <Text style={styles.nextBannerText}>You're next — stay nearby</Text>
+              <Ionicons name="chevron-forward" size={18} color={COLORS.gray} />
+            </AnimatedPressable>
+          )}
+
           {/* Current Queue */}
           <AnimatedPressable
             style={styles.currentQueueCard}
@@ -523,6 +664,28 @@ export default function StudentHome() {
             )}
           </AnimatedPressable>
 
+          {/* Dashboard stats — mirrors web dash-hero__stats */}
+          {dashStats && (
+            <View style={styles.statsRow}>
+              <View style={styles.statCard}>
+                <Text style={styles.statValue}>{dashStats.open_offices}</Text>
+                <Text style={styles.statLabel}>Offices Open</Text>
+              </View>
+              <View style={styles.statCard}>
+                <Text style={styles.statValue}>{dashStats.total_waiting}</Text>
+                <Text style={styles.statLabel}>Waiting Today</Text>
+              </View>
+              <View style={styles.statCard}>
+                <Text style={styles.statValue}>
+                  {dashStats.est_wait_mins != null
+                    ? `~${dashStats.est_wait_mins}m`
+                    : '—'}
+                </Text>
+                <Text style={styles.statLabel}>Est. Wait</Text>
+              </View>
+            </View>
+          )}
+
           {/* Offices */}
           <View style={styles.sectionHeader}>
             <View>
@@ -563,45 +726,41 @@ export default function StudentHome() {
                       <Text style={styles.officeName} numberOfLines={2}>{office.name}</Text>
                     </View>
 
-                    <View style={styles.activeBadge}>
-                      <View style={styles.activeDot} />
-                      <Text style={styles.activeText}>OPEN</Text>
-                    </View>
+                    {office.is_full ? (
+                      <View style={styles.fullBadge}>
+                        <Text style={styles.fullBadgeText}>FULL</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.activeBadge}>
+                        <View style={styles.activeDot} />
+                        <Text style={styles.activeText}>OPEN</Text>
+                      </View>
+                    )}
                   </View>
 
                   <Text style={styles.officeDescription} numberOfLines={2}>
                     {office.description}
                   </Text>
 
-                  {/* Open windows count */}
-                  <View style={styles.windowsRow}>
-                    <Ionicons name="grid-outline" size={13} color={COLORS.gray} />
-                    <Text style={styles.windowsText}>
-                      {office.open_windows > 0
-                        ? `${office.open_windows} window${office.open_windows > 1 ? 's' : ''} open`
-                        : 'No open windows'}
-                    </Text>
-                  </View>
-
                   <View style={styles.cardFooter}>
                     <AnimatedPressable
-                      style={[styles.joinButton, !!pendingFeedback && styles.joinButtonDisabled]}
+                      style={[
+                        styles.joinButton,
+                        (office.is_full || joinBlocked) && styles.joinButtonDisabled,
+                      ]}
                       onPress={() => joinQueue(office)}
-                      disabled={!!pendingFeedback}
+                      disabled={!!office.is_full}
                     >
-                      <Text style={styles.joinButtonText}>Join Queue</Text>
-                      <Ionicons name="arrow-forward" size={16} color={COLORS.white} />
-                    </AnimatedPressable>
-
-                    <AnimatedPressable
-                      style={styles.liveQueueButton}
-                      onPress={() => {
-                        setSelectedOffice(office);
-                        setShowLiveQueueModal(true);
-                      }}
-                    >
-                      <Ionicons name="pulse-outline" size={15} color={COLORS.primary} />
-                      <Text style={styles.liveQueueButtonText}>Live Queue</Text>
+                      <Text style={styles.joinButtonText}>
+                        {office.is_full
+                          ? 'Full for today'
+                          : joinBlocked
+                            ? (currentQueue ? 'Already on queue' : 'Feedback required')
+                            : 'Join Queue'}
+                      </Text>
+                      {!office.is_full && !joinBlocked && (
+                        <Ionicons name="arrow-forward" size={16} color={COLORS.white} />
+                      )}
                     </AnimatedPressable>
                   </View>
 
@@ -639,11 +798,25 @@ export default function StudentHome() {
                           </View>
 
                           <AnimatedPressable
-                            style={[styles.eventJoinButton, isOnThisEventQueue && styles.eventJoinButtonOnQueue]}
+                            style={[
+                              styles.eventJoinButton,
+                              isOnThisEventQueue && styles.eventJoinButtonOnQueue,
+                              (office.is_full || (joinBlocked && !isOnThisEventQueue)) && styles.eventJoinButtonDisabled,
+                            ]}
                             onPress={() => joinEventQueue(office, ev)}
+                            disabled={!!office.is_full && !isOnThisEventQueue}
                           >
-                            <Text style={[styles.eventJoinButtonText, isOnThisEventQueue && styles.eventJoinButtonTextOnQueue]}>
-                              {isOnThisEventQueue ? 'On Queue' : 'Join'}
+                            <Text style={[
+                              styles.eventJoinButtonText,
+                              isOnThisEventQueue && styles.eventJoinButtonTextOnQueue,
+                            ]}>
+                              {isOnThisEventQueue
+                                ? 'On Queue'
+                                : office.is_full
+                                  ? 'Full'
+                                  : joinBlocked
+                                    ? 'Blocked'
+                                    : 'Join'}
                             </Text>
                           </AnimatedPressable>
                         </View>
@@ -674,18 +847,17 @@ export default function StudentHome() {
         }}
       />
 
-      <LiveQueueModal
-        visible={showLiveQueueModal}
-        office={selectedOffice}
-        onClose={() => {
-          setShowLiveQueueModal(false);
-          setSelectedOffice(null);
+      <RequeueModal
+        visible={showRequeueModal}
+        studentId={studentId}
+        ticketId={requeueTicket?.id ?? null}
+        queueNumber={requeueTicket?.queue_number}
+        onResolved={(action) => {
+          respondedRequeueTicketId.current = requeueTicket?.id ?? null;
+          setShowRequeueModal(false);
+          setRequeueTicket(null);
+          fetchCurrentQueue(studentId);
         }}
-        onJoinQueue={() => {
-          setShowLiveQueueModal(false);
-          if (selectedOffice) joinQueue(selectedOffice);
-        }}
-        pendingFeedback={!!pendingFeedback}
       />
     </View>
   );
@@ -704,7 +876,7 @@ const styles = StyleSheet.create({
   greetingCard: {
     backgroundColor: COLORS.primary,
     borderRadius: RADIUS.xxl,
-    padding: SPACING.lg,
+    padding: SPACING.xl,
     ...SHADOWS.glow,
   },
 
@@ -753,6 +925,51 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.gray,
     fontWeight: '500',
+  },
+
+  // Proceed / next banners (web parity)
+  proceedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    backgroundColor: COLORS.primary,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+  },
+  proceedBannerIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  proceedBannerTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: COLORS.white,
+  },
+  proceedBannerSubtitle: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.9)',
+    fontWeight: '500',
+  },
+  nextBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    backgroundColor: COLORS.infoLight,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+    borderWidth: 1,
+    borderColor: COLORS.info,
+  },
+  nextBannerText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.info,
   },
 
   // Current Queue
@@ -937,6 +1154,18 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.3,
   },
+  fullBadge: {
+    backgroundColor: COLORS.dangerLight ?? '#FBE8E8',
+    paddingHorizontal: SPACING.md - 2,
+    paddingVertical: 5,
+    borderRadius: RADIUS.full,
+  },
+  fullBadgeText: {
+    color: COLORS.danger ?? '#D3453B',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
 
   // Card footer
   cardFooter: {
@@ -958,35 +1187,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   joinButtonDisabled: {
-    opacity: 0.45,
-  },
-  liveQueueButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    borderWidth: 1.5,
-    borderColor: COLORS.primary,
-    paddingVertical: SPACING.md + 2,
-    borderRadius: RADIUS.md,
-    marginTop: SPACING.sm,
-  },
-  liveQueueButtonText: {
-    color: COLORS.primary,
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  windowsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: SPACING.lg,
-    paddingBottom: SPACING.sm,
-  },
-  windowsText: {
-    fontSize: 12,
-    color: COLORS.gray,
-    fontWeight: '600',
+    backgroundColor: COLORS.gray ?? '#9CA3AF',
+    opacity: 0.85,
   },
 
   // Office Event row (nested under its office card)
@@ -1071,6 +1273,36 @@ const styles = StyleSheet.create({
   eventJoinButtonTextOnQueue: {
     color: COLORS.primary,
   },
+  eventJoinButtonDisabled: {
+    backgroundColor: COLORS.gray ?? '#9CA3AF',
+    opacity: 0.85,
+  },
+
+  statsRow: {
+    flexDirection: 'row',
+    gap: SPACING.md,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: COLORS.cream ?? COLORS.white,
+    borderRadius: RADIUS.lg,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.sm,
+    alignItems: 'center',
+    ...SHADOWS.sm,
+  },
+  statValue: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: COLORS.primary,
+  },
+  statLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: COLORS.gray,
+    marginTop: 2,
+    textAlign: 'center',
+  },
 
   // Empty state
   emptyCard: {
@@ -1122,7 +1354,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   greetingLabel: {
-    fontSize: 16,
+    fontSize: 13,
     color: "rgba(255,255,255,0.75)",
     fontWeight: "600",
   },
@@ -1132,41 +1364,26 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     marginTop: 2,
   },
-  greetingTopRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-
   todayChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
+  flexDirection: "row",
+  alignItems: "center",
+  backgroundColor: "rgba(255,255,255,0.15)",
+  paddingHorizontal: 10,
+  paddingVertical: 6,
+  borderRadius: 20,
+  gap: 4,
+},
 
-  todayChipDot: {
-    width: 3,
-    height: 5,
-    borderRadius: 1.5,
-    backgroundColor: "rgba(255,255,255,0.5)",
-  },
-
-  todayChipText: {
-    color: "rgba(255,255,255,0.7)",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-
-  todayChipTime: {
-    color: "rgba(255,255,255,0.9)",
-    fontSize: 16,
-    fontWeight: "600",
-  },
+todayChipText: {
+  color: COLORS.white,
+  fontSize: 12,
+  fontWeight: "700",
+},
 
 greetingDivider: {
   height: 1,
   backgroundColor: "rgba(255,255,255,0.15)",
-  marginVertical: 8,
+  marginVertical: 18,
 },
 
 bottomRow: {

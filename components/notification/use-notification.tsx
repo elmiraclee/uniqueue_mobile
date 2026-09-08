@@ -77,6 +77,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const seenIdsRef = useRef<Set<number>>(new Set());
   const isFirstLoadRef = useRef(true);
   const isPollingRef = useRef(false); // guards against overlapping polls
+  const lastPollWarningRef = useRef<string | null>(null);
 
   // Load the notification sound once
   useEffect(() => {
@@ -127,11 +128,35 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ student_id }),
       });
-      const data = await res.json();
+      const contentType = res.headers.get('content-type') ?? '';
+      const responseText = await res.text();
+
+      if (!res.ok || !contentType.toLowerCase().includes('application/json')) {
+        const warning = `Notification API returned ${res.status} (${contentType || 'unknown content type'})`;
+        if (lastPollWarningRef.current !== warning) {
+          console.warn(`${warning}: ${API.checkNotifications}`);
+          lastPollWarningRef.current = warning;
+        }
+        return;
+      }
+
+      let data: { success?: boolean; notifications?: QueueNotification[]; unread_count?: number };
+      try {
+        data = JSON.parse(responseText);
+      } catch {
+        const warning = 'Notification API returned invalid JSON';
+        if (lastPollWarningRef.current !== warning) {
+          console.warn(`${warning}: ${API.checkNotifications}`);
+          lastPollWarningRef.current = warning;
+        }
+        return;
+      }
+
+      lastPollWarningRef.current = null;
 
       if (!data.success) return;
 
-      const incoming: QueueNotification[] = data.notifications;
+      const incoming = data.notifications ?? [];
 
       // Detect genuinely new notification ids since the last poll
       const newOnes = incoming.filter((n) => !seenIdsRef.current.has(n.id));
@@ -143,7 +168,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       isFirstLoadRef.current = false;
 
       setNotifications(incoming);
-      setUnreadCount(data.unread_count);
+      setUnreadCount(data.unread_count ?? 0);
     } catch (err) {
       console.warn('Notification poll failed:', err);
     } finally {

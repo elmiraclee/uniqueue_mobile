@@ -47,9 +47,11 @@ export const COLORS = {
 // the home screen badge and the queue details card.
 export const STATUS_COLORS: Record<string, string> = {
   waiting: COLORS.warning,
+  next: COLORS.info,
   called: COLORS.info,
   in_progress: COLORS.purple,
   completed: COLORS.success,
+  done: COLORS.success,
   cancelled: COLORS.danger,
 };
 
@@ -57,9 +59,11 @@ export const STATUS_COLORS: Record<string, string> = {
 // used for pill / badge backgrounds.
 export const STATUS_BG: Record<string, string> = {
   waiting: COLORS.warningLight,
+  next: COLORS.infoLight,
   called: COLORS.infoLight,
   in_progress: COLORS.purpleLight,
   completed: COLORS.successLight,
+  done: COLORS.successLight,
   cancelled: COLORS.dangerLight,
 };
 

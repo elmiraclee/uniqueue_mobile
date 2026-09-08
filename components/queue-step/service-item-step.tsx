@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Alert,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -8,12 +9,16 @@ import {
 } from 'react-native';
 
 import { COLORS } from '../../constants/theme';
-import PriorityStep from "./priority-step";
+import PriorityStep from './priority-step';
 
-interface ServiceItem {
+export interface ServiceItem {
   id: number;
   name: string;
   requirements: string[];
+  category?: string;
+  amount?: number | null;
+  price?: number | null;
+  pay_at_cashier?: boolean;
 }
 
 interface Props {
@@ -48,10 +53,26 @@ export default function ServiceItemStep({
   onNext,
   onBack,
 }: Props) {
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    service_items.forEach((item) => {
+      set.add(item.category?.trim() || 'General');
+    });
+    return ['All', ...Array.from(set).sort()];
+  }, [service_items]);
+
+  const [categoryFilter, setCategoryFilter] = useState('All');
+
+  const visibleItems = useMemo(() => {
+    if (categoryFilter === 'All') return service_items;
+    return service_items.filter(
+      (item) => (item.category?.trim() || 'General') === categoryFilter
+    );
+  }, [service_items, categoryFilter]);
+
   const toggle = (id: number) => {
     if (selectedServiceItems.includes(id)) {
       setSelectedServiceItems(selectedServiceItems.filter((item) => item !== id));
-
       setQuantities((prev) => {
         const next = { ...prev };
         delete next[id];
@@ -66,11 +87,15 @@ export default function ServiceItemStep({
   const updateQuantity = (id: number, action: 'add' | 'minus') => {
     const current = quantities[id] || 1;
     let newQty = current;
-
     if (action === 'add') newQty++;
     if (action === 'minus' && current > 1) newQty--;
-
     setQuantities({ ...quantities, [id]: newQty });
+  };
+
+  const formatAmount = (item: ServiceItem) => {
+    const val = item.amount ?? item.price;
+    if (val == null) return null;
+    return `₱${Number(val).toFixed(2)}`;
   };
 
   const next = () => {
@@ -78,76 +103,122 @@ export default function ServiceItemStep({
       Alert.alert('Required', 'Select at least one service item.');
       return;
     }
-
     if (priorityEnabled && priority && !priorityReason.trim()) {
       Alert.alert('Required', 'Please enter a reason for priority lane.');
       return;
     }
-
     onNext();
   };
 
   return (
     <View>
       <Text style={styles.title}>Select service items</Text>
-
       <Text style={styles.subtitle}>
         Choose the service item or service you need from this office.
       </Text>
 
-      {service_items.map((item) => {
-        const isSelected = selectedServiceItems.includes(item.id);
-
-        return (
-          <View
-            key={item.id}
-            style={[styles.card, isSelected && styles.selected]}
-          >
-            <TouchableOpacity
-              style={styles.cardRow}
-              onPress={() => toggle(item.id)}
-            >
-              <View
-                style={[styles.checkbox, isSelected && styles.checkboxActive]}
+      {categories.length > 2 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.categoryRow}
+          style={styles.categoryScroll}
+        >
+          {categories.map((cat) => {
+            const active = categoryFilter === cat;
+            return (
+              <TouchableOpacity
+                key={cat}
+                style={[styles.categoryChip, active && styles.categoryChipActive]}
+                onPress={() => setCategoryFilter(cat)}
+                activeOpacity={0.85}
               >
-                {isSelected && <Text style={styles.checkmark}>✓</Text>}
-              </View>
+                <Text
+                  style={[
+                    styles.categoryChipText,
+                    active && styles.categoryChipTextActive,
+                  ]}
+                >
+                  {cat}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      )}
 
-              <Text style={styles.cardText}>{item.name}</Text>
-            </TouchableOpacity>
+      {visibleItems.length === 0 ? (
+        <View style={styles.emptyBox}>
+          <Text style={styles.emptyText}>
+            No service items in this category.
+          </Text>
+        </View>
+      ) : (
+        visibleItems.map((item) => {
+          const isSelected = selectedServiceItems.includes(item.id);
+          const amountLabel = formatAmount(item);
 
-            {isSelected && (
-              <View style={styles.qtyContainer}>
-                <Text style={styles.qtyLabel}>Copies</Text>
-
-                <View style={styles.qtyControls}>
-                  <TouchableOpacity
-                    style={[
-                      styles.qtyButton,
-                      (quantities[item.id] || 1) <= 1 &&
-                        styles.qtyButtonDisabled,
-                    ]}
-                    onPress={() => updateQuantity(item.id, 'minus')}
-                  >
-                    <Text style={styles.qtyButtonText}>−</Text>
-                  </TouchableOpacity>
-
-                  <Text style={styles.qtyValue}>
-                    {quantities[item.id] || 1}
-                  </Text>
-
-                  <TouchableOpacity
-                    style={styles.qtyButton}
-                    onPress={() => updateQuantity(item.id, 'add')}
-                  >
-                    <Text style={styles.qtyButtonText}>+</Text>
-                  </TouchableOpacity>
+          return (
+            <View
+              key={item.id}
+              style={[styles.card, isSelected && styles.selected]}
+            >
+              <TouchableOpacity
+                style={styles.cardRow}
+                onPress={() => toggle(item.id)}
+              >
+                <View
+                  style={[styles.checkbox, isSelected && styles.checkboxActive]}
+                >
+                  {isSelected && <Text style={styles.checkmark}>✓</Text>}
                 </View>
-              </View>
-            )}
-          </View>
-        );
-      })}
+
+                <View style={styles.cardTextCol}>
+                  <Text style={styles.cardText}>{item.name}</Text>
+                  <View style={styles.metaRow}>
+                    {!!item.category && item.category !== 'General' && (
+                      <Text style={styles.metaChip}>{item.category}</Text>
+                    )}
+                    {amountLabel && (
+                      <Text style={styles.amountText}>{amountLabel}</Text>
+                    )}
+                    {item.pay_at_cashier && (
+                      <Text style={styles.cashierChip}>Pay at cashier</Text>
+                    )}
+                  </View>
+                </View>
+              </TouchableOpacity>
+
+              {isSelected && (
+                <View style={styles.qtyContainer}>
+                  <Text style={styles.qtyLabel}>Copies</Text>
+                  <View style={styles.qtyControls}>
+                    <TouchableOpacity
+                      style={[
+                        styles.qtyButton,
+                        (quantities[item.id] || 1) <= 1 &&
+                          styles.qtyButtonDisabled,
+                      ]}
+                      onPress={() => updateQuantity(item.id, 'minus')}
+                    >
+                      <Text style={styles.qtyButtonText}>−</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.qtyValue}>
+                      {quantities[item.id] || 1}
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.qtyButton}
+                      onPress={() => updateQuantity(item.id, 'add')}
+                    >
+                      <Text style={styles.qtyButtonText}>+</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+            </View>
+          );
+        })
+      )}
 
       <PriorityStep
         priority={priority}
@@ -175,13 +246,49 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     marginBottom: 6,
   },
-
   subtitle: {
     fontSize: 13,
     color: COLORS.gray,
     marginBottom: 16,
   },
-
+  categoryScroll: {
+    marginBottom: 12,
+  },
+  categoryRow: {
+    gap: 8,
+    paddingRight: 8,
+  },
+  categoryChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: '#f3f3f3',
+    borderWidth: 1,
+    borderColor: '#e5e5e5',
+  },
+  categoryChipActive: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  categoryChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.gray,
+  },
+  categoryChipTextActive: {
+    color: '#fff',
+  },
+  emptyBox: {
+    padding: 20,
+    borderRadius: 12,
+    backgroundColor: '#fafafa',
+    marginBottom: 12,
+  },
+  emptyText: {
+    textAlign: 'center',
+    color: COLORS.gray,
+    fontSize: 13,
+  },
   card: {
     backgroundColor: COLORS.white,
     borderRadius: 14,
@@ -190,19 +297,16 @@ const styles = StyleSheet.create({
     borderColor: '#eee',
     overflow: 'hidden',
   },
-
   selected: {
     borderColor: COLORS.primary,
     backgroundColor: '#fdf5f5',
   },
-
   cardRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     padding: 12,
   },
-
   checkbox: {
     width: 22,
     height: 22,
@@ -213,25 +317,53 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexShrink: 0,
   },
-
   checkboxActive: {
     borderColor: COLORS.primary,
     backgroundColor: COLORS.primary,
   },
-
   checkmark: {
     color: '#fff',
     fontSize: 12,
     fontWeight: '700',
   },
-
+  cardTextCol: {
+    flex: 1,
+  },
   cardText: {
     fontSize: 14,
     fontWeight: '600',
     color: COLORS.secondary,
-    flex: 1,
   },
-
+  metaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 4,
+  },
+  metaChip: {
+    fontSize: 11,
+    color: COLORS.gray,
+    backgroundColor: '#f0f0f0',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  amountText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.primary,
+  },
+  cashierChip: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#B45309',
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
   qtyContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -242,19 +374,16 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: 'rgba(0,0,0,0.05)',
   },
-
   qtyLabel: {
     fontSize: 12,
     fontWeight: '600',
     color: COLORS.gray,
   },
-
   qtyControls: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
   },
-
   qtyButton: {
     width: 26,
     height: 26,
@@ -263,18 +392,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-
   qtyButtonDisabled: {
     backgroundColor: '#ddd',
   },
-
   qtyButtonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '700',
     lineHeight: 19,
   },
-
   qtyValue: {
     fontSize: 16,
     fontWeight: '700',
@@ -282,21 +408,18 @@ const styles = StyleSheet.create({
     minWidth: 20,
     textAlign: 'center',
   },
-
   button: {
     marginTop: 8,
     backgroundColor: COLORS.primary,
     padding: 15,
     borderRadius: 12,
   },
-
   buttonText: {
     color: '#fff',
     textAlign: 'center',
     fontWeight: '700',
     fontSize: 15,
   },
-
   backButton: {
     marginTop: 10,
     padding: 14,
@@ -304,7 +427,6 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: '#ddd',
   },
-
   backButtonText: {
     color: COLORS.gray,
     textAlign: 'center',

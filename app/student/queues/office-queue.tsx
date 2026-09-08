@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -14,18 +15,23 @@ import {
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { API_URL } from '@/constants/backend';
+import { API, API_URL } from '@/constants/backend';
+import { fetchJsonOrNull, safeFetchJson } from '@/utils/api';
 import AppHeader from '../../../components/layout/app-header';
+import ServiceItemStep from '../../../components/queue-step/service-item-step';
 import QueueTypeStep from '../../../components/queue-step/queue-type-step';
 import RequirementStep from '../../../components/queue-step/requirement-step';
 import ReviewStep from '../../../components/queue-step/review-step';
-import ServiceItemStep from '../../../components/queue-step/service-item-step';
 import { COLORS } from '../../../constants/theme';
 
 export interface ServiceItem {
   id: number;
   name: string;
   requirements: string[];
+  category?: string;
+  amount?: number | null;
+  price?: number | null;
+  pay_at_cashier?: boolean;
 }
 
 // ── OFFICE EVENT MODE ───────────────────────────────────────────────
@@ -81,28 +87,10 @@ export interface Office {
   walkinEnabled: boolean;
   appointmentEnabled: boolean;
   priorityEnabled: boolean;
-}
-
-// ── CASHIER MODE ─────────────────────────────────────────────────────
-// When the student navigates to the Cashier office, instead of the
-// normal walk-in / appointment wizard, we show a list of their
-// completed-but-unpaid tickets from other offices so they can pick
-// which one to pay for.
-export interface PayableServiceItem {
-  id: number;
-  name: string;
-  amount: number;
-  quantity: number;
-  subtotal: number;
-}
-
-export interface PayableTicket {
-  ticket_id: number;
-  queue_number: string;
-  source_office_id: number;
-  source_office_name: string;
-  service_items: PayableServiceItem[];
-  total: number;
+  isFull?: boolean;
+  dailyCapacity?: number | null;
+  todayTicketCount?: number;
+  transactionType?: string;
 }
 
 const API_BASE = API_URL;
@@ -296,12 +284,6 @@ export default function OfficeQueue() {
     viewIndexRef.current = viewIndex;
   }, [viewIndex]);
 
-  // Cashier-mode state
-  const isCashier = office?.slug === 'cashier';
-  const [loadingPayable, setLoadingPayable] = useState(false);
-  const [payableTickets, setPayableTickets] = useState<PayableTicket[]>([]);
-  const [selectedSourceTicketId, setSelectedSourceTicketId] = useState<number | null>(null);
-
   const [step, setStep] = useState(1);
   const [studentId, setStudentId] = useState(0);
 
@@ -320,7 +302,21 @@ export default function OfficeQueue() {
   const [priorityReason, setPriorityReason] = useState('');
 
   const [submitting, setSubmitting] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+
+  // Payable tickets for payment/hybrid offices (cashier flow).
+  const [payableTickets, setPayableTickets] = useState<
+    {
+      ticket_id: number;
+      queue_number: string;
+      source_office_name: string;
+      service_items: { id: number; name: string; amount: number | null; quantity: number }[];
+      total: number;
+      amount_complete: boolean;
+    }[]
+  >([]);
+  const [payingTicketId, setPayingTicketId] = useState<number | null>(null);
 
   const [queueNumber, setQueueNumber] = useState('');
   const [assignedWindow, setAssignedWindow] = useState('');
@@ -339,25 +335,21 @@ export default function OfficeQueue() {
 
   useEffect(() => {
     if (!office) return;
-    if (office.slug === 'cashier') {
-      fetchPayableTickets(office.id);
-    } else {
-      fetchServiceItems(office.id);
-    }
+    fetchServiceItems(office.id);
   }, [office]);
+
+  useEffect(() => {
+    if (!office || !studentId) return;
+    const acceptsPayment =
+      office.transactionType === 'payment' || office.transactionType === 'hybrid';
+    if (!acceptsPayment || isEventMode) return;
+    fetchPayableTickets(office.id, studentId);
+  }, [office, studentId, isEventMode]);
 
   useEffect(() => {
     if (!isEventMode || !office || !studentId) return;
     fetchEventDetail();
   }, [isEventMode, office, studentId]);
-
-  // Re-fetch payable tickets once studentId is available (it resolves
-  // async, so the first fetchPayableTickets call above may have fired
-  // with studentId === 0).
-  useEffect(() => {
-    if (!office || office.slug !== 'cashier' || !studentId) return;
-    fetchPayableTickets(office.id);
-  }, [studentId]);
 
   // Poll in the background while the student has an active ticket for
   // the current step, so the moment that ticket is served/completed and
@@ -409,7 +401,19 @@ export default function OfficeQueue() {
           o.appointment_enabled === null ? true : !!o.appointment_enabled,
         priorityEnabled:
           o.priority_enabled === null ? true : !!o.priority_enabled,
+        isFull: !!o.is_full,
+        dailyCapacity: o.daily_capacity ?? null,
+        todayTicketCount: o.today_ticket_count ?? 0,
+        transactionType: o.transaction_type ?? 'request',
       });
+
+      if (o.is_full) {
+        Alert.alert(
+          'Office Full',
+          'This office has reached its full capacity for today. Please try again tomorrow.',
+          [{ text: 'OK', onPress: () => router.replace('/student/home') }]
+        );
+      }
 
       // Default queue type to whichever option this office actually
       // supports.
@@ -430,10 +434,9 @@ export default function OfficeQueue() {
   // SERVICE ITEMS — scoped to this office only, and used by both queue types.
   const fetchServiceItems = async (officeId: number) => {
     try {
-      const response = await fetch(
+      const data = await fetchJsonOrNull(
         `${API_BASE}/get_service_items.php?office_id=${officeId}`
       );
-      const data = await response.json();
       if (data.success) {
         setServiceItems(data.service_items);
       }
@@ -442,35 +445,28 @@ export default function OfficeQueue() {
     }
   };
 
-  // CASHIER — load completed-but-unpaid tickets from other offices.
-  const fetchPayableTickets = async (officeId: number) => {
+  const fetchPayableTickets = async (officeId: number, sid: number) => {
     try {
-      setLoadingPayable(true);
-      const response = await fetch(
-        `${API_BASE}/office-queue.php?action=cashier_payable&student_id=${studentId}&office_id=${officeId}`
+      const data = await fetchJsonOrNull(
+        `${API.getPayableTickets}?student_id=${sid}&office_id=${officeId}`
       );
-      const data = await response.json();
       if (data.success) {
-        setPayableTickets(data.payable ?? []);
+        setPayableTickets(data.payable_tickets || []);
       }
     } catch (error) {
-      console.log(error);
-    } finally {
-      setLoadingPayable(false);
+      console.log('Fetch payable tickets error:', error);
     }
   };
 
-  // CASHIER — submit the selected source ticket to join the payment queue.
-  const joinCashierQueue = async () => {
-    if (!office || !selectedSourceTicketId) return;
-
-    if (office.priorityEnabled && priority && !priorityReason.trim()) {
-      Alert.alert('Error', 'Please enter a reason for priority lane.');
+  const submitCashierPayment = async (sourceTicketId: number) => {
+    if (!office || !studentId) return;
+    if (office.isFull) {
+      Alert.alert('Office Full', 'This office has reached its full capacity for today.');
       return;
     }
 
+    setPayingTicketId(sourceTicketId);
     try {
-      setSubmitting(true);
       const response = await fetch(`${API_BASE}/office-queue.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -478,23 +474,27 @@ export default function OfficeQueue() {
           mode: 'cashier',
           student_id: studentId,
           office_id: office.id,
-          source_ticket_id: selectedSourceTicketId,
+          type: queueType || 'walkin',
+          source_ticket_id: sourceTicketId,
           priority: office.priorityEnabled ? priority : false,
           priority_reason: office.priorityEnabled ? priorityReason : '',
         }),
       });
       const data = await response.json();
       if (data.success) {
-        setQueueNumber(data.queue_number || '');
+        setQueueNumber(data.queue_number);
         setAssignedWindow(data.window_name || 'Not Assigned');
         setShowSuccessModal(true);
+        setPayableTickets((prev) =>
+          prev.filter((t) => t.ticket_id !== sourceTicketId)
+        );
       } else {
-        Alert.alert('Error', data.message);
+        Alert.alert('Unable to join', data.message || 'Please try again.');
       }
-    } catch (error) {
-      Alert.alert('Error', 'Unable to join payment queue');
+    } catch (e) {
+      Alert.alert('Error', 'Could not join payment queue.');
     } finally {
-      setSubmitting(false);
+      setPayingTicketId(null);
     }
   };
 
@@ -505,10 +505,9 @@ export default function OfficeQueue() {
     try {
       if (!silent) setLoadingEvent(true);
 
-      const response = await fetch(
+      const data = await fetchJsonOrNull(
         `${API_BASE}/office-queue.php?action=event&event_id=${eventId}&office_id=${office.id}&student_id=${studentId}`
       );
-      const data = await response.json();
 
       if (!data.success) {
         if (!silent) {
@@ -802,6 +801,22 @@ export default function OfficeQueue() {
     setStep(step - 1);
   };
 
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await loadUser();
+      const slug = office?.slug || (typeof officeSlug !== 'undefined' ? String(officeSlug) : null);
+      if (slug) await fetchOffice(slug);
+      if (office?.id) {
+        await fetchServiceItems(office.id);
+        if (studentId) await fetchPayableTickets(office.id, studentId);
+      }
+      if (isEventMode) await fetchEventDetail();
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   if (loadingOffice || !office) {
     return (
       <View style={styles.container}>
@@ -812,122 +827,20 @@ export default function OfficeQueue() {
 
   return (
     <View style={styles.container}>
-      <AppHeader title={
-        isCashier
-          ? `${office.name} Queue`
-          : isEventMode
-            ? (eventInfo?.name ?? 'Event Queue')
-            : `${office.name} Queue`
-      } />
+      <AppHeader title={isEventMode ? (eventInfo?.name ?? 'Event Queue') : `${office.name} Queue`} />
 
-      <ScrollView contentContainerStyle={styles.content}>
-        {isCashier ? (
-          // ── CASHIER MODE ────────────────────────────────────────────
-          loadingPayable ? (
-            <View style={styles.eventLoadingBox}>
-              <ActivityIndicator size="large" color={COLORS.primary} />
-            </View>
-          ) : payableTickets.length === 0 ? (
-            <View style={styles.cashierEmptyCard}>
-              <Text style={styles.cashierEmptyTitle}>No Pending Payments</Text>
-              <Text style={styles.cashierEmptyDesc}>
-                Once an office marks your request as completed, it will appear here for payment.
-              </Text>
-              <TouchableOpacity
-                style={styles.modalButton}
-                onPress={() => router.replace('/student/home')}
-              >
-                <Text style={styles.modalButtonText}>Back to Dashboard</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={styles.cashierCard}>
-              <Text style={styles.cashierCardTitle}>Select What You're Paying For</Text>
-              <Text style={styles.cashierCardDesc}>
-                These are your completed requests from other offices, ready for payment.
-              </Text>
-
-              {payableTickets.map((pt) => {
-                const isSelected = selectedSourceTicketId === pt.ticket_id;
-                return (
-                  <TouchableOpacity
-                    key={pt.ticket_id}
-                    style={[styles.cashierItem, isSelected && styles.cashierItemSelected]}
-                    activeOpacity={0.75}
-                    onPress={() => setSelectedSourceTicketId(pt.ticket_id)}
-                  >
-                    <View style={styles.cashierItemHeader}>
-                      <View style={[styles.cashierRadio, isSelected && styles.cashierRadioSelected]}>
-                        {isSelected && <View style={styles.cashierRadioDot} />}
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.cashierItemOffice}>{pt.source_office_name}</Text>
-                        <Text style={styles.cashierItemQueue}>Queue #{pt.queue_number}</Text>
-                      </View>
-                    </View>
-
-                    <View style={styles.cashierItemBody}>
-                      {pt.service_items.map((svc, idx) => (
-                        <View key={idx} style={styles.cashierSvcRow}>
-                          <Text style={styles.cashierSvcName}>
-                            {svc.name} {svc.quantity > 1 ? `(x${svc.quantity})` : ''}
-                          </Text>
-                          <Text style={styles.cashierSvcAmount}>
-                            ₱{svc.subtotal.toFixed(2)}
-                          </Text>
-                        </View>
-                      ))}
-                      <View style={styles.cashierTotalRow}>
-                        <Text style={styles.cashierTotalLabel}>Total</Text>
-                        <Text style={styles.cashierTotalAmount}>₱{pt.total.toFixed(2)}</Text>
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-
-              {office.priorityEnabled && (
-                <View style={styles.eventPriorityBox}>
-                  <TouchableOpacity
-                    style={styles.eventReqRow}
-                    activeOpacity={0.7}
-                    onPress={() => setPriority(!priority)}
-                  >
-                    <View style={[styles.eventCheckbox, priority && styles.eventCheckboxChecked]}>
-                      {priority && <Text style={styles.eventCheckMark}>✓</Text>}
-                    </View>
-                    <Text style={styles.eventReqText}>
-                      Priority Lane (PWD, pregnant, or senior citizen)
-                    </Text>
-                  </TouchableOpacity>
-
-                  {priority && (
-                    <TextInput
-                      style={styles.eventPriorityInput}
-                      placeholder="Reason for priority"
-                      placeholderTextColor={COLORS.gray}
-                      value={priorityReason}
-                      onChangeText={setPriorityReason}
-                    />
-                  )}
-                </View>
-              )}
-
-              <TouchableOpacity
-                style={[
-                  styles.cashierSubmitBtn,
-                  (!selectedSourceTicketId || submitting || (priority && !priorityReason.trim())) && styles.cashierSubmitBtnDisabled,
-                ]}
-                disabled={!selectedSourceTicketId || submitting || (priority && !priorityReason.trim())}
-                onPress={joinCashierQueue}
-              >
-                <Text style={styles.modalButtonText}>
-                  {submitting ? 'Joining…' : 'Join Payment Queue'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          )
-        ) : isEventMode ? (
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[COLORS.primary]}
+            tintColor={COLORS.primary}
+          />
+        }
+      >
+        {isEventMode ? (
           loadingEvent ? (
             <View style={styles.eventLoadingBox}>
               <ActivityIndicator size="large" color={COLORS.primary} />
@@ -1105,6 +1018,69 @@ export default function OfficeQueue() {
           )
         ) : (
         <>
+        {/* Payable tickets — payment / hybrid offices only */}
+        {(office?.transactionType === 'payment' ||
+          office?.transactionType === 'hybrid') &&
+          payableTickets.length === 0 && (
+          <View style={[styles.payableSection, { backgroundColor: '#f5f5f5', borderColor: '#e5e5e5' }]}>
+            <Text style={styles.payableTitle}>Payment desk</Text>
+            <Text style={styles.payableSubtitle}>
+              No outstanding payments right now. Completed requests marked
+              “pay at cashier” will appear here.
+            </Text>
+          </View>
+        )}
+
+        {payableTickets.length > 0 && (
+          <View style={styles.payableSection}>
+            <Text style={styles.payableTitle}>Ready to pay</Text>
+            <Text style={styles.payableSubtitle}>
+              Completed requests that need payment at this office.
+            </Text>
+            {payableTickets.map((ticket) => (
+              <View key={ticket.ticket_id} style={styles.payableCard}>
+                <View style={styles.payableCardHeader}>
+                  <Text style={styles.payableQueueNum}>
+                    #{ticket.queue_number}
+                  </Text>
+                  <Text style={styles.payableOffice} numberOfLines={1}>
+                    {ticket.source_office_name}
+                  </Text>
+                </View>
+                {ticket.service_items.map((si) => (
+                  <Text key={si.id} style={styles.payableItem}>
+                    {si.name}
+                    {si.quantity > 1 ? ` ×${si.quantity}` : ''}
+                    {si.amount != null
+                      ? ` — ₱${(si.amount * si.quantity).toFixed(2)}`
+                      : ''}
+                  </Text>
+                ))}
+                {ticket.amount_complete && ticket.total > 0 && (
+                  <Text style={styles.payableTotal}>
+                    Total: ₱{ticket.total.toFixed(2)}
+                  </Text>
+                )}
+                <TouchableOpacity
+                  style={[
+                    styles.payablePayButton,
+                    payingTicketId === ticket.ticket_id &&
+                      styles.payablePayButtonDisabled,
+                  ]}
+                  disabled={payingTicketId === ticket.ticket_id || !!office?.isFull}
+                  onPress={() => submitCashierPayment(ticket.ticket_id)}
+                >
+                  <Text style={styles.payablePayButtonText}>
+                    {payingTicketId === ticket.ticket_id
+                      ? 'Joining…'
+                      : 'Join payment queue'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        )}
+
         <StepIndicator current={step} />
 
         {step === 1 && (
@@ -1170,7 +1146,7 @@ export default function OfficeQueue() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>
-              {isCashier ? "You're in the payment queue!" : isEventMode ? "Step joined!" : "You're in the queue!"}
+              {isEventMode ? "Step joined!" : "You're in the queue!"}
             </Text>
 
             {!!queueNumber && (
@@ -1181,11 +1157,9 @@ export default function OfficeQueue() {
             <Text style={styles.windowText}>{assignedWindow}</Text>
 
             <Text style={styles.modalSubtitle}>
-              {isCashier
-                ? `Your payment request has been submitted to ${office.name}.`
-                : isEventMode
-                  ? `Your request for "${currentStep?.title ?? 'this step'}" has been submitted to ${currentStep?.office_name ?? eventInfo?.name}.`
-                  : `Your request has been submitted to ${office.name}.`}
+              {isEventMode
+                ? `Your request for "${currentStep?.title ?? 'this step'}" has been submitted to ${currentStep?.office_name ?? eventInfo?.name}.`
+                : `Your request has been submitted to ${office.name}.`}
             </Text>
 
             <TouchableOpacity
@@ -1239,6 +1213,77 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
+  payableSection: {
+    marginBottom: 20,
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: '#FFF8E7',
+    borderWidth: 1,
+    borderColor: '#F5D78E',
+  },
+  payableTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.primary,
+    marginBottom: 4,
+  },
+  payableSubtitle: {
+    fontSize: 12,
+    color: COLORS.gray,
+    marginBottom: 12,
+  },
+  payableCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#eee',
+  },
+  payableCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  payableQueueNum: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: COLORS.primary,
+  },
+  payableOffice: {
+    fontSize: 12,
+    color: COLORS.gray,
+    flex: 1,
+    textAlign: 'right',
+    marginLeft: 8,
+  },
+  payableItem: {
+    fontSize: 13,
+    color: COLORS.secondary,
+    marginBottom: 2,
+  },
+  payableTotal: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.primary,
+    marginTop: 6,
+  },
+  payablePayButton: {
+    marginTop: 10,
+    backgroundColor: COLORS.primary,
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  payablePayButtonDisabled: {
+    opacity: 0.6,
+  },
+  payablePayButtonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 13,
+  },
   queueNumberText: {
     fontSize: 40,
     fontWeight: 'bold',
@@ -1514,162 +1559,6 @@ const styles = StyleSheet.create({
 
   modalRowLast: {
     borderBottomWidth: 0,
-  },
-
-  // ── Cashier mode ──────────────────────────────────────────────────
-  cashierCard: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 20,
-  },
-
-  cashierCardTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: COLORS.primary,
-    marginBottom: 4,
-  },
-
-  cashierCardDesc: {
-    fontSize: 13,
-    color: COLORS.gray,
-    marginBottom: 16,
-    lineHeight: 19,
-  },
-
-  cashierEmptyCard: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 28,
-    alignItems: 'center',
-  },
-
-  cashierEmptyTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: COLORS.secondary,
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-
-  cashierEmptyDesc: {
-    fontSize: 13,
-    color: COLORS.gray,
-    textAlign: 'center',
-    marginBottom: 20,
-    lineHeight: 19,
-  },
-
-  cashierItem: {
-    borderWidth: 1.5,
-    borderColor: '#E5E5E5',
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 12,
-  },
-
-  cashierItemSelected: {
-    borderColor: COLORS.primary,
-    backgroundColor: COLORS.primarySoft ?? '#FFF0F1',
-  },
-
-  cashierItemHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 10,
-  },
-
-  cashierRadio: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: '#ccc',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-
-  cashierRadioSelected: {
-    borderColor: COLORS.primary,
-  },
-
-  cashierRadioDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: COLORS.primary,
-  },
-
-  cashierItemOffice: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLORS.secondary,
-  },
-
-  cashierItemQueue: {
-    fontSize: 12,
-    color: COLORS.gray,
-    marginTop: 1,
-  },
-
-  cashierItemBody: {
-    borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
-    paddingTop: 10,
-  },
-
-  cashierSvcRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 4,
-  },
-
-  cashierSvcName: {
-    fontSize: 13,
-    color: COLORS.secondary,
-    flex: 1,
-    marginRight: 8,
-  },
-
-  cashierSvcAmount: {
-    fontSize: 13,
-    color: COLORS.secondary,
-    fontWeight: '600',
-  },
-
-  cashierTotalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E5E5',
-  },
-
-  cashierTotalLabel: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLORS.secondary,
-  },
-
-  cashierTotalAmount: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: COLORS.primary,
-  },
-
-  cashierSubmitBtn: {
-    marginTop: 8,
-    backgroundColor: COLORS.primary,
-    paddingVertical: 15,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-
-  cashierSubmitBtnDisabled: {
-    opacity: 0.5,
   },
 
   eventReviewValue: {

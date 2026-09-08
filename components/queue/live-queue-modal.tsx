@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 
 import { API } from '@/constants/backend';
+import { fetchJsonOrNull, safeFetchJson } from '@/utils/api';
 import {
     COLORS,
     ICON_SIZES,
@@ -202,8 +203,7 @@ export default function LiveQueueModal({
         if (!silent) setLoading(true);
         setError(null);
 
-        const res = await fetch(`${API.getOfficeQueue}?office_id=${office.id}`);
-        const json = await res.json();
+        const json = await fetchJsonOrNull(`${API.getOfficeQueue}?office_id=${office.id}`);
 
         if (json.success) {
           setData(json);

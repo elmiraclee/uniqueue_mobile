@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Image,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
+  RefreshControl,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -13,11 +16,18 @@ import {
 
 import { Ionicons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 
 import CustomButton from '../components/ui/custom-button';
+import GoogleLogo from '../components/ui/google-logo';
 import CustomInput from '../components/ui/custom-input';
 import { API } from '../constants/backend';
+import {
+  completeGoogleAuth,
+  useGoogleAuthRequest,
+  type GoogleProfile,
+} from '@/utils/google-auth';
 import {
   COLORS,
   RADIUS,
@@ -30,6 +40,7 @@ export default function Signup() {
   const router = useRouter();
 
   const [srCode, setSrCode] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [password, setPassword] = useState('');
@@ -44,10 +55,66 @@ export default function Signup() {
   const [yearLevel, setYearLevel] = useState('');
 
   const [loading, setLoading] = useState(false);
+  const [googlePending, setGooglePending] = useState<GoogleProfile | null>(null);
+  const [googleLoading, setGoogleLoading] = useState(false);
+
+  const {
+    request: googleRequest,
+    response: googleResponse,
+    promptAsync: promptGoogle,
+    ready: googleReady,
+  } = useGoogleAuthRequest();
+
 
   useEffect(() => {
     fetchColleges();
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem('google_pending');
+        if (raw) {
+          const pending = JSON.parse(raw) as GoogleProfile;
+          setGooglePending(pending);
+          if (pending.first_name) setFirstName(pending.first_name);
+          if (pending.last_name) setLastName(pending.last_name);
+          if (pending.email) setEmail(pending.email);
+        }
+      } catch {}
+    })();
   }, []);
+
+  // Google button on signup screen (same as web "Continue with Google")
+  useEffect(() => {
+    if (!googleResponse) return;
+    if (googleResponse.type === 'success') {
+      (async () => {
+        setGoogleLoading(true);
+        try {
+          const result = await completeGoogleAuth(googleResponse.authentication);
+          if (!result.ok) {
+            Alert.alert('Google Sign-Up', result.message);
+            return;
+          }
+          if (result.action === 'login') {
+            await AsyncStorage.removeItem('google_pending');
+            await AsyncStorage.setItem('user', JSON.stringify(result.user));
+            await AsyncStorage.setItem('role', 'student');
+            router.replace('/student/home');
+            return;
+          }
+          setGooglePending(result.google);
+          setFirstName(result.google.first_name || '');
+          setLastName(result.google.last_name || '');
+          setEmail(result.google.email || '');
+          await AsyncStorage.setItem('google_pending', JSON.stringify(result.google));
+        } catch (e) {
+          console.log(e);
+          Alert.alert('Google Sign-Up', 'Something went wrong.');
+        } finally {
+          setGoogleLoading(false);
+        }
+      })();
+    }
+  }, [googleResponse]);
 
   useEffect(() => {
     if (collegeId) {
@@ -76,15 +143,16 @@ export default function Signup() {
   };
 
   const handleSignup = async () => {
+    const isGoogle = !!googlePending;
     if (
       !srCode.trim() ||
       !email.trim() ||
       !firstName.trim() ||
       !lastName.trim() ||
       !yearLevel ||
-      !password.trim() ||
       !collegeId ||
-      !programId
+      !programId ||
+      (!isGoogle && !password.trim())
     ) {
       Alert.alert('Error', 'Please complete all fields.');
       return;
@@ -106,7 +174,10 @@ export default function Signup() {
           college_id: Number(collegeId),
           program_id: Number(programId),
           year_level: Number(yearLevel),
-          password,
+          password: isGoogle ? (password || '') : password,
+          google_signup: isGoogle ? 1 : 0,
+          google_id: isGoogle ? googlePending?.google_id : undefined,
+          google_picture: isGoogle ? googlePending?.picture : undefined,
         }),
       });
 
@@ -116,9 +187,18 @@ export default function Signup() {
       const data = JSON.parse(text);
 
       if (data.success) {
-        Alert.alert('Success', 'Account created successfully!', [
-          { text: 'OK', onPress: () => router.replace('/login') },
-        ]);
+        await AsyncStorage.removeItem('google_pending');
+        if (data.user) {
+          await AsyncStorage.setItem('user', JSON.stringify(data.user));
+          await AsyncStorage.setItem('role', 'student');
+          Alert.alert('Success', 'Account created successfully!', [
+            { text: 'OK', onPress: () => router.replace('/student/home') },
+          ]);
+        } else {
+          Alert.alert('Success', 'Account created successfully!', [
+            { text: 'OK', onPress: () => router.replace('/login') },
+          ]);
+        }
       } else {
         Alert.alert('Signup Failed', data.message);
       }
@@ -159,6 +239,15 @@ export default function Signup() {
     </View>
   );
 
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await fetchColleges();
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView
@@ -170,6 +259,15 @@ export default function Signup() {
         contentContainerStyle={styles.scrollContainer}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+      
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#660810']}
+            tintColor="#660810"
+          />
+        }
       >
         <View style={styles.card}>
           {/* Header */}
@@ -184,7 +282,64 @@ export default function Signup() {
           {/* Account Details */}
           <View style={styles.panel}>
             {renderSectionLabel('person-outline', 'Account Details')}
-            <CustomInput placeholder="SR-Code" value={srCode} onChangeText={setSrCode} />
+            
+        {googlePending ? (
+          <View style={styles.googleBanner}>
+            <Text style={styles.googleBannerText}>
+              Signed in with Google as{' '}
+              <Text style={{ fontWeight: '700' }}>{googlePending.email}</Text>
+            </Text>
+            <Pressable
+              onPress={async () => {
+                setGooglePending(null);
+                await AsyncStorage.removeItem('google_pending');
+              }}
+            >
+              <Text style={styles.googleBannerLink}>Not you? Use a different method</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <>
+            <Pressable
+              style={[styles.googleButton, googleLoading && styles.googleButtonDisabled]}
+              disabled={googleLoading || loading}
+              onPress={async () => {
+                if (!googleReady || !googleRequest) {
+                  Alert.alert(
+                    'Google Sign-Up',
+                    'Set GOOGLE_WEB_CLIENT_ID in constants/backend.ts, then restart Expo.'
+                  );
+                  return;
+                }
+                try {
+                  setGoogleLoading(true);
+                  await promptGoogle();
+                } catch (e) {
+                  console.log(e);
+                  Alert.alert('Google Sign-Up', 'Could not open Google sign-in.');
+                } finally {
+                  setGoogleLoading(false);
+                }
+              }}
+            >
+              {googleLoading ? (
+                <ActivityIndicator color="#1f1f1f" />
+              ) : (
+                <View style={styles.googleButtonInner}>
+                  <GoogleLogo size={20} />
+                  <Text style={styles.googleButtonText}>Continue with Google</Text>
+                </View>
+              )}
+            </Pressable>
+            <View style={styles.orRow}>
+              <View style={styles.orLine} />
+              <Text style={styles.orText}>or fill the form</Text>
+              <View style={styles.orLine} />
+            </View>
+          </>
+        )}
+
+<CustomInput placeholder="SR-Code" value={srCode} onChangeText={setSrCode} />
             <CustomInput
               placeholder="Email Address"
               value={email}
@@ -260,7 +415,7 @@ export default function Signup() {
           </View>
 
           <CustomButton
-            title={loading ? 'Creating Account...' : 'Sign Up'}
+            title={loading ? 'Creating Account...' : (googlePending ? 'Finish Creating Account' : 'Sign Up')}
             onPress={handleSignup}
           />
 
@@ -380,5 +535,72 @@ const styles = StyleSheet.create({
   linkTextStrong: {
     color: COLORS.primary,
     fontWeight: '700',
+  },
+
+  googleBanner: {
+    backgroundColor: 'rgba(66,133,244,0.08)',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(66,133,244,0.2)',
+  },
+  googleBannerText: {
+    color: COLORS.text,
+    fontSize: 13,
+    marginBottom: 6,
+  },
+  googleBannerLink: {
+    color: COLORS.primary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  googleButton: {
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#dadce0',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  googleButtonDisabled: {
+    opacity: 0.55,
+  },
+  googleButtonInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  googleButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#3c4043',
+    letterSpacing: 0.15,
+  },
+  orRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 14,
+    gap: 10,
+  },
+  orLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: 'rgba(102,8,16,0.12)',
+  },
+  orText: {
+    color: COLORS.gray,
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

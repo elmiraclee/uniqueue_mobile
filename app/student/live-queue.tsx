@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
+  RefreshControl,
   SafeAreaView,
   StyleSheet,
   Text,
@@ -12,6 +13,7 @@ import { router, useLocalSearchParams } from "expo-router";
 
 import AppHeader from "@/components/layout/app-header";
 import { API } from "@/constants/backend";
+import { fetchJsonOrNull, safeFetchJson } from "@/utils/api";
 
 import {
   COLORS,
@@ -51,6 +53,7 @@ export default function LiveQueueScreen() {
   const { queueId } = useLocalSearchParams();
 
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   const [liveQueue, setLiveQueue] =
     useState<LiveQueue | null>(null);
@@ -59,7 +62,7 @@ export default function LiveQueueScreen() {
 
 const loadQueue = async () => {
   try {
-    const response = await fetch(API.getLiveQueue, {
+    const json = await fetchJsonOrNull(API.getLiveQueue, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -67,14 +70,12 @@ const loadQueue = async () => {
       body: JSON.stringify({
         queue_id: Number(queueId),
       }),
-    });
+    }, 'Live Queue Error');
 
-    const json = await response.json();
-
-    if (json.success) {
+    if (json?.success) {
       setLiveQueue(json);
     } else {
-      console.log(json.message);
+      console.log(json?.message);
     }
 
   } catch (error) {
@@ -83,6 +84,15 @@ const loadQueue = async () => {
     setLoading(false);
   }
 };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await loadQueue();
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   useEffect(() => {
     loadQueue();
@@ -222,6 +232,14 @@ const loadQueue = async () => {
         style={styles.list}
         contentContainerStyle={styles.listContent}
         data={sortedQueueList}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[COLORS.primary]}
+            tintColor={COLORS.primary}
+          />
+        }
         keyExtractor={(item) => item.id.toString()}
         showsVerticalScrollIndicator={false}
         renderItem={({ item }) => (

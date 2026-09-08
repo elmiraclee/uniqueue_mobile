@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Modal, StyleSheet, View } from 'react-native';
 
 import { API } from '@/constants/backend';
+import { fetchJsonOrNull, safeFetchJson } from '@/utils/api';
 import { COLORS, ICON_SIZES, RADIUS, SHADOWS, SPACING } from '@/constants/theme';
 
 import { Ionicons } from "@expo/vector-icons";
@@ -55,15 +56,13 @@ export default function CurrentQueueModal({ visible, studentId, onClose, onCance
     try {
       if (!silent) setLoading(true);
 
-      const response = await fetch(API.getQueueDetails, {
+      const data = await fetchJsonOrNull(API.getQueueDetails, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ student_id: studentId }),
-      });
+      }, 'Get Queue Details Error');
 
-      const data = await response.json();
-
-      if (data.success) {
+      if (data?.success) {
         setQueue(data.queue);
         queueRef.current = data.queue;
       } else {
@@ -105,15 +104,13 @@ export default function CurrentQueueModal({ visible, studentId, onClose, onCance
     try {
       setLoading(true);
 
-      const response = await fetch(API.cancelQueue, {
+      const data = await fetchJsonOrNull(API.cancelQueue, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ student_id: studentId, queue_id: queue.id }),
-      });
+      }, 'Cancel Queue Error');
 
-      const data = await response.json();
-
-      if (data.success) {
+      if (data?.success) {
         Alert.alert('Success', data.message);
         queueRef.current = null;
         onCancelled();
