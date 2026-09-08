@@ -13,6 +13,7 @@ import FeedbackModal, {
   PendingFeedbackTransaction,
 } from '@/components/feedback/feedback-modal';
 import CurrentQueueModal from '@/components/queue/current-queue-modal';
+import ProceedModal from '@/components/queue/proceed-modal';
 import RequeueModal from '@/components/queue/requeue-modal';
 import { API, API_URL, ASSET_BASE_URL } from '@/constants/backend';
 import { Ionicons } from '@expo/vector-icons';
@@ -123,6 +124,12 @@ export default function StudentHome() {
   // so a stale still-requeued poll response right after responding
   // doesn't immediately reopen the modal.
   const respondedRequeueTicketId = useRef<number | null>(null);
+
+  // Proceed-now alarm modal — loops proceed-alarm + vibrate until OK.
+  // We only auto-open once per ticket+status so pressing OK stops it
+  // even if polling still reports called/in_progress.
+  const [showProceedModal, setShowProceedModal] = useState(false);
+  const acknowledgedProceedKey = useRef<string | null>(null);
 
   // Tracks whether the student currently has an active ticket for each
   // event, keyed by event id — e.g. { [eventId]: true }. This is separate
@@ -293,6 +300,21 @@ export default function StudentHome() {
         setShowRequeueModal(true);
       } else if (!queue?.is_requeued) {
         setShowRequeueModal(false);
+      }
+
+      // Proceed alarm modal: open when ticket is called / in_progress,
+      // and keep it closed after the student presses OK for this key.
+      const status = (queue?.status || '').toLowerCase();
+      if (queue && (status === 'called' || status === 'in_progress')) {
+        const key = `${queue.id}:${status}`;
+        if (acknowledgedProceedKey.current !== key) {
+          setShowProceedModal(true);
+        }
+      } else {
+        setShowProceedModal(false);
+        if (!queue) {
+          acknowledgedProceedKey.current = null;
+        }
       }
     } catch (e) {
       console.log(e);
@@ -857,6 +879,27 @@ export default function StudentHome() {
           setShowRequeueModal(false);
           setRequeueTicket(null);
           fetchCurrentQueue(studentId);
+        }}
+      />
+
+      <ProceedModal
+        visible={showProceedModal}
+        info={
+          currentQueue
+            ? {
+                queueNumber: currentQueue.queue_number,
+                officeName: currentQueue.office_name,
+                windowName: currentQueue.window_name,
+                status: currentQueue.status,
+              }
+            : null
+        }
+        onAcknowledge={() => {
+          const status = (currentQueue?.status || '').toLowerCase();
+          if (currentQueue?.id) {
+            acknowledgedProceedKey.current = `${currentQueue.id}:${status}`;
+          }
+          setShowProceedModal(false);
         }}
       />
     </View>

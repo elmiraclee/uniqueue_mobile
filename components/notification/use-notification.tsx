@@ -1,15 +1,17 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Audio } from 'expo-av';
+import Constants from 'expo-constants';
 import React, {
-    createContext,
-    useCallback,
-    useContext,
-    useEffect,
-    useRef,
-    useState,
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
 } from 'react';
+import { Platform } from 'react-native';
 
-import { API } from '../../constants/backend'; // adjust path to match your project
+import { API } from '../../constants/backend';
 
 export interface QueueNotification {
   id: number;
@@ -30,11 +32,9 @@ export interface QueueNotification {
   created_at: string;
 }
 
-const POLL_INTERVAL_MS = 2000; // "real time" via polling — bump up/down as needed
-const NOTIFICATION_SOUND = require('../../assets/sound/notification.mp3'); // add your own sound file here
+const POLL_INTERVAL_MS = 2000;
+const NOTIFICATION_SOUND = require('../../assets/sound/notification.mp3');
 
-// Reads the logged-in student's id out of AsyncStorage.
-// Adjust this if your `user` object is shaped differently.
 async function getStudentId(): Promise<number | null> {
   try {
     const raw = await AsyncStorage.getItem('user');
@@ -59,16 +59,113 @@ const NotificationContext = createContext<NotificationContextValue | undefined>(
   undefined
 );
 
+/**
+ * Expo Go (SDK 53+) removed Android remote push support.
+ * Detect Expo Go so we never import / call expo-notifications push APIs there.
+ * In-app proceed modal + alarm + vibration still work via expo-av.
+ */
+function isExpoGo(): boolean {
+  const ownership = (Constants as any).appOwnership;
+  const env = (Constants as any).executionEnvironment;
+  return ownership === 'expo' || env === 'storeClient';
+}
+
+/**
+ * Only load expo-notifications outside Expo Go.
+ * Importing it in Expo Go triggers a console ERROR about removed remote push.
+ */
+function loadPushModules(): {
+  Notifications: typeof import('expo-notifications');
+  Device: typeof import('expo-device');
+} | null {
+  if (isExpoGo()) return null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const Notifications = require('expo-notifications');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const Device = require('expo-device');
+    return { Notifications, Device };
+  } catch (err) {
+    console.warn('Push modules unavailable:', err);
+    return null;
+  }
+}
+
+async function registerForPushNotificationsAsync(): Promise<string | null> {
+  const mods = loadPushModules();
+  if (!mods) return null;
+
+  const { Notifications, Device } = mods;
+
+  try {
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: true,
+        shouldShowBanner: true,
+        shouldShowList: true,
+      }),
+    });
+
+    if (!Device.isDevice && Platform.OS === 'ios') {
+      return null;
+    }
+
+    const { status: existing } = await Notifications.getPermissionsAsync();
+    let finalStatus = existing;
+    if (existing !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+    if (finalStatus !== 'granted') {
+      console.warn('Push notification permission not granted');
+      return null;
+    }
+
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('proceed', {
+        name: 'Proceed Alerts',
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 400, 200, 400],
+        sound: 'default',
+        enableVibrate: true,
+        lockscreenVisibility:
+          Notifications.AndroidNotificationVisibility.PUBLIC,
+      });
+      await Notifications.setNotificationChannelAsync('default', {
+        name: 'Queue Updates',
+        importance: Notifications.AndroidImportance.HIGH,
+        sound: 'default',
+      });
+    }
+
+    const projectId =
+      Constants.expoConfig?.extra?.eas?.projectId ??
+      (Constants as any).easConfig?.projectId;
+
+    const tokenData = await Notifications.getExpoPushTokenAsync(
+      projectId ? { projectId } : undefined
+    );
+    return tokenData.data ?? null;
+  } catch (err) {
+    console.warn('Failed to register for push notifications:', err);
+    return null;
+  }
+}
+
 /*
 |--------------------------------------------------------------------------
 | PROVIDER — mount this ONCE near the root of the app (e.g. app/_layout.tsx)
 |--------------------------------------------------------------------------
-| Everything that needs notifications (the header badge, the modal list,
-| etc.) reads from this single instance via useNotifications() below.
-| This is what keeps the poll loop, the "seen ids" tracker, and the sound
-| playback to exactly one copy — so a notification only ever plays once.
+| Polls the API for in-app notifications. Remote push only registers when
+| running a development / production build (not Expo Go).
 */
-export function NotificationProvider({ children }: { children: React.ReactNode }) {
+export function NotificationProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const [notifications, setNotifications] = useState<QueueNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -76,10 +173,10 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const soundRef = useRef<Audio.Sound | null>(null);
   const seenIdsRef = useRef<Set<number>>(new Set());
   const isFirstLoadRef = useRef(true);
-  const isPollingRef = useRef(false); // guards against overlapping polls
+  const isPollingRef = useRef(false);
   const lastPollWarningRef = useRef<string | null>(null);
+  const pushRegisteredRef = useRef(false);
 
-  // Load the notification sound once
   useEffect(() => {
     let isMounted = true;
 
@@ -102,13 +199,45 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     };
   }, []);
 
+  // Register Expo push token only on real builds (skipped in Expo Go)
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      if (pushRegisteredRef.current) return;
+      if (isExpoGo()) return;
+
+      const student_id = await getStudentId();
+      if (!student_id || cancelled) return;
+
+      const token = await registerForPushNotificationsAsync();
+      if (!token || cancelled) return;
+
+      try {
+        await fetch(API.registerPushToken, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            student_id,
+            push_token: token,
+            platform: Platform.OS,
+          }),
+        });
+        pushRegisteredRef.current = true;
+      } catch (err) {
+        console.warn('Failed to save push token:', err);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const playSound = useCallback(async () => {
     try {
       const sound = soundRef.current;
       if (!sound) return;
-      // A single replayAsync() call (stop + seek-to-0 + play in one native
-      // bridge round-trip) fires much closer to the badge/number update
-      // than doing stopAsync -> setPositionAsync -> playAsync separately.
       await sound.replayAsync();
     } catch {
       // ignore playback errors (e.g. silent mode)
@@ -116,7 +245,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   }, []);
 
   const poll = useCallback(async () => {
-    if (isPollingRef.current) return; // skip if a poll is already in flight
+    if (isPollingRef.current) return;
     isPollingRef.current = true;
 
     try {
@@ -140,30 +269,33 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         return;
       }
 
-      let data: { success?: boolean; notifications?: QueueNotification[]; unread_count?: number };
+      let data: {
+        success?: boolean;
+        notifications?: QueueNotification[];
+        unread_count?: number;
+      };
       try {
         data = JSON.parse(responseText);
       } catch {
-        const warning = 'Notification API returned invalid JSON';
-        if (lastPollWarningRef.current !== warning) {
-          console.warn(`${warning}: ${API.checkNotifications}`);
-          lastPollWarningRef.current = warning;
-        }
         return;
       }
-
-      lastPollWarningRef.current = null;
 
       if (!data.success) return;
 
       const incoming = data.notifications ?? [];
 
-      // Detect genuinely new notification ids since the last poll
       const newOnes = incoming.filter((n) => !seenIdsRef.current.has(n.id));
       incoming.forEach((n) => seenIdsRef.current.add(n.id));
 
       if (newOnes.length > 0 && !isFirstLoadRef.current) {
-        playSound(); // fires exactly once per poll, regardless of how many new items
+        // Soft chime for non-proceed updates. Proceed uses its own
+        // looping alarm on the home ProceedModal.
+        const hasProceed = newOnes.some(
+          (n) => n.type === 'called' || n.type === 'in_progress'
+        );
+        if (!hasProceed) {
+          playSound();
+        }
       }
       isFirstLoadRef.current = false;
 
@@ -220,7 +352,6 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     }
   }, []);
 
-  // Poll on mount, then on an interval — this is the ONLY interval in the app
   useEffect(() => {
     poll();
     const interval = setInterval(poll, POLL_INTERVAL_MS);
@@ -229,19 +360,20 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   return (
     <NotificationContext.Provider
-      value={{ notifications, unreadCount, loading, refresh, markAsRead, markAllAsRead }}
+      value={{
+        notifications,
+        unreadCount,
+        loading,
+        refresh,
+        markAsRead,
+        markAllAsRead,
+      }}
     >
       {children}
     </NotificationContext.Provider>
   );
 }
 
-/*
-|--------------------------------------------------------------------------
-| HOOK — same name/shape as before, so NotificationModal.tsx and
-| app-header.tsx don't need to change. Just reads from the Provider above.
-|--------------------------------------------------------------------------
-*/
 export function useNotifications() {
   const ctx = useContext(NotificationContext);
   if (!ctx) {

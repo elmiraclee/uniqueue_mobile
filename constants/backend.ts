@@ -90,6 +90,7 @@ export const API = {
   checkNotifications: `${API_URL}/check_notification.php`,
   getNotifications: `${API_URL}/get_notification.php`,
   markNotificationsRead: `${API_URL}/mark_notification_read.php`,
+  registerPushToken: `${API_URL}/register_push_token.php`,
 
   // GOOGLE AUTH
   googleAuth: `${API_URL}/google_auth.php`,
