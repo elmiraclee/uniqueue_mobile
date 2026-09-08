@@ -115,7 +115,15 @@ async function registerForPushNotificationsAsync(): Promise<string | null> {
     const { status: existing } = await Notifications.getPermissionsAsync();
     let finalStatus = existing;
     if (existing !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync();
+      const { status } = await Notifications.requestPermissionsAsync({
+        ios: {
+          allowAlert: true,
+          allowBadge: true,
+          allowSound: true,
+          allowCriticalAlerts: false,
+        },
+        android: {},
+      });
       finalStatus = status;
     }
     if (finalStatus !== 'granted') {
@@ -124,19 +132,38 @@ async function registerForPushNotificationsAsync(): Promise<string | null> {
     }
 
     if (Platform.OS === 'android') {
+      // NEW channel id (proceed_alert) so devices pick up strong settings
+      // even if an older weak "proceed" channel was already created.
+      // Long vibration pattern so the phone is felt in a bag/pocket.
+      await Notifications.setNotificationChannelAsync('proceed_alert', {
+        name: 'Your Turn — Proceed Now',
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 800, 400, 800, 400, 800, 400, 1200],
+        sound: 'default',
+        enableVibrate: true,
+        enableLights: true,
+        lightColor: '#660810',
+        bypassDnd: true,
+        lockscreenVisibility:
+          Notifications.AndroidNotificationVisibility.PUBLIC,
+        showBadge: true,
+      });
       await Notifications.setNotificationChannelAsync('proceed', {
         name: 'Proceed Alerts',
         importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 400, 200, 400],
+        vibrationPattern: [0, 800, 400, 800, 400, 800],
         sound: 'default',
         enableVibrate: true,
+        bypassDnd: true,
         lockscreenVisibility:
           Notifications.AndroidNotificationVisibility.PUBLIC,
       });
       await Notifications.setNotificationChannelAsync('default', {
         name: 'Queue Updates',
         importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 400, 200, 400],
         sound: 'default',
+        enableVibrate: true,
       });
     }
 
