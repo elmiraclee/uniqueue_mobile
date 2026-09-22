@@ -21,6 +21,8 @@ import AppHeader from '../../../components/layout/app-header';
 import ServiceItemStep from '../../../components/queue-step/service-item-step';
 import QueueTypeStep from '../../../components/queue-step/queue-type-step';
 import RequirementStep from '../../../components/queue-step/requirement-step';
+import ChoiceStep, { ChoiceMap } from '../../../components/queue-step/choice-step';
+import AcademicStep, { AcademicMap } from '../../../components/queue-step/academic-step';
 import ReviewStep from '../../../components/queue-step/review-step';
 import { COLORS } from '../../../constants/theme';
 
@@ -32,6 +34,9 @@ export interface ServiceItem {
   amount?: number | null;
   price?: number | null;
   pay_at_cashier?: boolean;
+  use_academic_period?: boolean;
+  has_choices?: boolean;
+  choices?: { id: number; label: string; requirements?: string[] }[];
 }
 
 // ── OFFICE EVENT MODE ───────────────────────────────────────────────
@@ -250,8 +255,21 @@ export default function OfficeQueue() {
   const router = useRouter();
 
 
-  const { office: officeSlug, event_id: eventIdParam } =
-    useLocalSearchParams<{ office?: string; event_id?: string }>();
+  const {
+    office: officeSlug,
+    event_id: eventIdParam,
+    forStudentId: forStudentIdParam,
+    asParent: asParentParam,
+    parentId: parentIdParam,
+  } = useLocalSearchParams<{
+      office?: string;
+      event_id?: string;
+      forStudentId?: string;
+      asParent?: string;
+      parentId?: string;
+    }>();
+  const actingAsParent = asParentParam === '1' || asParentParam === 'true';
+  const [parentActorId, setParentActorId] = useState(0);
 
   const eventId = eventIdParam ? parseInt(eventIdParam, 10) : 0;
   const isEventMode = !!eventId;
@@ -297,6 +315,10 @@ export default function OfficeQueue() {
   const [selectedServiceItems, setSelectedServiceItems] = useState<number[]>([]);
   const [checkedRequirements, setCheckedRequirements] = useState<string[]>([]);
   const [quantities, setQuantities] = useState<Record<number, number>>({});
+  const [itemChoices, setItemChoices] = useState<ChoiceMap>({});
+  const [academicMap, setAcademicMap] = useState<AcademicMap>({});
+  const [academicPeriods, setAcademicPeriods] = useState<{ id: number; label: string }[]>([]);
+  const [schoolYears, setSchoolYears] = useState<{ id: number; school_year: string }[]>([]);
 
   const [priority, setPriority] = useState(false);
   const [priorityReason, setPriorityReason] = useState('');
@@ -336,6 +358,7 @@ export default function OfficeQueue() {
   useEffect(() => {
     if (!office) return;
     fetchServiceItems(office.id);
+    fetchAcademicData(office.id);
   }, [office]);
 
   useEffect(() => {
@@ -372,7 +395,14 @@ export default function OfficeQueue() {
     const user = await AsyncStorage.getItem('user');
     if (user) {
       const parsed = JSON.parse(user);
-      setStudentId(parsed.id);
+      const role = await AsyncStorage.getItem('role');
+      // Parent queueing for a child
+      if ((actingAsParent || role === 'parent') && forStudentIdParam) {
+        setStudentId(parseInt(String(forStudentIdParam), 10));
+        setParentActorId(parentIdParam ? parseInt(String(parentIdParam), 10) : parsed.id);
+      } else {
+        setStudentId(parsed.id);
+      }
     }
   };
 
@@ -432,6 +462,22 @@ export default function OfficeQueue() {
   };
 
   // SERVICE ITEMS — scoped to this office only, and used by both queue types.
+  const fetchAcademicData = async (officeId: number) => {
+    try {
+      const data = await fetchJsonOrNull(API.getAcademicData, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ office_id: officeId }),
+      });
+      if (data?.success) {
+        setAcademicPeriods(data.periods || []);
+        setSchoolYears(data.school_years || []);
+      }
+    } catch (e) {
+      console.log('Academic data error', e);
+    }
+  };
+
   const fetchServiceItems = async (officeId: number) => {
     try {
       const data = await fetchJsonOrNull(
@@ -728,8 +774,34 @@ export default function OfficeQueue() {
     setAssignedWindow('');
   };
 
+
+  const selectedNeedChoices = serviceItems.filter(
+    (i) => selectedServiceItems.includes(i.id) && (i.has_choices || (i.choices && i.choices.length > 0))
+  );
+  const selectedNeedAcademic = serviceItems.filter(
+    (i) => selectedServiceItems.includes(i.id) && i.use_academic_period
+  );
+
   const joinQueue = async () => {
     if (!office) return;
+
+    // Hard block: cannot join while another queue is already active
+    try {
+      const cur = await fetchJsonOrNull(API.getCurrentQueue, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ student_id: studentId }),
+      });
+      if (cur?.success && cur?.queue?.id) {
+        Alert.alert(
+          'Already on queue',
+          `You already have an active ticket (#${cur.queue.queue_number || cur.queue.id}). Finish or cancel it before joining another.`
+        );
+        return;
+      }
+    } catch {
+      // continue; server will also reject
+    }
 
     if (queueType === 'walkin' && !office.walkinEnabled) {
       Alert.alert('Error', 'Walk-in queueing is not available for this office.');
@@ -759,10 +831,24 @@ export default function OfficeQueue() {
     try {
       setSubmitting(true);
 
-      const items = selectedServiceItems.map((id) => ({
-        service_item_id: id,
-        quantity: quantities[id] || 1,
-      }));
+      const items = selectedServiceItems.map((id) => {
+        const entry: any = {
+          service_item_id: id,
+          quantity: quantities[id] || 1,
+        };
+        if (itemChoices[id]) {
+          entry.choice_id = itemChoices[id].choice_id;
+          entry.choice_label = itemChoices[id].choice_label;
+        }
+        if (academicMap[id]?.length) {
+          entry.academic = academicMap[id].map((a) => ({
+            period: a.period,
+            academic_period: a.period,
+            school_year: a.school_year,
+          }));
+        }
+        return entry;
+      });
 
       const response = await fetch(`${API_BASE}/office-queue.php`, {
         method: 'POST',
@@ -776,6 +862,9 @@ export default function OfficeQueue() {
           priority: office.priorityEnabled ? priority : false,
           priority_reason: office.priorityEnabled ? priorityReason : '',
           service_items: items,
+          ...(parentActorId > 0
+            ? { created_by_role: 'parent', created_by_parent_id: parentActorId, parent_id: parentActorId }
+            : {}),
         }),
       });
 
@@ -1105,12 +1194,57 @@ export default function OfficeQueue() {
             priorityReason={priorityReason}
             setPriorityReason={setPriorityReason}
             priorityEnabled={office.priorityEnabled}
-            onNext={() => setStep(3)}
+            onNext={() => {
+              const needCh = serviceItems.some(
+                (i) => selectedServiceItems.includes(i.id) && (i.has_choices || (i.choices && i.choices.length > 0))
+              );
+              const needAc = serviceItems.some(
+                (i) => selectedServiceItems.includes(i.id) && i.use_academic_period
+              );
+              if (needCh) setStep(3);
+              else if (needAc) setStep(4);
+              else setStep(5);
+            }}
             onBack={goBack}
           />
         )}
 
         {step === 3 && (
+          <ChoiceStep
+            items={serviceItems}
+            selectedIds={selectedServiceItems}
+            choices={itemChoices}
+            setChoices={setItemChoices}
+            onNext={() => {
+              const needAc = serviceItems.some(
+                (i) => selectedServiceItems.includes(i.id) && i.use_academic_period
+              );
+              setStep(needAc ? 4 : 5);
+            }}
+            onBack={() => setStep(2)}
+          />
+        )}
+
+        {step === 4 && (
+          <AcademicStep
+            items={serviceItems}
+            selectedIds={selectedServiceItems}
+            quantities={quantities}
+            academic={academicMap}
+            setAcademic={setAcademicMap}
+            periods={academicPeriods}
+            schoolYears={schoolYears}
+            onNext={() => setStep(5)}
+            onBack={() => {
+              const needCh = serviceItems.some(
+                (i) => selectedServiceItems.includes(i.id) && (i.has_choices || (i.choices && i.choices.length > 0))
+              );
+              setStep(needCh ? 3 : 2);
+            }}
+          />
+        )}
+
+        {step === 5 && (
           <RequirementStep
             service_items={serviceItems}
             selectedServiceItems={selectedServiceItems}
@@ -1119,12 +1253,22 @@ export default function OfficeQueue() {
             queueType={queueType}
             appointmentSlipConfirmed={appointmentSlipConfirmed}
             setAppointmentSlipConfirmed={setAppointmentSlipConfirmed}
-            onNext={() => setStep(4)}
-            onBack={goBack}
+            onNext={() => setStep(6)}
+            onBack={() => {
+              const needAc = serviceItems.some(
+                (i) => selectedServiceItems.includes(i.id) && i.use_academic_period
+              );
+              const needCh = serviceItems.some(
+                (i) => selectedServiceItems.includes(i.id) && (i.has_choices || (i.choices && i.choices.length > 0))
+              );
+              if (needAc) setStep(4);
+              else if (needCh) setStep(3);
+              else setStep(2);
+            }}
           />
         )}
 
-        {step === 4 && (
+        {step === 6 && (
           <ReviewStep
             queueType={queueType}
             appointmentSlipConfirmed={appointmentSlipConfirmed}

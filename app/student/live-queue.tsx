@@ -49,37 +49,85 @@ interface LiveQueue {
   queue_list: QueueItem[];
 }
 
+/** Expo Router may return string | string[] for search params. */
+function paramStr(v: unknown): string {
+  if (v == null) return "";
+  if (Array.isArray(v)) return String(v[0] ?? "");
+  return String(v);
+}
+
+function paramInt(v: unknown): number {
+  const n = parseInt(paramStr(v), 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
 export default function LiveQueueScreen() {
-  const { queueId } = useLocalSearchParams();
+  // Web parent "View Queue": ticket id + child_id
+  // Mobile: queueId | ticketId | studentId | childId
+  const params = useLocalSearchParams();
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const [liveQueue, setLiveQueue] =
     useState<LiveQueue | null>(null);
 
   const goBack = () => (router.canGoBack() ? router.back() : router.replace("/"));
 
+  const resolveTicketId = async (): Promise<number | null> => {
+    // Direct ticket id from navigation (parent home passes active_ticket_id as queueId)
+    const direct = paramInt(params.queueId) || paramInt(params.ticketId) || paramInt(params.id);
+    if (direct > 0) return direct;
+
+    const sid = paramInt(params.studentId) || paramInt(params.childId);
+    if (sid <= 0) return null;
+
+    // Resolve active ticket for this student/child
+    const cur = await fetchJsonOrNull(API.getCurrentQueue, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ student_id: sid }),
+    });
+    // get_current_queue.php → { success, queue: { id, ... } }
+    const tid = paramInt(cur?.queue?.id) || paramInt(cur?.ticket?.id) || paramInt(cur?.id);
+    return tid > 0 ? tid : null;
+  };
+
 const loadQueue = async () => {
   try {
+    setErrorMsg(null);
+    const ticketId = await resolveTicketId();
+    if (!ticketId) {
+      setErrorMsg("No active queue found for this child.");
+      setLiveQueue(null);
+      return;
+    }
+
+    const sid = paramInt(params.studentId) || paramInt(params.childId);
     const json = await fetchJsonOrNull(API.getLiveQueue, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        queue_id: Number(queueId),
+        queue_id: ticketId,
+        ticket_id: ticketId,
+        student_id: sid || undefined,
+        child_id: sid || undefined,
       }),
     }, 'Live Queue Error');
 
     if (json?.success) {
       setLiveQueue(json);
     } else {
-      console.log(json?.message);
+      setErrorMsg(json?.message || "Could not load live queue");
+      console.log("Live queue API:", json?.message, "ticketId=", ticketId);
     }
 
   } catch (error) {
     console.log("ERROR:", error);
+    setErrorMsg("Network error loading live queue");
   } finally {
     setLoading(false);
   }
@@ -144,6 +192,25 @@ const loadQueue = async () => {
           color={COLORS.primary}
           style={{ marginTop: 100 }}
         />
+      </SafeAreaView>
+    );
+  }
+
+  if (errorMsg || !liveQueue) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <AppHeader title="Live Queue" />
+        <View style={{ padding: 24, alignItems: "center", marginTop: 40 }}>
+          <Text style={{ color: COLORS.gray, textAlign: "center", marginBottom: 16 }}>
+            {errorMsg || "No active queue to display."}
+          </Text>
+          <Text
+            style={{ color: COLORS.primary, fontWeight: "700" }}
+            onPress={goBack}
+          >
+            Go back
+          </Text>
+        </View>
       </SafeAreaView>
     );
   }

@@ -9,6 +9,7 @@ import { COLORS } from '../../constants/theme';
 export default function StudentTabsLayout() {
   const [ready, setReady] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [role, setRole] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -16,7 +17,11 @@ export default function StudentTabsLayout() {
     (async () => {
       try {
         const user = await AsyncStorage.getItem('user');
-        if (!cancelled) setIsLoggedIn(!!user);
+        const r = await AsyncStorage.getItem('role');
+        if (!cancelled) {
+          setIsLoggedIn(!!user);
+          setRole(r);
+        }
       } catch {
         if (!cancelled) setIsLoggedIn(false);
       } finally {
@@ -44,7 +49,11 @@ export default function StudentTabsLayout() {
     );
   }
 
-  // No stored session → login. Never clear storage here (only explicit logout does).
+  // Parent must never enter student UI (same as web — separate parent portal)
+  if (isLoggedIn && role === 'parent') {
+    return <Redirect href="/parent/home" />;
+  }
+
   if (!isLoggedIn) {
     return <Redirect href="/login" />;
   }
@@ -94,6 +103,7 @@ export default function StudentTabsLayout() {
 
       <Tabs.Screen name="queues" options={{ href: null }} />
       <Tabs.Screen name="live-queue" options={{ href: null }} />
+      <Tabs.Screen name="ticket" options={{ href: null }} />
     </Tabs>
   );
 }

@@ -94,6 +94,30 @@ export const API = {
 
   // GOOGLE AUTH
   googleAuth: `${API_URL}/google_auth.php`,
+
+  // PARENT AUTH + DASHBOARD
+  parentLogin: `${API_URL}/parent_login.php`,
+  parentSignup: `${API_URL}/parent_signup.php`,
+  getParentChildren: `${API_URL}/get_parent_children.php`,
+  parentAddChild: `${API_URL}/parent_add_child.php`,
+  getParentLinkRequests: `${API_URL}/get_parent_link_requests.php`,
+  studentRespondLinkRequest: `${API_URL}/student_respond_link_request.php`,
+  getParentNotifications: `${API_URL}/get_parent_notifications.php`,
+  getParentProfile: `${API_URL}/get_parent_profile.php`,
+  updateParentProfile: `${API_URL}/update_parent_profile.php`,
+
+  // SERVICE NEED + EVENTS
+  serviceNeedRequest: `${API_URL}/service_need_request.php`,
+  getUnavailableServices: `${API_URL}/get_unavailable_services.php`,
+  getOfficeEvents: `${API_URL}/get_office_events.php`,
+  getEventSteps: `${API_URL}/get_event_steps.php`,
+  getAcademicData: `${API_URL}/get_academic_data.php`,
+  getParentPendingFeedback: `${API_URL}/get_parent_pending_feedback.php`,
+  getParentTransactions: `${API_URL}/get_parent_transactions.php`,
+  officeQueue: `${API_URL}/office-queue.php`,
+  getTicketDetail: `${API_URL}/get_ticket_detail.php`,
+  forgotPassword: `${API_URL}/forgot_password.php`,
+  getStudentLinkedParents: `${API_URL}/get_student_linked_parents.php`,
 };
 
 // ============================================================

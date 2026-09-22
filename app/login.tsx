@@ -39,6 +39,7 @@ export default function Login() {
   const [srCode, setSrCode] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [password, setPassword] = useState('');
+  const [loginRole, setLoginRole] = useState<'student' | 'parent'>('student');
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
@@ -49,8 +50,9 @@ export default function Login() {
     (async () => {
       try {
         const user = await AsyncStorage.getItem('user');
+        const role = await AsyncStorage.getItem('role');
         if (!cancelled && user) {
-          router.replace('/student/home');
+          router.replace(role === 'parent' ? '/parent/home' : '/student/home');
           return;
         }
       } catch {
@@ -110,21 +112,22 @@ export default function Login() {
     try {
       setLoading(true);
 
-      const response = await fetch(API.login, {
+      const endpoint = loginRole === 'parent' ? API.parentLogin : API.login;
+      const body =
+        loginRole === 'parent'
+          ? { email: srCode.trim(), password }
+          : { username: srCode.trim(), password };
+
+      const response = await fetch(endpoint, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          username: srCode,
-          password: password,
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
       });
 
-      const text = await response.text();
+      const rawText = await response.text();
       let data;
       try {
-        data = JSON.parse(text);
+        data = JSON.parse(rawText);
       } catch (e) {
         Alert.alert('Server Error', 'Invalid JSON response from server');
         return;
@@ -136,8 +139,8 @@ export default function Login() {
       }
 
       await AsyncStorage.setItem('user', JSON.stringify(data.user));
-      await AsyncStorage.setItem('role', 'student');
-      router.replace('/student/home');
+      await AsyncStorage.setItem('role', data.role || loginRole);
+      router.replace(loginRole === 'parent' ? '/parent/home' : '/student/home');
     } catch (error) {
       console.log('LOGIN ERROR:', error);
       Alert.alert('Connection Error', 'Cannot connect to server');
@@ -205,12 +208,37 @@ export default function Login() {
             />
 
             <Text style={styles.title}>UniQueue</Text>
-            <Text style={styles.subtitle}>Sign in using your SR-Code</Text>
+            <Text style={styles.subtitle}>
+              {loginRole === 'parent'
+                ? 'Sign in as Parent / Guardian'
+                : 'Sign in using your SR-Code'}
+            </Text>
+
+            <View style={styles.roleRow}>
+              <Pressable
+                style={[styles.roleChip, loginRole === 'student' && styles.roleChipActive]}
+                onPress={() => setLoginRole('student')}
+              >
+                <Text style={[styles.roleChipText, loginRole === 'student' && styles.roleChipTextActive]}>
+                  Student
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[styles.roleChip, loginRole === 'parent' && styles.roleChipActive]}
+                onPress={() => setLoginRole('parent')}
+              >
+                <Text style={[styles.roleChipText, loginRole === 'parent' && styles.roleChipTextActive]}>
+                  Parent
+                </Text>
+              </Pressable>
+            </View>
 
             <CustomInput
-              placeholder="SR-Code"
+              placeholder={loginRole === 'parent' ? 'Email or contact number' : 'SR-Code'}
               value={srCode}
               onChangeText={setSrCode}
+              autoCapitalize="none"
+              keyboardType={loginRole === 'parent' ? 'email-address' : 'default'}
             />
 
             <CustomInput
@@ -224,6 +252,16 @@ export default function Login() {
               title={loading ? 'Logging in...' : 'Login'}
               onPress={handleLogin}
             />
+
+            <Pressable onPress={() => router.push('/forgot-password')} style={{ marginTop: 12, alignItems: 'center' }}>
+              <Text style={{ color: COLORS.primary, fontWeight: '600' }}>Forgot password?</Text>
+            </Pressable>
+
+            {loginRole === 'parent' && (
+              <Pressable onPress={() => router.push('/parent-signup')} style={{ marginTop: 12, alignItems: 'center' }}>
+                <Text style={{ color: COLORS.primary, fontWeight: '600' }}>Create parent account</Text>
+              </Pressable>
+            )}
 
             <View style={styles.orRow}>
               <View style={styles.orLine} />
@@ -274,6 +312,30 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'center',
     padding: 15,
+  },
+  roleRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+  },
+  roleChip: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#e5e7eb',
+    alignItems: 'center',
+  },
+  roleChipActive: {
+    borderColor: '#660810',
+    backgroundColor: 'rgba(102,8,16,0.08)',
+  },
+  roleChipText: {
+    fontWeight: '600',
+    color: '#6b7280',
+  },
+  roleChipTextActive: {
+    color: '#660810',
   },
   card: {
     backgroundColor: COLORS.white,

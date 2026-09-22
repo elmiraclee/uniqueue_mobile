@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Alert,
   Animated,
   Image,
   RefreshControl,
@@ -144,6 +145,12 @@ export default function StudentHome() {
   const [pendingFeedback, setPendingFeedback] = useState<PendingFeedbackTransaction | null>(null);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
 
+  // Parent / Guardian link requests waiting for student approval
+  const [parentLinkRequests, setParentLinkRequests] = useState<any[]>([]);
+  // Unavailable services (demand-only) + service-need modal
+  const [unavailableServices, setUnavailableServices] = useState<any[]>([]);
+  const [serviceNeedTarget, setServiceNeedTarget] = useState<any | null>(null);
+
   const fade = useRef(new Animated.Value(0)).current;
   const slide = useRef(new Animated.Value(16)).current;
 
@@ -235,6 +242,9 @@ export default function StudentHome() {
 
       const parsed = JSON.parse(user);
       setStudentId(parsed.id);
+      // Fire-and-forget secondary data
+      fetchParentLinkRequests(parsed.id);
+      fetchUnavailableServices(parsed.id);
       setStudentName(
         parsed.name ||
           parsed.full_name ||
@@ -365,6 +375,75 @@ export default function StudentHome() {
     }
   };
 
+
+  const fetchParentLinkRequests = async (sid: number) => {
+    try {
+      const data = await fetchJsonOrNull(API.getParentLinkRequests, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ student_id: sid }),
+      });
+      if (data?.success) setParentLinkRequests(data.requests || []);
+    } catch (e) {
+      console.log('Parent link requests error', e);
+    }
+  };
+
+  const respondParentLink = async (requestId: number, action: 'approve' | 'decline') => {
+    try {
+      const data = await fetchJsonOrNull(API.studentRespondLinkRequest, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ student_id: studentId, request_id: requestId, action }),
+      });
+      if (data?.success) {
+        setParentLinkRequests((prev) => prev.filter((r) => r.id !== requestId));
+      } else {
+        Alert.alert('Error', data?.message || 'Could not process request');
+      }
+    } catch {
+      Alert.alert('Error', 'Network error');
+    }
+  };
+
+  const fetchUnavailableServices = async (sid: number) => {
+    try {
+      const data = await fetchJsonOrNull(API.getUnavailableServices, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ student_id: sid }),
+      });
+      if (data?.success) setUnavailableServices(data.services || []);
+    } catch (e) {
+      console.log('Unavailable services error', e);
+    }
+  };
+
+  const submitServiceNeed = async (service: any) => {
+    try {
+      const data = await fetchJsonOrNull(API.serviceNeedRequest, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          student_id: studentId,
+          service_item_id: service.id,
+          office_id: service.office_id,
+        }),
+      });
+      if (data?.success) {
+        setUnavailableServices((prev) =>
+          prev.map((s) => (s.id === service.id ? { ...s, requested_today: 1 } : s))
+        );
+        setServiceNeedTarget(null);
+        Alert.alert('Request sent', data.message || 'Staff will be notified.');
+      } else {
+        Alert.alert('Error', data?.message || 'Could not submit request');
+      }
+    } catch {
+      Alert.alert('Error', 'Network error');
+    }
+  };
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -382,6 +461,8 @@ export default function StudentHome() {
             await fetchCurrentQueue(parsed.id);
             await fetchPendingFeedback(parsed.id);
             await fetchActiveEventTickets(parsed.id);
+            await fetchParentLinkRequests(parsed.id);
+            await fetchUnavailableServices(parsed.id);
           }
         } catch {
           // ignore storage parse errors
@@ -399,8 +480,13 @@ export default function StudentHome() {
       setShowFeedbackModal(true);
       return;
     }
-    if (currentQueue) {
-      setShowQueueModal(true);
+    if (currentQueue || Object.values(activeEventTickets).some(Boolean)) {
+      // Already on a queue — open ticket / modal instead of starting another
+      if (currentQueue?.id) {
+        openTicketDetail();
+      } else {
+        setShowQueueModal(true);
+      }
       return;
     }
     if (office.is_full) {
@@ -414,8 +500,13 @@ export default function StudentHome() {
       setShowFeedbackModal(true);
       return;
     }
-    if (currentQueue) {
-      setShowQueueModal(true);
+    // Already on this event → treat as view, not new join
+    if (activeEventTickets[event.id]) {
+      return;
+    }
+    if (currentQueue || Object.values(activeEventTickets).some(Boolean)) {
+      if (currentQueue?.id) openTicketDetail();
+      else setShowQueueModal(true);
       return;
     }
     if (office.is_full) {
@@ -424,8 +515,21 @@ export default function StudentHome() {
     router.push(`/student/queues/office-queue?office=${office.slug}&event_id=${event.id}`);
   };
 
-  /** True when the student is blocked from joining any new queue. */
-  const joinBlocked = !!(currentQueue || pendingFeedback);
+  /** True when the student is blocked from joining any new queue
+   *  (active regular ticket, any active event ticket, or pending feedback). */
+  const hasActiveEventTicket = Object.values(activeEventTickets).some(Boolean);
+  const joinBlocked = !!(currentQueue || pendingFeedback || hasActiveEventTicket);
+
+  const openTicketDetail = () => {
+    if (!currentQueue?.id) {
+      setShowQueueModal(true);
+      return;
+    }
+    router.push({
+      pathname: '/student/ticket',
+      params: { ticketId: String(currentQueue.id), queueId: String(currentQueue.id) },
+    } as any);
+  };
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -601,6 +705,56 @@ export default function StudentHome() {
             </AnimatedPressable>
           )}
 
+          {/* Parent / Guardian link requests */}
+          {parentLinkRequests.map((req) => (
+            <View key={req.id} style={styles.parentLinkCard}>
+              <Text style={styles.parentLinkTitle}>Parent / Guardian link request</Text>
+              <Text style={styles.parentLinkBody}>
+                {req.full_name} ({req.email}) wants to link as {req.relationship}.
+              </Text>
+              <View style={styles.parentLinkActions}>
+                <AnimatedPressable
+                  style={styles.parentApprove}
+                  onPress={() => respondParentLink(req.id, 'approve')}
+                >
+                  <Text style={styles.parentApproveText}>Confirm</Text>
+                </AnimatedPressable>
+                <AnimatedPressable
+                  style={styles.parentDecline}
+                  onPress={() => respondParentLink(req.id, 'decline')}
+                >
+                  <Text style={styles.parentDeclineText}>Decline</Text>
+                </AnimatedPressable>
+              </View>
+            </View>
+          ))}
+
+
+          {/* Unavailable services — demand requests */}
+          {unavailableServices.length > 0 && (
+            <View style={styles.unavailableSection}>
+              <Text style={styles.unavailableTitle}>Currently unavailable services</Text>
+              {unavailableServices.map((svc) => (
+                <View key={svc.id} style={styles.unavailableRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.unavailableName}>{svc.name}</Text>
+                    <Text style={styles.unavailableOffice}>{svc.office_name}</Text>
+                  </View>
+                  {svc.requested_today ? (
+                    <Text style={styles.requestedLabel}>Requested today</Text>
+                  ) : (
+                    <AnimatedPressable
+                      style={styles.needBtn}
+                      onPress={() => setServiceNeedTarget(svc)}
+                    >
+                      <Text style={styles.needBtnText}>I need this</Text>
+                    </AnimatedPressable>
+                  )}
+                </View>
+              ))}
+            </View>
+          )}
+
           {/* Proceed now banner — mirrors web's called-info panel */}
           {currentQueue && ['called', 'in_progress'].includes((currentQueue.status || '').toLowerCase()) && (
             <AnimatedPressable
@@ -638,7 +792,7 @@ export default function StudentHome() {
           <AnimatedPressable
             style={styles.currentQueueCard}
             disabled={!currentQueue}
-            onPress={() => setShowQueueModal(true)}
+            onPress={openTicketDetail}
           >
             <View style={styles.currentTitleRow}>
               <View style={styles.currentTitleLeft}>
@@ -771,7 +925,7 @@ export default function StudentHome() {
                         (office.is_full || joinBlocked) && styles.joinButtonDisabled,
                       ]}
                       onPress={() => joinQueue(office)}
-                      disabled={!!office.is_full}
+                      disabled={!!office.is_full || joinBlocked}
                     >
                       <Text style={styles.joinButtonText}>
                         {office.is_full
@@ -826,7 +980,11 @@ export default function StudentHome() {
                               (office.is_full || (joinBlocked && !isOnThisEventQueue)) && styles.eventJoinButtonDisabled,
                             ]}
                             onPress={() => joinEventQueue(office, ev)}
-                            disabled={!!office.is_full && !isOnThisEventQueue}
+                            disabled={
+                              isOnThisEventQueue
+                                ? false
+                                : (!!office.is_full || joinBlocked)
+                            }
                           >
                             <Text style={[
                               styles.eventJoinButtonText,
@@ -837,7 +995,7 @@ export default function StudentHome() {
                                 : office.is_full
                                   ? 'Full'
                                   : joinBlocked
-                                    ? 'Blocked'
+                                    ? (currentQueue || hasActiveEventTicket ? 'Already on queue' : 'Feedback required')
                                     : 'Join'}
                             </Text>
                           </AnimatedPressable>
@@ -868,6 +1026,32 @@ export default function StudentHome() {
           fetchPendingFeedback(studentId);
         }}
       />
+
+      {serviceNeedTarget && (
+        <View style={styles.needModalOverlay}>
+          <View style={styles.needModal}>
+            <Text style={styles.needModalTitle}>Service currently unavailable</Text>
+            <Text style={styles.needModalBody}>
+              {serviceNeedTarget.name} at {serviceNeedTarget.office_name} is not
+              accepting queues right now. Submit a need request so staff know demand.
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
+              <AnimatedPressable
+                style={[styles.parentDecline, { flex: 1 }]}
+                onPress={() => setServiceNeedTarget(null)}
+              >
+                <Text style={styles.parentDeclineText}>Cancel</Text>
+              </AnimatedPressable>
+              <AnimatedPressable
+                style={[styles.parentApprove, { flex: 1 }]}
+                onPress={() => submitServiceNeed(serviceNeedTarget)}
+              >
+                <Text style={styles.parentApproveText}>I need this</Text>
+              </AnimatedPressable>
+            </View>
+          </View>
+        </View>
+      )}
 
       <RequeueModal
         visible={showRequeueModal}
@@ -1463,4 +1647,51 @@ statusText: {
   fontSize: 12,
   fontWeight: "700",
 },
+  parentLinkCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#e0e7ff',
+  },
+  parentLinkTitle: { fontWeight: '700', fontSize: 15, marginBottom: 4, color: COLORS.text },
+  parentLinkBody: { color: COLORS.gray, marginBottom: 10, lineHeight: 18 },
+  parentLinkActions: { flexDirection: 'row', gap: 10 },
+  parentApprove: {
+    flex: 1, backgroundColor: COLORS.primary, paddingVertical: 10,
+    borderRadius: 8, alignItems: 'center',
+  },
+  parentApproveText: { color: '#fff', fontWeight: '700' },
+  parentDecline: {
+    flex: 1, borderWidth: 1.5, borderColor: '#e5e7eb', paddingVertical: 10,
+    borderRadius: 8, alignItems: 'center',
+  },
+  parentDeclineText: { color: COLORS.gray, fontWeight: '600' },
+  unavailableSection: {
+    backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 12,
+  },
+  unavailableTitle: { fontWeight: '700', marginBottom: 10, color: COLORS.text },
+  unavailableRow: {
+    flexDirection: 'row', alignItems: 'center', paddingVertical: 8,
+    borderTopWidth: 1, borderTopColor: '#f3f4f6',
+  },
+  unavailableName: { fontWeight: '600', color: COLORS.text },
+  unavailableOffice: { fontSize: 12, color: COLORS.gray },
+  needBtn: {
+    borderWidth: 1.5, borderColor: COLORS.primary, borderRadius: 8,
+    paddingHorizontal: 12, paddingVertical: 8,
+  },
+  needBtnText: { color: COLORS.primary, fontWeight: '600', fontSize: 12 },
+  requestedLabel: { fontSize: 12, color: COLORS.gray, fontStyle: 'italic' },
+  needModalOverlay: {
+    position: 'absolute', left: 0, right: 0, top: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center',
+    padding: 24, zIndex: 100,
+  },
+  needModal: {
+    backgroundColor: '#fff', borderRadius: 16, padding: 20,
+  },
+  needModalTitle: { fontWeight: '800', fontSize: 17, marginBottom: 8, color: COLORS.text },
+  needModalBody: { color: COLORS.gray, lineHeight: 20 },
 });
