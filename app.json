@@ -12,8 +12,8 @@
       "supportsTablet": true,
       "infoPlist": {
         "UIBackgroundModes": [
-          "audio",
-          "remote-notification"
+          "remote-notification",
+          "fetch"
         ]
       }
     },
@@ -28,10 +28,15 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "permissions": [
-        "android.permission.VIBRATE",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.POST_NOTIFICATIONS",
         "android.permission.RECEIVE_BOOT_COMPLETED",
-        "android.permission.POST_NOTIFICATIONS"
-      ]
+        "android.permission.SCHEDULE_EXACT_ALARM",
+        "android.permission.USE_FULL_SCREEN_INTENT",
+        "android.permission.VIBRATE",
+        "android.permission.WAKE_LOCK"
+      ],
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "output": "static",
@@ -55,11 +60,10 @@
       [
         "expo-notifications",
         {
-          "sounds": [
-            "./assets/sound/proceed_alarm.mp3",
-            "./assets/sound/notification.mp3"
-          ],
-          "mode": "production"
+          "mode": "production",
+          "icon": "./assets/images/android-icon-monochrome.png",
+          "color": "#660810",
+          "enableBackgroundRemoteNotifications": true
         }
       ],
       [

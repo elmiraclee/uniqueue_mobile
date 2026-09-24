@@ -14,7 +14,8 @@ import FeedbackModal, {
   PendingFeedbackTransaction,
 } from '@/components/feedback/feedback-modal';
 import CurrentQueueModal from '@/components/queue/current-queue-modal';
-import ProceedModal from '@/components/queue/proceed-modal';
+import ProceedModal, { ProceedKind } from '@/components/queue/proceed-modal';
+import { useNotifications } from '@/components/notification/use-notification';
 import RequeueModal from '@/components/queue/requeue-modal';
 import { API, API_URL, ASSET_BASE_URL } from '@/constants/backend';
 import { Ionicons } from '@expo/vector-icons';
@@ -126,11 +127,19 @@ export default function StudentHome() {
   // doesn't immediately reopen the modal.
   const respondedRequeueTicketId = useRef<number | null>(null);
 
-  // Proceed-now alarm modal — loops proceed-alarm + vibrate until OK.
-  // We only auto-open once per ticket+status so pressing OK stops it
-  // even if polling still reports called/in_progress.
+  // Alarm modal — vibrates until OK (the sound is the device's own
+  // notification tone, played by the system notification).
+  // It fires for BOTH stages, matching the web flow:
+  //   'next'    -> the student is next in line (people ahead hit 0)
+  //   'proceed' -> the ticket is called / in progress
+  // Auto-opens once per ticket+stage so pressing OK keeps it closed even
+  // while polling still reports the same state.
   const [showProceedModal, setShowProceedModal] = useState(false);
+  const [proceedKind, setProceedKind] = useState<ProceedKind>('proceed');
   const acknowledgedProceedKey = useRef<string | null>(null);
+
+  // Queue notifications (shared provider) — used to detect next_in_line.
+  const { notifications } = useNotifications();
 
   // Tracks whether the student currently has an active ticket for each
   // event, keyed by event id — e.g. { [eventId]: true }. This is separate
@@ -312,12 +321,20 @@ export default function StudentHome() {
         setShowRequeueModal(false);
       }
 
-      // Proceed alarm modal: open when ticket is called / in_progress,
-      // and keep it closed after the student presses OK for this key.
+      // Alarm modal: "proceed now" when called / in_progress, and
+      // "you're next" as soon as the ticket reaches the front of the line
+      // (status 'next'). Stays closed after OK for that same stage.
       const status = (queue?.status || '').toLowerCase();
       if (queue && (status === 'called' || status === 'in_progress')) {
         const key = `${queue.id}:${status}`;
         if (acknowledgedProceedKey.current !== key) {
+          setProceedKind('proceed');
+          setShowProceedModal(true);
+        }
+      } else if (queue && status === 'next') {
+        const key = `${queue.id}:next`;
+        if (acknowledgedProceedKey.current !== key) {
+          setProceedKind('next');
           setShowProceedModal(true);
         }
       } else {
@@ -330,6 +347,28 @@ export default function StudentHome() {
       console.log(e);
     }
   };
+
+  // The server also flags "you're next" through the notification stream
+  // (type = next_in_line) the moment nobody is ahead anymore, which can
+  // arrive while the ticket is still 'waiting'. Treat it as the same
+  // get-ready alarm so the student is warned one step earlier.
+  useEffect(() => {
+    if (!currentQueue?.id) return;
+
+    const status = (currentQueue.status || '').toLowerCase();
+    if (status !== 'waiting' && status !== 'next') return;
+
+    const hasNextAlert = notifications.some(
+      (n) => Number(n.ticket_id) === Number(currentQueue.id) && n.type === 'next_in_line'
+    );
+    if (!hasNextAlert) return;
+
+    const key = `${currentQueue.id}:next`;
+    if (acknowledgedProceedKey.current === key) return;
+
+    setProceedKind('next');
+    setShowProceedModal(true);
+  }, [notifications, currentQueue]);
 
   const fetchPendingFeedback = async (sid: number) => {
     try {
@@ -1078,10 +1117,14 @@ export default function StudentHome() {
               }
             : null
         }
+        kind={proceedKind}
         onAcknowledge={() => {
           const status = (currentQueue?.status || '').toLowerCase();
           if (currentQueue?.id) {
-            acknowledgedProceedKey.current = `${currentQueue.id}:${status}`;
+            acknowledgedProceedKey.current =
+              proceedKind === 'next'
+                ? `${currentQueue.id}:next`
+                : `${currentQueue.id}:${status}`;
           }
           setShowProceedModal(false);
         }}

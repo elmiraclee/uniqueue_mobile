@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Alert,
   ScrollView,
@@ -17,26 +17,90 @@ import { API } from '@/constants/backend';
 import { fetchJsonOrNull } from '@/utils/api';
 import { COLORS, RADIUS, SPACING, TYPOGRAPHY } from '../../constants/theme';
 
-const LEVELS = ['Elementary', 'JHS', 'SHS', 'College'];
+/*
+|--------------------------------------------------------------------------
+| Web parity — parent/add-child.php
+|--------------------------------------------------------------------------
+| One form, no "link vs create" toggle. The child's name, SR Code, school
+| level and grade / year level are always required, and the school level
+| decides what happens:
+|
+|   Elementary          -> parent-managed profile, linked right away
+|   JHS / SHS / College -> the student must already have a UniQueue
+|                          account and must approve the link request
+*/
+const LEVELS: { label: string; value: SchoolLevel }[] = [
+  { label: 'Elementary', value: 'Elementary' },
+  { label: 'Junior High School (JHS)', value: 'JHS' },
+  { label: 'Senior High School (SHS)', value: 'SHS' },
+  { label: 'College', value: 'College' },
+];
 const RELATIONS = ['Parent/Guardian', 'Mother', 'Father', 'Guardian'];
+
+type SchoolLevel = 'Elementary' | 'JHS' | 'SHS' | 'College';
+
+const GRADE_OPTIONS: Record<SchoolLevel, string[]> = {
+  Elementary: [
+    'Kindergarten',
+    'Grade 1',
+    'Grade 2',
+    'Grade 3',
+    'Grade 4',
+    'Grade 5',
+    'Grade 6',
+  ],
+  JHS: ['Grade 7', 'Grade 8', 'Grade 9', 'Grade 10'],
+  SHS: ['Grade 11', 'Grade 12'],
+  College: [
+    '1st Year',
+    '2nd Year',
+    '3rd Year',
+    '4th Year',
+    '5th Year',
+    '6th Year',
+    'Irregular',
+  ],
+};
+
+const NAME_PATTERN = /^[A-Za-zÑñ' -]{1,50}$/;
 
 export default function AddChildScreen() {
   const [srCode, setSrCode] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
-  const [schoolLevel, setSchoolLevel] = useState('College');
+  const [schoolLevel, setSchoolLevel] = useState<SchoolLevel>('College');
   const [gradeYear, setGradeYear] = useState('');
   const [relationship, setRelationship] = useState('Parent/Guardian');
   const [loading, setLoading] = useState(false);
-  const [mode, setMode] = useState<'link' | 'create'>('link');
+
+  // Elementary children are parent-managed; everyone else needs approval.
+  const isElementary = schoolLevel === 'Elementary';
+
+  useEffect(() => {
+    setGradeYear('');
+  }, [schoolLevel]);
 
   const submit = async () => {
     if (!/^\d{2}-\d{5}$/.test(srCode.trim())) {
       Alert.alert('Invalid SR Code', 'Use format YY-NNNNN (e.g. 26-12345)');
       return;
     }
-    if (mode === 'create' && (!firstName.trim() || !lastName.trim())) {
-      Alert.alert('Required', 'First and last name are required to create a profile');
+    if (!firstName.trim() || !lastName.trim()) {
+      Alert.alert('Required', "Enter the child's first and last name.");
+      return;
+    }
+    if (
+      !NAME_PATTERN.test(firstName.trim()) ||
+      !NAME_PATTERN.test(lastName.trim())
+    ) {
+      Alert.alert(
+        'Invalid name',
+        'Names may only contain letters, spaces, apostrophes, and hyphens.'
+      );
+      return;
+    }
+    if (!gradeYear) {
+      Alert.alert('Required', "Select the child's grade / year level.");
       return;
     }
 
@@ -49,18 +113,17 @@ export default function AddChildScreen() {
         return;
       }
 
+      // The server decides between an immediate link and an approval
+      // request from the school level — same rule as the web form.
       const body: any = {
         parent_id: user.id,
         sr_code: srCode.trim(),
         relationship,
-        mode,
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
+        school_level: schoolLevel,
+        grade_year: gradeYear,
       };
-      if (mode === 'create') {
-        body.first_name = firstName.trim();
-        body.last_name = lastName.trim();
-        body.school_level = schoolLevel;
-        body.grade_year = gradeYear;
-      }
 
       const res = await fetchJsonOrNull(API.parentAddChild, {
         method: 'POST',
@@ -90,29 +153,11 @@ export default function AddChildScreen() {
       <AppHeader title="Add / Link Child" showBack />
       <ScrollView contentContainerStyle={styles.scroll}>
         <Text style={styles.hint}>
-          Enter the student's SR Code. If they already have an account, a link
-          request will be sent for approval. You can also create a parent-managed
-          profile for younger students.
+          Add a child from Elementary through College. Elementary profiles are
+          parent-managed; JHS, SHS, and College links require the student&apos;s
+          approval. Use the name exactly as shown on the student&apos;s school
+          record.
         </Text>
-
-        <View style={styles.modeRow}>
-          <AnimatedPressable
-            style={[styles.modeBtn, mode === 'link' && styles.modeActive]}
-            onPress={() => setMode('link')}
-          >
-            <Text style={[styles.modeText, mode === 'link' && styles.modeTextActive]}>
-              Link existing
-            </Text>
-          </AnimatedPressable>
-          <AnimatedPressable
-            style={[styles.modeBtn, mode === 'create' && styles.modeActive]}
-            onPress={() => setMode('create')}
-          >
-            <Text style={[styles.modeText, mode === 'create' && styles.modeTextActive]}>
-              Create profile
-            </Text>
-          </AnimatedPressable>
-        </View>
 
         <Text style={styles.label}>SR Code *</Text>
         <TextInput
@@ -124,29 +169,39 @@ export default function AddChildScreen() {
           keyboardType="numbers-and-punctuation"
         />
 
-        {mode === 'create' && (
-          <>
-            <Text style={styles.label}>First name *</Text>
-            <TextInput style={styles.input} value={firstName} onChangeText={setFirstName} />
-            <Text style={styles.label}>Last name *</Text>
-            <TextInput style={styles.input} value={lastName} onChangeText={setLastName} />
-            <Text style={styles.label}>School level *</Text>
-            <View style={styles.pickerWrap}>
-              <Picker selectedValue={schoolLevel} onValueChange={setSchoolLevel}>
-                {LEVELS.map((l) => (
-                  <Picker.Item key={l} label={l} value={l} />
-                ))}
-              </Picker>
-            </View>
-            <Text style={styles.label}>Grade / Year</Text>
-            <TextInput
-              style={styles.input}
-              value={gradeYear}
-              onChangeText={setGradeYear}
-              placeholder="e.g. Grade 10 / 3rd Year"
-            />
-          </>
-        )}
+        <Text style={styles.label}>First name *</Text>
+        <TextInput style={styles.input} value={firstName} onChangeText={setFirstName} />
+
+        <Text style={styles.label}>Last name *</Text>
+        <TextInput style={styles.input} value={lastName} onChangeText={setLastName} />
+
+        <Text style={styles.label}>School level *</Text>
+        <View style={styles.pickerWrap}>
+          <Picker
+            selectedValue={schoolLevel}
+            onValueChange={(value) => setSchoolLevel(value as SchoolLevel)}
+          >
+            {LEVELS.map((l) => (
+              <Picker.Item key={l.value} label={l.label} value={l.value} />
+            ))}
+          </Picker>
+        </View>
+
+        <Text style={styles.label}>Grade / Year Level *</Text>
+        <View style={styles.pickerWrap}>
+          <Picker selectedValue={gradeYear} onValueChange={setGradeYear}>
+            <Picker.Item label="Select grade / year level" value="" />
+            {GRADE_OPTIONS[schoolLevel].map((g) => (
+              <Picker.Item key={g} label={g} value={g} />
+            ))}
+          </Picker>
+        </View>
+
+        <Text style={styles.note}>
+          {isElementary
+            ? 'This child will be added as a parent-managed profile and linked to your account right away.'
+            : 'The student must already have a UniQueue account. They will get a link request to approve.'}
+        </Text>
 
         <Text style={styles.label}>Relationship</Text>
         <View style={styles.pickerWrap}>
@@ -163,7 +218,11 @@ export default function AddChildScreen() {
           disabled={loading}
         >
           <Text style={styles.submitText}>
-            {loading ? 'Saving…' : mode === 'link' ? 'Send link request' : 'Create & link'}
+            {loading
+              ? 'Saving…'
+              : isElementary
+                ? 'Add Child'
+                : 'Send link request'}
           </Text>
         </AnimatedPressable>
       </ScrollView>
@@ -175,19 +234,13 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   scroll: { padding: SPACING.lg, paddingBottom: 40 },
   hint: { color: COLORS.gray, marginBottom: SPACING.lg, lineHeight: 20 },
-  modeRow: { flexDirection: 'row', gap: 8, marginBottom: SPACING.lg },
-  modeBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: RADIUS.md,
-    borderWidth: 1.5,
-    borderColor: '#e5e7eb',
-    alignItems: 'center',
-  },
-  modeActive: { borderColor: COLORS.primary, backgroundColor: COLORS.primary + '15' },
-  modeText: { fontWeight: '600', color: COLORS.gray },
-  modeTextActive: { color: COLORS.primary },
   label: { fontWeight: '600', marginBottom: 6, color: COLORS.text },
+  note: {
+    color: COLORS.gray,
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: SPACING.md,
+  },
   input: {
     backgroundColor: '#fff',
     borderWidth: 1,

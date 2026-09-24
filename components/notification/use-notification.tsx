@@ -1,5 +1,4 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Audio } from 'expo-av';
 import Constants from 'expo-constants';
 import React, {
   createContext,
@@ -9,9 +8,17 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Platform } from 'react-native';
+import { AppState, AppStateStatus, Platform } from 'react-native';
 
 import { API } from '../../constants/backend';
+import {
+  CHANNEL_ALARM,
+  CHANNEL_DEFAULT,
+  ensureAndroidChannels as ensureChannels,
+  isExpoGo as detectExpoGo,
+  registerPushToken,
+} from './push';
+import { registerBackgroundNotificationTask } from './background-task';
 
 export interface QueueNotification {
   id: number;
@@ -30,20 +37,61 @@ export interface QueueNotification {
   window_name: string | null;
   is_read: boolean;
   created_at: string;
+  /** Present only for parent sessions — which child this is about. */
+  child_name?: string;
 }
 
-const POLL_INTERVAL_MS = 2000;
-const NOTIFICATION_SOUND = require('../../assets/sound/notification.mp3');
+/*
+|--------------------------------------------------------------------------
+| Sound policy
+|--------------------------------------------------------------------------
+| Alerts use the DEVICE'S NOTIFICATION SOUND, not media playback. Every
+| alert is delivered as a real system notification (remote push from the
+| server, or a local notification posted by this provider), so Android /
+| iOS play the user's own notification tone on the notification stream,
+| respect Do Not Disturb settings, and keep showing in the tray while the
+| app is in the background or closed. No expo-av / mp3 assets involved.
+*/
 
-async function getStudentId(): Promise<number | null> {
+// Foreground polls stay snappy; backgrounded polls back off so we don't
+// hammer the API (and the OS throttles timers there anyway). Real
+// closed-app delivery comes from the server's Expo push.
+const POLL_INTERVAL_ACTIVE_MS = 2000;
+const POLL_INTERVAL_BACKGROUND_MS = 15000;
+
+/** Notification types that should trigger the blocking alarm UI. */
+export const ALARM_TYPES = ['next_in_line', 'called', 'in_progress'] as const;
+
+export function isAlarmType(type?: string | null): boolean {
+  return (ALARM_TYPES as readonly string[]).includes((type ?? '').toLowerCase());
+}
+
+type Session = { role: 'student' | 'parent'; id: number } | null;
+
+/**
+ * Who is signed in. Parents must never be polled as students — their
+ * parent id would be read as a student id and surface someone else's
+ * queue notifications.
+ */
+async function getSession(): Promise<Session> {
   try {
-    const raw = await AsyncStorage.getItem('user');
+    const [raw, role] = await Promise.all([
+      AsyncStorage.getItem('user'),
+      AsyncStorage.getItem('role'),
+    ]);
     if (!raw) return null;
     const user = JSON.parse(raw);
-    return user?.id ?? user?.student_id ?? null;
+    const id = Number(user?.id ?? user?.student_id ?? 0);
+    if (!id) return null;
+    return { role: role === 'parent' ? 'parent' : 'student', id };
   } catch {
     return null;
   }
+}
+
+async function getStudentId(): Promise<number | null> {
+  const session = await getSession();
+  return session && session.role === 'student' ? session.id : null;
 }
 
 interface NotificationContextValue {
@@ -60,123 +108,19 @@ const NotificationContext = createContext<NotificationContextValue | undefined>(
 );
 
 /**
- * Expo Go (SDK 53+) removed Android remote push support.
- * Detect Expo Go so we never import / call expo-notifications push APIs there.
- * In-app proceed modal + alarm + vibration still work via expo-av.
- */
-function isExpoGo(): boolean {
-  const ownership = (Constants as any).appOwnership;
-  const env = (Constants as any).executionEnvironment;
-  return ownership === 'expo' || env === 'storeClient';
-}
-
-/**
- * Only load expo-notifications outside Expo Go.
- * Importing it in Expo Go triggers a console ERROR about removed remote push.
+ * Only load expo-notifications outside Expo Go (Expo Go has no Android
+ * remote push since SDK 53; importing it there logs an error).
  */
 function loadPushModules(): {
   Notifications: typeof import('expo-notifications');
-  Device: typeof import('expo-device');
 } | null {
-  if (isExpoGo()) return null;
+  if (detectExpoGo()) return null;
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const Notifications = require('expo-notifications');
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const Device = require('expo-device');
-    return { Notifications, Device };
+    return { Notifications };
   } catch (err) {
     console.warn('Push modules unavailable:', err);
-    return null;
-  }
-}
-
-async function registerForPushNotificationsAsync(): Promise<string | null> {
-  const mods = loadPushModules();
-  if (!mods) return null;
-
-  const { Notifications, Device } = mods;
-
-  try {
-    Notifications.setNotificationHandler({
-      handleNotification: async () => ({
-        shouldShowAlert: true,
-        shouldPlaySound: true,
-        shouldSetBadge: true,
-        shouldShowBanner: true,
-        shouldShowList: true,
-      }),
-    });
-
-    if (!Device.isDevice && Platform.OS === 'ios') {
-      return null;
-    }
-
-    const { status: existing } = await Notifications.getPermissionsAsync();
-    let finalStatus = existing;
-    if (existing !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync({
-        ios: {
-          allowAlert: true,
-          allowBadge: true,
-          allowSound: true,
-          allowCriticalAlerts: false,
-        },
-        android: {},
-      });
-      finalStatus = status;
-    }
-    if (finalStatus !== 'granted') {
-      console.warn('Push notification permission not granted');
-      return null;
-    }
-
-    if (Platform.OS === 'android') {
-      // NEW channel id (proceed_alert) so devices pick up strong settings
-      // even if an older weak "proceed" channel was already created.
-      // Long vibration pattern so the phone is felt in a bag/pocket.
-      await Notifications.setNotificationChannelAsync('proceed_alert', {
-        name: 'Your Turn — Proceed Now',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 800, 400, 800, 400, 800, 400, 1200],
-        sound: 'default',
-        enableVibrate: true,
-        enableLights: true,
-        lightColor: '#660810',
-        bypassDnd: true,
-        lockscreenVisibility:
-          Notifications.AndroidNotificationVisibility.PUBLIC,
-        showBadge: true,
-      });
-      await Notifications.setNotificationChannelAsync('proceed', {
-        name: 'Proceed Alerts',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 800, 400, 800, 400, 800],
-        sound: 'default',
-        enableVibrate: true,
-        bypassDnd: true,
-        lockscreenVisibility:
-          Notifications.AndroidNotificationVisibility.PUBLIC,
-      });
-      await Notifications.setNotificationChannelAsync('default', {
-        name: 'Queue Updates',
-        importance: Notifications.AndroidImportance.HIGH,
-        vibrationPattern: [0, 400, 200, 400],
-        sound: 'default',
-        enableVibrate: true,
-      });
-    }
-
-    const projectId =
-      Constants.expoConfig?.extra?.eas?.projectId ??
-      (Constants as any).easConfig?.projectId;
-
-    const tokenData = await Notifications.getExpoPushTokenAsync(
-      projectId ? { projectId } : undefined
-    );
-    return tokenData.data ?? null;
-  } catch (err) {
-    console.warn('Failed to register for push notifications:', err);
     return null;
   }
 }
@@ -185,8 +129,11 @@ async function registerForPushNotificationsAsync(): Promise<string | null> {
 |--------------------------------------------------------------------------
 | PROVIDER — mount this ONCE near the root of the app (e.g. app/_layout.tsx)
 |--------------------------------------------------------------------------
-| Polls the API for in-app notifications. Remote push only registers when
-| running a development / production build (not Expo Go).
+| Polls the API for in-app notifications and posts a real system
+| notification for anything new, so the device's own notification sound
+| plays whether the app is open, backgrounded, or on the home screen.
+| Remote push (server-sent) covers the fully-closed case and only works in
+| a development / production build, never in Expo Go.
 */
 export function NotificationProvider({
   children,
@@ -197,93 +144,158 @@ export function NotificationProvider({
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
 
-  const soundRef = useRef<Audio.Sound | null>(null);
   const seenIdsRef = useRef<Set<number>>(new Set());
+  // `${ticket_id}:${type}` keys already shown as a system notification,
+  // so a locally-posted alert and the server's push never double-ring.
+  const presentedKeysRef = useRef<Set<string>>(new Set());
   const isFirstLoadRef = useRef(true);
   const isPollingRef = useRef(false);
   const lastPollWarningRef = useRef<string | null>(null);
   const pushRegisteredRef = useRef(false);
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
 
+  // Foreground presentation: still show the banner and play the device's
+  // notification sound instead of silently swallowing it.
   useEffect(() => {
-    let isMounted = true;
+    const mods = loadPushModules();
+    if (!mods) return;
+    const { Notifications } = mods;
 
-    (async () => {
-      try {
-        const { sound } = await Audio.Sound.createAsync(NOTIFICATION_SOUND);
-        if (isMounted) {
-          soundRef.current = sound;
-        } else {
-          sound.unloadAsync();
-        }
-      } catch (err) {
-        console.warn('Notification sound not loaded:', err);
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: true,
+        shouldShowBanner: true,
+        shouldShowList: true,
+      }),
+    });
+
+    ensureChannels().catch(() => {});
+
+    // A server push already rang for this event — don't post a local copy.
+    const sub = Notifications.addNotificationReceivedListener((event: any) => {
+      const data = event?.request?.content?.data ?? {};
+      if (data?.ticket_id && data?.type) {
+        presentedKeysRef.current.add(`${data.ticket_id}:${data.type}`);
       }
-    })();
+    });
 
     return () => {
-      isMounted = false;
-      soundRef.current?.unloadAsync();
+      try {
+        sub.remove();
+      } catch {
+        // ignore
+      }
     };
   }, []);
 
-  // Register Expo push token only on real builds (skipped in Expo Go)
+  // Register the Expo push token for BOTH students and parents, retry until
+  // a session exists (the user may log in after this provider mounted), and
+  // register the headless background task that handles pushes while closed.
   useEffect(() => {
     let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
 
-    (async () => {
-      if (pushRegisteredRef.current) return;
-      if (isExpoGo()) return;
+    const tryRegister = async () => {
+      if (cancelled || pushRegisteredRef.current) return;
+      if (detectExpoGo()) return; // no remote push in Expo Go
 
-      const student_id = await getStudentId();
-      if (!student_id || cancelled) return;
+      const session = await getSession();
+      if (!session || cancelled) return; // not logged in yet - retry later
 
-      const token = await registerForPushNotificationsAsync();
-      if (!token || cancelled) return;
+      await ensureChannels();
+      await registerBackgroundNotificationTask();
 
-      try {
-        await fetch(API.registerPushToken, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            student_id,
-            push_token: token,
-            platform: Platform.OS,
-          }),
-        });
+      const token = await registerPushToken(session);
+      if (token) {
         pushRegisteredRef.current = true;
-      } catch (err) {
-        console.warn('Failed to save push token:', err);
+        if (timer) clearInterval(timer);
       }
-    })();
+    };
+
+    tryRegister();
+    // Re-check every 10s until a login happens, then stop.
+    timer = setInterval(tryRegister, 10000);
+
+    // Also re-check whenever the app returns to the foreground (covers
+    // permission granted from Settings and rotated tokens).
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') tryRegister();
+    });
 
     return () => {
       cancelled = true;
+      if (timer) clearInterval(timer);
+      sub.remove();
     };
   }, []);
 
-  const playSound = useCallback(async () => {
-    try {
-      const sound = soundRef.current;
-      if (!sound) return;
-      await sound.replayAsync();
-    } catch {
-      // ignore playback errors (e.g. silent mode)
-    }
-  }, []);
+  /**
+   * Post a system notification for a freshly-created queue update.
+   * Uses the device notification sound via the channel (Android) or
+   * `sound: 'default'` (iOS) — never media playback.
+   */
+  const presentLocalNotification = useCallback(
+    async (n: QueueNotification) => {
+      const mods = loadPushModules();
+      if (!mods) return;
+
+      const key = `${n.ticket_id}:${n.type}`;
+      if (presentedKeysRef.current.has(key)) return;
+      presentedKeysRef.current.add(key);
+
+      try {
+        await mods.Notifications.scheduleNotificationAsync({
+          content: {
+            title: n.child_name ? `${n.child_name}: ${n.title}` : n.title,
+            body: n.message,
+            sound: 'default',
+            priority: mods.Notifications.AndroidNotificationPriority?.MAX,
+            data: {
+              type: n.type,
+              ticket_id: n.ticket_id,
+              queue_number: n.queue_number,
+              office_name: n.office_name,
+              window_name: n.window_name,
+            },
+          },
+          trigger:
+            Platform.OS === 'android'
+              ? {
+                  channelId: isAlarmType(n.type) ? CHANNEL_ALARM : CHANNEL_DEFAULT,
+                }
+              : null,
+        } as any);
+      } catch (err) {
+        console.warn('Local notification failed:', err);
+      }
+    },
+    []
+  );
 
   const poll = useCallback(async () => {
     if (isPollingRef.current) return;
     isPollingRef.current = true;
 
     try {
-      const student_id = await getStudentId();
-      if (!student_id) return;
+      const session = await getSession();
+      if (!session) return;
 
-      const res = await fetch(API.checkNotifications, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ student_id }),
-      });
+      // Parents watch their linked children's queues through their own
+      // endpoint; students generate + read their own notifications.
+      const res =
+        session.role === 'parent'
+          ? await fetch(API.getParentNotifications, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ parent_id: session.id }),
+            })
+          : await fetch(API.checkNotifications, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ student_id: session.id }),
+            });
       const contentType = res.headers.get('content-type') ?? '';
       const responseText = await res.text();
 
@@ -309,31 +321,41 @@ export function NotificationProvider({
 
       if (!data.success) return;
 
-      const incoming = data.notifications ?? [];
+      // The parent endpoint returns read_at instead of is_read and adds
+      // the child's name — normalise both shapes here.
+      const incoming = (data.notifications ?? []).map((n: any) => ({
+        ...n,
+        is_read: n.is_read ?? !!n.read_at,
+        child_name:
+          n.first_name || n.last_name
+            ? `${n.first_name ?? ''} ${n.last_name ?? ''}`.trim()
+            : undefined,
+      })) as QueueNotification[];
 
       const newOnes = incoming.filter((n) => !seenIdsRef.current.has(n.id));
       incoming.forEach((n) => seenIdsRef.current.add(n.id));
 
+      // Everything new rings through the system notification tray using
+      // the device's notification sound. Alarm-worthy updates
+      // (next_in_line / called / in_progress) go to the MAX-importance
+      // channel; ordinary position updates use the normal one.
       if (newOnes.length > 0 && !isFirstLoadRef.current) {
-        // Soft chime for non-proceed updates. Proceed uses its own
-        // looping alarm on the home ProceedModal.
-        const hasProceed = newOnes.some(
-          (n) => n.type === 'called' || n.type === 'in_progress'
-        );
-        if (!hasProceed) {
-          playSound();
+        for (const n of newOnes) {
+          presentLocalNotification(n);
         }
       }
       isFirstLoadRef.current = false;
 
       setNotifications(incoming);
-      setUnreadCount(data.unread_count ?? 0);
+      setUnreadCount(
+        data.unread_count ?? incoming.filter((n) => !n.is_read).length
+      );
     } catch (err) {
       console.warn('Notification poll failed:', err);
     } finally {
       isPollingRef.current = false;
     }
-  }, [playSound]);
+  }, [presentLocalNotification]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -379,10 +401,35 @@ export function NotificationProvider({
     }
   }, []);
 
+  // Poll on a cadence that follows the app state: fast while the student
+  // is looking at the app, slow while it's backgrounded, and an immediate
+  // catch-up poll the moment it comes back to the foreground.
   useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    const start = (state: AppStateStatus) => {
+      if (interval) clearInterval(interval);
+      const ms =
+        state === 'active' ? POLL_INTERVAL_ACTIVE_MS : POLL_INTERVAL_BACKGROUND_MS;
+      interval = setInterval(poll, ms);
+    };
+
     poll();
-    const interval = setInterval(poll, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
+    start(AppState.currentState);
+
+    const sub = AppState.addEventListener('change', (next) => {
+      const prev = appStateRef.current;
+      appStateRef.current = next;
+      if (next === 'active' && prev !== 'active') {
+        poll();
+      }
+      start(next);
+    });
+
+    return () => {
+      if (interval) clearInterval(interval);
+      sub.remove();
+    };
   }, [poll]);
 
   return (

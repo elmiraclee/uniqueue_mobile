@@ -36,6 +36,53 @@ import {
   TYPOGRAPHY,
 } from '../constants/theme';
 
+type SchoolLevel = 'Elementary' | 'JHS' | 'SHS' | 'College';
+
+const SCHOOL_LEVELS: { label: string; value: SchoolLevel }[] = [
+  { label: 'Elementary', value: 'Elementary' },
+  { label: 'Junior High School (JHS)', value: 'JHS' },
+  { label: 'Senior High School (SHS)', value: 'SHS' },
+  { label: 'College', value: 'College' },
+];
+
+// Same option lists the web signup form builds in JS.
+const GRADE_OPTIONS: Record<SchoolLevel, string[]> = {
+  Elementary: [
+    'Kindergarten',
+    'Grade 1',
+    'Grade 2',
+    'Grade 3',
+    'Grade 4',
+    'Grade 5',
+    'Grade 6',
+  ],
+  JHS: ['Grade 7', 'Grade 8', 'Grade 9', 'Grade 10'],
+  SHS: ['Grade 11', 'Grade 12'],
+  College: [
+    '1st Year',
+    '2nd Year',
+    '3rd Year',
+    '4th Year',
+    '5th Year',
+    '6th Year',
+    'Irregular',
+  ],
+};
+
+// College year level sent to the API, derived from the grade / year pick.
+const COLLEGE_YEAR_VALUE: Record<string, string> = {
+  '1st Year': '1',
+  '2nd Year': '2',
+  '3rd Year': '3',
+  '4th Year': '4',
+  '5th Year': '5',
+  '6th Year': '6',
+  Irregular: '',
+};
+
+const SR_CODE_PATTERN = /^\d{2}-\d{5}$/;
+const NAME_PATTERN = /^[A-Za-zÑñ' -]{1,50}$/;
+
 export default function Signup() {
   const router = useRouter();
 
@@ -53,6 +100,12 @@ export default function Signup() {
 
   const [email, setEmail] = useState('');
   const [yearLevel, setYearLevel] = useState('');
+
+  // Multi school-level support (web auth/signup.php parity). College is
+  // the only level that carries college / program / college year level.
+  const [schoolLevel, setSchoolLevel] = useState<SchoolLevel>('College');
+  const [gradeYear, setGradeYear] = useState('');
+  const [consent, setConsent] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [googlePending, setGooglePending] = useState<GoogleProfile | null>(null);
@@ -142,6 +195,25 @@ export default function Signup() {
     }
   };
 
+  // Reset the grade / year pick whenever the school level changes so an
+  // Elementary child can't keep a "3rd Year" selection.
+  useEffect(() => {
+    setGradeYear('');
+    if (schoolLevel !== 'College') {
+      setCollegeId('');
+      setProgramId('');
+      setYearLevel('');
+    }
+  }, [schoolLevel]);
+
+  // College year level is derived from the grade / year selection.
+  useEffect(() => {
+    if (schoolLevel !== 'College') return;
+    setYearLevel(COLLEGE_YEAR_VALUE[gradeYear] ?? '');
+  }, [schoolLevel, gradeYear]);
+
+  const isCollege = schoolLevel === 'College';
+
   const handleSignup = async () => {
     const isGoogle = !!googlePending;
     if (
@@ -149,12 +221,32 @@ export default function Signup() {
       !email.trim() ||
       !firstName.trim() ||
       !lastName.trim() ||
-      !yearLevel ||
-      !collegeId ||
-      !programId ||
+      !gradeYear ||
+      (isCollege && (!collegeId || !programId)) ||
       (!isGoogle && !password.trim())
     ) {
       Alert.alert('Error', 'Please complete all fields.');
+      return;
+    }
+
+    if (!SR_CODE_PATTERN.test(srCode.trim())) {
+      Alert.alert('Invalid SR-Code', 'Use the format YY-NNNNN (e.g. 23-12345).');
+      return;
+    }
+
+    if (!NAME_PATTERN.test(firstName.trim()) || !NAME_PATTERN.test(lastName.trim())) {
+      Alert.alert(
+        'Invalid name',
+        'Names may only contain letters, spaces, apostrophes, and hyphens.'
+      );
+      return;
+    }
+
+    if (!consent) {
+      Alert.alert(
+        'Consent required',
+        'You must agree to the Terms of Use and Privacy Notice to create an account.'
+      );
       return;
     }
 
@@ -167,13 +259,16 @@ export default function Signup() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          sr_code: srCode,
-          email: email,
-          first_name: firstName,
-          last_name: lastName,
-          college_id: Number(collegeId),
-          program_id: Number(programId),
-          year_level: Number(yearLevel),
+          sr_code: srCode.trim(),
+          email: email.trim(),
+          first_name: firstName.trim(),
+          last_name: lastName.trim(),
+          school_level: schoolLevel,
+          grade_year: gradeYear,
+          // Elementary / JHS / SHS students have no college record.
+          college_id: isCollege ? Number(collegeId) : null,
+          program_id: isCollege ? Number(programId) : null,
+          year_level: isCollege && yearLevel ? Number(yearLevel) : null,
           password: isGoogle ? (password || '') : password,
           google_signup: isGoogle ? 1 : 0,
           google_id: isGoogle ? googlePending?.google_id : undefined,
@@ -360,6 +455,29 @@ export default function Signup() {
           {/* Academic Information */}
           <View style={styles.panel}>
             {renderSectionLabel('library-outline', 'Academic Information')}
+
+            {renderPickerField(
+              'School Level',
+              schoolLevel,
+              (value) => setSchoolLevel(value as SchoolLevel),
+              SCHOOL_LEVELS
+            )}
+
+            {renderPickerField(
+              'Grade / Year Level',
+              gradeYear,
+              setGradeYear,
+              [
+                { label: 'Select grade / year level', value: '' },
+                ...GRADE_OPTIONS[schoolLevel].map((g) => ({
+                  label: g,
+                  value: g,
+                })),
+              ]
+            )}
+
+            {isCollege && (
+            <>
             {renderPickerField(
               'College',
               collegeId,
@@ -376,7 +494,7 @@ export default function Signup() {
               ]
             )}
             <View style={styles.row}>
-              <View style={styles.rowItem}>
+              <View style={styles.rowItemWide}>
                 {renderPickerField(
                   'Program',
                   programId,
@@ -391,16 +509,9 @@ export default function Signup() {
                   !!collegeId
                 )}
               </View>
-              <View style={styles.rowItemSmall}>
-                {renderPickerField('Year', yearLevel, setYearLevel, [
-                  { label: 'Yr', value: '' },
-                  { label: '1st Year', value: '1' },
-                  { label: '2nd Year', value: '2' },
-                  { label: '3rd Year', value: '3' },
-                  { label: '4th Year', value: '4' },
-                ])}
-              </View>
             </View>
+            </>
+            )}
           </View>
 
           {/* Security */}
@@ -413,6 +524,19 @@ export default function Signup() {
               onChangeText={setPassword}
             />
           </View>
+
+          {/* Terms / Privacy consent — required on the web too */}
+          <Pressable
+            style={styles.consentRow}
+            onPress={() => setConsent(!consent)}
+          >
+            <View style={[styles.consentBox, consent && styles.consentBoxChecked]}>
+              {consent && <Ionicons name="checkmark" size={14} color="#fff" />}
+            </View>
+            <Text style={styles.consentText}>
+              I agree to the Terms of Use and Privacy Notice.
+            </Text>
+          </Pressable>
 
           <CustomButton
             title={loading ? 'Creating Account...' : (googlePending ? 'Finish Creating Account' : 'Sign Up')}
@@ -503,6 +627,34 @@ const styles = StyleSheet.create({
     flex: 1.4,
   },
   rowItemSmall: {
+    flex: 1,
+  },
+  rowItemWide: {
+    flex: 1,
+  },
+
+  consentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginBottom: SPACING.md,
+    paddingHorizontal: 2,
+  },
+  consentBox: {
+    width: 20,
+    height: 20,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    borderColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  consentBoxChecked: {
+    backgroundColor: COLORS.primary,
+  },
+  consentText: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.gray,
     flex: 1,
   },
 

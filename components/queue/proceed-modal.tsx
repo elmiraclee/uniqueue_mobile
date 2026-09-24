@@ -8,7 +8,6 @@ import {
   Vibration,
   Platform,
 } from 'react-native';
-import { Audio } from 'expo-av';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -20,8 +19,14 @@ import {
   TYPOGRAPHY,
 } from '../../constants/theme';
 
-const PROCEED_ALARM = require('../../assets/sound/proceed_alarm.mp3');
-
+/*
+| The audible part of this alert is the DEVICE'S notification sound,
+| played by the system notification that use-notification.tsx posts (or
+| that arrives as a server push). This modal only owns the on-screen
+| blocking prompt and the vibration — it never plays a bundled mp3 on the
+| media stream, so the alert follows the phone's notification volume and
+| still fires when the app is closed.
+*/
 export interface ProceedInfo {
   queueNumber?: string | null;
   officeName?: string | null;
@@ -29,74 +34,44 @@ export interface ProceedInfo {
   status?: string | null;
 }
 
+/**
+ * 'next'    -> the student is next in line (get ready)
+ * 'proceed' -> the student is being called / served (go now)
+ */
+export type ProceedKind = 'next' | 'proceed';
+
 interface Props {
   visible: boolean;
   info?: ProceedInfo | null;
+  kind?: ProceedKind;
   onAcknowledge: () => void;
 }
 
 /**
- * Blocking "Please Proceed Now" modal.
- * - Plays proceed_alarm.mp3 on a loop
- * - Vibrates repeatedly
+ * Blocking alert modal.
+ * - Vibrates repeatedly while open (sound comes from the system notification)
  * - Does NOT dismiss until the user presses OK
  */
-export default function ProceedModal({ visible, info, onAcknowledge }: Props) {
-  const soundRef = useRef<Audio.Sound | null>(null);
+export default function ProceedModal({
+  visible,
+  info,
+  kind = 'proceed',
+  onAcknowledge,
+}: Props) {
   const vibrateTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
-
-    const startAlarm = async () => {
-      if (!visible) return;
-
-      try {
-        await Audio.setAudioModeAsync({
-          playsInSilentModeIOS: true,
-          staysActiveInBackground: true,
-          shouldDuckAndroid: false,
-          playThroughEarpieceAndroid: false,
-        });
-
-        // Unload any previous instance
-        if (soundRef.current) {
-          try {
-            await soundRef.current.stopAsync();
-            await soundRef.current.unloadAsync();
-          } catch {
-            // ignore
-          }
-          soundRef.current = null;
-        }
-
-        const { sound } = await Audio.Sound.createAsync(PROCEED_ALARM, {
-          isLooping: true,
-          volume: 1.0,
-          shouldPlay: true,
-        });
-
-        if (cancelled) {
-          await sound.unloadAsync();
-          return;
-        }
-
-        soundRef.current = sound;
-        await sound.playAsync();
-      } catch (err) {
-        console.warn('Proceed alarm failed to start:', err);
-      }
-
-      // Vibration pattern: short pulses every ~1.2s while modal is open
+    const startAlarm = () => {
+      // Vibration pattern: short pulses every ~1.2s while the modal is open.
       const pulse = () => {
         try {
           if (Platform.OS === 'android') {
             Vibration.vibrate([0, 400, 200, 400]);
           } else {
             Vibration.vibrate(400);
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(
-              () => {}
-            );
+            Haptics.notificationAsync(
+              Haptics.NotificationFeedbackType.Error
+            ).catch(() => {});
           }
         } catch {
           // ignore
@@ -107,7 +82,7 @@ export default function ProceedModal({ visible, info, onAcknowledge }: Props) {
       vibrateTimerRef.current = setInterval(pulse, 1200);
     };
 
-    const stopAlarm = async () => {
+    const stopAlarm = () => {
       if (vibrateTimerRef.current) {
         clearInterval(vibrateTimerRef.current);
         vibrateTimerRef.current = null;
@@ -117,16 +92,6 @@ export default function ProceedModal({ visible, info, onAcknowledge }: Props) {
       } catch {
         // ignore
       }
-
-      if (soundRef.current) {
-        try {
-          await soundRef.current.stopAsync();
-          await soundRef.current.unloadAsync();
-        } catch {
-          // ignore
-        }
-        soundRef.current = null;
-      }
     };
 
     if (visible) {
@@ -135,10 +100,7 @@ export default function ProceedModal({ visible, info, onAcknowledge }: Props) {
       stopAlarm();
     }
 
-    return () => {
-      cancelled = true;
-      stopAlarm();
-    };
+    return stopAlarm;
   }, [visible]);
 
   const handleOk = () => {
@@ -146,8 +108,11 @@ export default function ProceedModal({ visible, info, onAcknowledge }: Props) {
   };
 
   const status = (info?.status || '').toLowerCase();
-  const subtitle =
-    status === 'in_progress'
+  const isNext = kind === 'next';
+  const title = isNext ? "You're Next in Line" : 'Please Proceed Now';
+  const subtitle = isNext
+    ? 'Get ready and stay near the window — you will be called next.'
+    : status === 'in_progress'
       ? 'You are being served — please go to the window.'
       : 'Please proceed to the window now.';
 
@@ -162,10 +127,14 @@ export default function ProceedModal({ visible, info, onAcknowledge }: Props) {
       <View style={styles.overlay}>
         <View style={styles.modal}>
           <View style={styles.iconWrap}>
-            <Ionicons name="notifications" size={36} color="#fff" />
+            <Ionicons
+              name={isNext ? 'alert-circle' : 'notifications'}
+              size={36}
+              color="#fff"
+            />
           </View>
 
-          <Text style={styles.title}>Please Proceed Now</Text>
+          <Text style={styles.title}>{title}</Text>
           <Text style={styles.subtitle}>{subtitle}</Text>
 
           {(info?.queueNumber || info?.officeName || info?.windowName) && (
@@ -196,7 +165,9 @@ export default function ProceedModal({ visible, info, onAcknowledge }: Props) {
             onPress={handleOk}
             activeOpacity={0.85}
           >
-            <Text style={styles.okText}>OK — I&apos;m Going</Text>
+            <Text style={styles.okText}>
+              {isNext ? "OK — I'm Ready" : "OK — I'm Going"}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>

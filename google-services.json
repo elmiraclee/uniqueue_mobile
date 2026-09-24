@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "173201131990",
+    "project_id": "uniqueue-95c7b",
+    "storage_bucket": "uniqueue-95c7b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:173201131990:android:944cfd901a30f4ccf17c77",
+        "android_client_info": {
+          "package_name": "com.uniqueue.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBR2nmqclWYAmhjL-qrndmmGB5OcxIYxBs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

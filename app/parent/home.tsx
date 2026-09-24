@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   RefreshControl,
@@ -13,6 +13,11 @@ import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 import FeedbackModal from '@/components/feedback/feedback-modal';
+import ProceedModal, { ProceedKind } from '@/components/queue/proceed-modal';
+import {
+  isAlarmType,
+  useNotifications,
+} from '@/components/notification/use-notification';
 import AppHeader from '../../components/layout/app-header';
 import AnimatedPressable from '../../components/ui/animated-pressable';
 import StatusBadge from '../../components/ui/status-badge';
@@ -116,6 +121,37 @@ export default function ParentHome() {
     setRefreshing(true);
     load();
   };
+
+  /*
+  | Parents get the same alarm as their child: the shared notification
+  | provider polls the parent endpoint, and anything alarm-worthy
+  | (next_in_line / called / in_progress) opens the blocking prompt here.
+  | The sound is the device's notification tone from the system
+  | notification, so it also fires with the app in the background.
+  */
+  const { notifications } = useNotifications();
+  const [alarm, setAlarm] = useState<any>(null);
+  const acknowledgedAlarmKey = useRef<string | null>(null);
+
+  useEffect(() => {
+    // Only ring for something that just happened — the feed also carries
+    // older history, which must not trigger an alarm on app open.
+    const FRESH_MS = 10 * 60 * 1000;
+    const latest = notifications.find((n) => {
+      if (!isAlarmType(n.type)) return false;
+      const ts = new Date((n.created_at ?? '').replace(' ', 'T')).getTime();
+      return Number.isNaN(ts) ? false : Date.now() - ts <= FRESH_MS;
+    });
+    if (!latest) {
+      setAlarm(null);
+      return;
+    }
+
+    const key = `${latest.ticket_id}:${latest.type}`;
+    if (acknowledgedAlarmKey.current === key) return;
+
+    setAlarm({ ...latest, key });
+  }, [notifications]);
 
   const hour = new Date().getHours();
   const greeting =
@@ -310,6 +346,27 @@ export default function ParentHome() {
           }}
         />
       )}
+
+      <ProceedModal
+        visible={!!alarm}
+        kind={(alarm?.type === 'next_in_line' ? 'next' : 'proceed') as ProceedKind}
+        info={
+          alarm
+            ? {
+                queueNumber: alarm.queue_number,
+                officeName: alarm.child_name
+                  ? `${alarm.office_name ?? ''} · ${alarm.child_name}`.trim()
+                  : alarm.office_name,
+                windowName: alarm.window_name,
+                status: alarm.type,
+              }
+            : null
+        }
+        onAcknowledge={() => {
+          acknowledgedAlarmKey.current = alarm?.key ?? null;
+          setAlarm(null);
+        }}
+      />
     </View>
   );
 }

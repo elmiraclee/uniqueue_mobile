@@ -21,8 +21,8 @@ import AppHeader from '../../../components/layout/app-header';
 import ServiceItemStep from '../../../components/queue-step/service-item-step';
 import QueueTypeStep from '../../../components/queue-step/queue-type-step';
 import RequirementStep from '../../../components/queue-step/requirement-step';
-import ChoiceStep, { ChoiceMap } from '../../../components/queue-step/choice-step';
-import AcademicStep, { AcademicMap } from '../../../components/queue-step/academic-step';
+import { ChoiceMap } from '../../../components/queue-step/choice-step';
+import { AcademicMap } from '../../../components/queue-step/academic-step';
 import ReviewStep from '../../../components/queue-step/review-step';
 import { COLORS } from '../../../constants/theme';
 
@@ -105,6 +105,18 @@ const STEPS = [
   { label: 'Details' },
   { label: 'Requirements' },
   { label: 'Confirm' },
+];
+
+/*
+| Payment office (cashier) flow — mirrors web student-queue.php:
+|   1. Pick walk-in or appointment
+|   2. Pick which completed request you're paying for (+ priority)
+| The regular service-item wizard never runs here; the cashier has no
+| service items of its own to request.
+*/
+const CASHIER_STEPS = [
+  { label: 'Type' },
+  { label: 'Payment' },
 ];
 
 function StepIndicator({
@@ -327,7 +339,12 @@ export default function OfficeQueue() {
   const [refreshing, setRefreshing] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
 
-  // Payable tickets for payment/hybrid offices (cashier flow).
+  // Which payable ticket the student picked in the cashier wizard.
+  const [selectedPayableTicket, setSelectedPayableTicket] = useState<number | null>(
+    null
+  );
+
+  // Payable tickets for the payment office (cashier flow).
   const [payableTickets, setPayableTickets] = useState<
     {
       ticket_id: number;
@@ -363,9 +380,10 @@ export default function OfficeQueue() {
 
   useEffect(() => {
     if (!office || !studentId) return;
-    const acceptsPayment =
-      office.transactionType === 'payment' || office.transactionType === 'hybrid';
-    if (!acceptsPayment || isEventMode) return;
+    // Payables belong to the cashier queue ONLY — a request office must
+    // never surface "pay at the cashier" items (web student-queue.php
+    // only renders them inside the payment office).
+    if (office.transactionType !== 'payment' || isEventMode) return;
     fetchPayableTickets(office.id, studentId);
   }, [office, studentId, isEventMode]);
 
@@ -470,8 +488,15 @@ export default function OfficeQueue() {
         body: JSON.stringify({ office_id: officeId }),
       });
       if (data?.success) {
-        setAcademicPeriods(data.periods || []);
-        setSchoolYears(data.school_years || []);
+        // Respect the office master toggle (office_configs.academic_period_enabled).
+        // Older API builds don't return the flag — treat those as enabled.
+        const enabled =
+          data.academic_period_enabled === undefined ||
+          data.academic_period_enabled === null ||
+          Number(data.academic_period_enabled) === 1;
+
+        setAcademicPeriods(enabled ? data.periods || [] : []);
+        setSchoolYears(enabled ? data.school_years || [] : []);
       }
     } catch (e) {
       console.log('Academic data error', e);
@@ -491,6 +516,10 @@ export default function OfficeQueue() {
     }
   };
 
+  // A payment office is the cashier: it never lists its own service
+  // items, only the completed requests waiting to be paid.
+  const isPaymentOffice = office?.transactionType === 'payment';
+
   const fetchPayableTickets = async (officeId: number, sid: number) => {
     try {
       const data = await fetchJsonOrNull(
@@ -509,6 +538,25 @@ export default function OfficeQueue() {
     if (office.isFull) {
       Alert.alert('Office Full', 'This office has reached its full capacity for today.');
       return;
+    }
+
+    // Same hard block as joinQueue / the web ticket-status card: one
+    // active ticket at a time, including payment tickets.
+    try {
+      const cur = await fetchJsonOrNull(API.getCurrentQueue, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ student_id: studentId }),
+      });
+      if (cur?.success && cur?.queue?.id) {
+        Alert.alert(
+          'Already on queue',
+          `You already have an active ticket (#${cur.queue.queue_number || cur.queue.id}). Finish or cancel it before joining another.`
+        );
+        return;
+      }
+    } catch {
+      // continue; the server will also reject
     }
 
     setPayingTicketId(sourceTicketId);
@@ -534,6 +582,7 @@ export default function OfficeQueue() {
         setPayableTickets((prev) =>
           prev.filter((t) => t.ticket_id !== sourceTicketId)
         );
+        setSelectedPayableTicket(null);
       } else {
         Alert.alert('Unable to join', data.message || 'Please try again.');
       }
@@ -768,6 +817,8 @@ export default function OfficeQueue() {
     setSelectedServiceItems([]);
     setCheckedRequirements([]);
     setQuantities({});
+    setItemChoices({});
+    setAcademicMap({});
     setPriority(false);
     setPriorityReason('');
     setQueueNumber('');
@@ -841,7 +892,9 @@ export default function OfficeQueue() {
           entry.choice_label = itemChoices[id].choice_label;
         }
         if (academicMap[id]?.length) {
-          entry.academic = academicMap[id].map((a) => ({
+          // Only send as many copies as the student actually asked for —
+          // the map can still hold rows from a higher earlier quantity.
+          entry.academic = academicMap[id].slice(0, quantities[id] || 1).map((a) => ({
             period: a.period,
             academic_period: a.period,
             school_year: a.school_year,
@@ -1107,69 +1160,158 @@ export default function OfficeQueue() {
           )
         ) : (
         <>
-        {/* Payable tickets — payment / hybrid offices only */}
-        {(office?.transactionType === 'payment' ||
-          office?.transactionType === 'hybrid') &&
-          payableTickets.length === 0 && (
-          <View style={[styles.payableSection, { backgroundColor: '#f5f5f5', borderColor: '#e5e5e5' }]}>
-            <Text style={styles.payableTitle}>Payment desk</Text>
-            <Text style={styles.payableSubtitle}>
-              No outstanding payments right now. Completed requests marked
-              “pay at cashier” will appear here.
-            </Text>
-          </View>
-        )}
+        {isPaymentOffice ? (
+          /* ── CASHIER FLOW (payment office) ───────────────────────────
+             Step 1 pick walk-in / appointment, step 2 pick what to pay
+             for — exactly the two-step wizard the web shows. */
+          <>
+            <StepIndicator current={step > 2 ? 2 : step} steps={CASHIER_STEPS} />
 
-        {payableTickets.length > 0 && (
-          <View style={styles.payableSection}>
-            <Text style={styles.payableTitle}>Ready to pay</Text>
-            <Text style={styles.payableSubtitle}>
-              Completed requests that need payment at this office.
-            </Text>
-            {payableTickets.map((ticket) => (
-              <View key={ticket.ticket_id} style={styles.payableCard}>
-                <View style={styles.payableCardHeader}>
-                  <Text style={styles.payableQueueNum}>
-                    #{ticket.queue_number}
-                  </Text>
-                  <Text style={styles.payableOffice} numberOfLines={1}>
-                    {ticket.source_office_name}
-                  </Text>
-                </View>
-                {ticket.service_items.map((si) => (
-                  <Text key={si.id} style={styles.payableItem}>
-                    {si.name}
-                    {si.quantity > 1 ? ` ×${si.quantity}` : ''}
-                    {si.amount != null
-                      ? ` — ₱${(si.amount * si.quantity).toFixed(2)}`
-                      : ''}
-                  </Text>
-                ))}
-                {ticket.amount_complete && ticket.total > 0 && (
-                  <Text style={styles.payableTotal}>
-                    Total: ₱{ticket.total.toFixed(2)}
-                  </Text>
+            {step === 1 && (
+              <QueueTypeStep
+                queueType={queueType}
+                setQueueType={setQueueType}
+                walkinEnabled={office.walkinEnabled}
+                appointmentEnabled={office.appointmentEnabled}
+                onNext={() => setStep(2)}
+              />
+            )}
+
+            {step === 2 && (
+              <View>
+                {payableTickets.length === 0 ? (
+                  <View
+                    style={[
+                      styles.payableSection,
+                      { backgroundColor: '#f5f5f5', borderColor: '#e5e5e5' },
+                    ]}
+                  >
+                    <Text style={styles.payableTitle}>Nothing to pay yet</Text>
+                    <Text style={styles.payableSubtitle}>
+                      You have no completed service requests waiting for payment
+                      right now. Once an office marks your request as completed,
+                      it will show up here.
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={styles.payableSection}>
+                    <Text style={styles.payableTitle}>
+                      Select what you&apos;re paying for
+                    </Text>
+                    <Text style={styles.payableSubtitle}>
+                      These are your completed service requests from other
+                      offices, ready for payment.
+                    </Text>
+
+                    {payableTickets.map((ticket) => {
+                      const selected = selectedPayableTicket === ticket.ticket_id;
+                      return (
+                        <TouchableOpacity
+                          key={ticket.ticket_id}
+                          activeOpacity={0.8}
+                          onPress={() => setSelectedPayableTicket(ticket.ticket_id)}
+                          style={[
+                            styles.payableCard,
+                            selected && styles.payableCardSelected,
+                          ]}
+                        >
+                          <View style={styles.payableCardHeader}>
+                            <Text style={styles.payableQueueNum}>
+                              #{ticket.queue_number}
+                            </Text>
+                            <Text style={styles.payableOffice} numberOfLines={1}>
+                              {ticket.source_office_name}
+                            </Text>
+                          </View>
+                          {ticket.service_items.map((si) => (
+                            <Text key={si.id} style={styles.payableItem}>
+                              {si.name}
+                              {si.quantity > 1 ? ` ×${si.quantity}` : ''}
+                              {si.amount != null
+                                ? ` — ₱${(si.amount * si.quantity).toFixed(2)}`
+                                : ' — Amount to be confirmed'}
+                            </Text>
+                          ))}
+                          <Text style={styles.payableTotal}>
+                            {ticket.amount_complete
+                              ? `Total: ₱${ticket.total.toFixed(2)}`
+                              : 'Total: Amount to be confirmed'}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+
+                    {office.priorityEnabled && (
+                      <View style={styles.eventPriorityBox}>
+                        <TouchableOpacity
+                          style={styles.eventReqRow}
+                          activeOpacity={0.7}
+                          onPress={() => setPriority(!priority)}
+                        >
+                          <View
+                            style={[
+                              styles.eventCheckbox,
+                              priority && styles.eventCheckboxChecked,
+                            ]}
+                          >
+                            {priority && <Text style={styles.eventCheckMark}>✓</Text>}
+                          </View>
+                          <Text style={styles.eventReqText}>
+                            Priority Lane (PWD, pregnant, or senior citizen)
+                          </Text>
+                        </TouchableOpacity>
+
+                        {priority && (
+                          <TextInput
+                            style={styles.eventPriorityInput}
+                            placeholder="Reason for priority"
+                            placeholderTextColor={COLORS.gray}
+                            value={priorityReason}
+                            onChangeText={setPriorityReason}
+                          />
+                        )}
+                      </View>
+                    )}
+                  </View>
                 )}
-                <TouchableOpacity
-                  style={[
-                    styles.payablePayButton,
-                    payingTicketId === ticket.ticket_id &&
-                      styles.payablePayButtonDisabled,
-                  ]}
-                  disabled={payingTicketId === ticket.ticket_id || !!office?.isFull}
-                  onPress={() => submitCashierPayment(ticket.ticket_id)}
-                >
-                  <Text style={styles.payablePayButtonText}>
-                    {payingTicketId === ticket.ticket_id
-                      ? 'Joining…'
-                      : 'Join payment queue'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            ))}
-          </View>
-        )}
 
+                <View style={styles.cashierActions}>
+                  <TouchableOpacity
+                    style={styles.eventBackButton}
+                    onPress={() => setStep(1)}
+                  >
+                    <Text style={styles.eventBackButtonText}>Back</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.payablePayButton,
+                      styles.cashierPayButton,
+                      (!selectedPayableTicket ||
+                        payingTicketId !== null ||
+                        !!office.isFull) &&
+                        styles.payablePayButtonDisabled,
+                    ]}
+                    disabled={
+                      !selectedPayableTicket ||
+                      payingTicketId !== null ||
+                      !!office.isFull
+                    }
+                    onPress={() =>
+                      selectedPayableTicket &&
+                      submitCashierPayment(selectedPayableTicket)
+                    }
+                  >
+                    <Text style={styles.payablePayButtonText}>
+                      {payingTicketId !== null ? 'Joining…' : 'Join Payment Queue'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </>
+        ) : (
+          <>
         <StepIndicator current={step} />
 
         {step === 1 && (
@@ -1194,57 +1336,18 @@ export default function OfficeQueue() {
             priorityReason={priorityReason}
             setPriorityReason={setPriorityReason}
             priorityEnabled={office.priorityEnabled}
-            onNext={() => {
-              const needCh = serviceItems.some(
-                (i) => selectedServiceItems.includes(i.id) && (i.has_choices || (i.choices && i.choices.length > 0))
-              );
-              const needAc = serviceItems.some(
-                (i) => selectedServiceItems.includes(i.id) && i.use_academic_period
-              );
-              if (needCh) setStep(3);
-              else if (needAc) setStep(4);
-              else setStep(5);
-            }}
+            itemChoices={itemChoices}
+            setItemChoices={setItemChoices}
+            academic={academicMap}
+            setAcademic={setAcademicMap}
+            periods={academicPeriods}
+            schoolYears={schoolYears}
+            onNext={() => setStep(3)}
             onBack={goBack}
           />
         )}
 
         {step === 3 && (
-          <ChoiceStep
-            items={serviceItems}
-            selectedIds={selectedServiceItems}
-            choices={itemChoices}
-            setChoices={setItemChoices}
-            onNext={() => {
-              const needAc = serviceItems.some(
-                (i) => selectedServiceItems.includes(i.id) && i.use_academic_period
-              );
-              setStep(needAc ? 4 : 5);
-            }}
-            onBack={() => setStep(2)}
-          />
-        )}
-
-        {step === 4 && (
-          <AcademicStep
-            items={serviceItems}
-            selectedIds={selectedServiceItems}
-            quantities={quantities}
-            academic={academicMap}
-            setAcademic={setAcademicMap}
-            periods={academicPeriods}
-            schoolYears={schoolYears}
-            onNext={() => setStep(5)}
-            onBack={() => {
-              const needCh = serviceItems.some(
-                (i) => selectedServiceItems.includes(i.id) && (i.has_choices || (i.choices && i.choices.length > 0))
-              );
-              setStep(needCh ? 3 : 2);
-            }}
-          />
-        )}
-
-        {step === 5 && (
           <RequirementStep
             service_items={serviceItems}
             selectedServiceItems={selectedServiceItems}
@@ -1253,22 +1356,12 @@ export default function OfficeQueue() {
             queueType={queueType}
             appointmentSlipConfirmed={appointmentSlipConfirmed}
             setAppointmentSlipConfirmed={setAppointmentSlipConfirmed}
-            onNext={() => setStep(6)}
-            onBack={() => {
-              const needAc = serviceItems.some(
-                (i) => selectedServiceItems.includes(i.id) && i.use_academic_period
-              );
-              const needCh = serviceItems.some(
-                (i) => selectedServiceItems.includes(i.id) && (i.has_choices || (i.choices && i.choices.length > 0))
-              );
-              if (needAc) setStep(4);
-              else if (needCh) setStep(3);
-              else setStep(2);
-            }}
+            onNext={() => setStep(4)}
+            onBack={() => setStep(2)}
           />
         )}
 
-        {step === 6 && (
+        {step === 4 && (
           <ReviewStep
             queueType={queueType}
             appointmentSlipConfirmed={appointmentSlipConfirmed}
@@ -1281,6 +1374,8 @@ export default function OfficeQueue() {
             onBack={goBack}
             submitting={submitting}
           />
+        )}
+          </>
         )}
         </>
         )}
@@ -1375,6 +1470,20 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.gray,
     marginBottom: 12,
+  },
+  payableCardSelected: {
+    borderColor: COLORS.primary,
+    borderWidth: 2,
+    backgroundColor: COLORS.primarySoft,
+  },
+  cashierPayButton: {
+    flex: 1,
+  },
+  cashierActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 16,
   },
   payableCard: {
     backgroundColor: COLORS.white,

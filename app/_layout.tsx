@@ -1,3 +1,7 @@
+// Must be the FIRST import: defines the headless background push handler
+// before the rest of the bundle loads (needed for killed-app delivery).
+import '../components/notification/background-task';
+
 import { Stack } from 'expo-router';
 
 import { NotificationProvider } from '../components/notification/use-notification';

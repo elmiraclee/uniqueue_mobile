@@ -9,6 +9,9 @@ import {
 } from 'react-native';
 
 import { COLORS } from '../../constants/theme';
+import SelectDropdown from '../ui/select-dropdown';
+import { AcademicMap } from './academic-step';
+import { ChoiceMap } from './choice-step';
 import PriorityStep from './priority-step';
 
 export interface ServiceItem {
@@ -19,6 +22,9 @@ export interface ServiceItem {
   amount?: number | null;
   price?: number | null;
   pay_at_cashier?: boolean;
+  use_academic_period?: boolean;
+  has_choices?: boolean;
+  choices?: { id: number; label: string }[];
 }
 
 interface Props {
@@ -35,6 +41,17 @@ interface Props {
   setPriorityReason: (text: string) => void;
   priorityEnabled: boolean;
 
+  /* Per-item option (e.g. size) — shown inline, same as the web wizard. */
+  itemChoices: ChoiceMap;
+  setItemChoices: React.Dispatch<React.SetStateAction<ChoiceMap>>;
+
+  /* Academic period + school year, per copy — also inline, so the whole
+     wizard stays at 4 steps just like student-queue.php on the web. */
+  academic: AcademicMap;
+  setAcademic: React.Dispatch<React.SetStateAction<AcademicMap>>;
+  periods: { id: number; label: string }[];
+  schoolYears: { id: number; school_year: string }[];
+
   onNext: () => void;
   onBack: () => void;
 }
@@ -50,6 +67,12 @@ export default function ServiceItemStep({
   priorityReason,
   setPriorityReason,
   priorityEnabled,
+  itemChoices,
+  setItemChoices,
+  academic,
+  setAcademic,
+  periods,
+  schoolYears,
   onNext,
   onBack,
 }: Props) {
@@ -92,6 +115,64 @@ export default function ServiceItemStep({
     setQuantities({ ...quantities, [id]: newQty });
   };
 
+  const itemHasChoices = (item: ServiceItem) =>
+    !!item.has_choices || (item.choices?.length ?? 0) > 0;
+
+  const itemNeedsAcademic = (item: ServiceItem) =>
+    !!item.use_academic_period && periods.length > 0 && schoolYears.length > 0;
+
+  // School years are newest-first so the current year is one tap away,
+  // while periods keep the office's configured display order.
+  const periodOptions = useMemo(
+    () => periods.map((p) => ({ value: p.label, label: p.label })),
+    [periods]
+  );
+  const schoolYearOptions = useMemo(
+    () =>
+      [...schoolYears]
+        .sort((a, b) => b.school_year.localeCompare(a.school_year))
+        .map((y) => ({ value: y.school_year, label: y.school_year })),
+    [schoolYears]
+  );
+
+  // "Same for all copies" per item — mirrors the web checkbox.
+  const [sameForAll, setSameForAll] = useState<Record<number, boolean>>({});
+
+  const academicRows = (itemId: number) => {
+    const qty = quantities[itemId] || 1;
+    const rows = [...(academic[itemId] || [])];
+    while (rows.length < qty) rows.push({ period: '', school_year: '' });
+    return rows.slice(0, qty);
+  };
+
+  const setAcademicField = (
+    itemId: number,
+    copyIdx: number,
+    field: 'period' | 'school_year',
+    value: string
+  ) => {
+    const rows = academicRows(itemId);
+    if (sameForAll[itemId]) {
+      setAcademic((prev) => ({
+        ...prev,
+        [itemId]: rows.map((r) => ({ ...r, [field]: value })),
+      }));
+      return;
+    }
+    rows[copyIdx] = { ...rows[copyIdx], [field]: value };
+    setAcademic((prev) => ({ ...prev, [itemId]: rows }));
+  };
+
+  const toggleSameForAll = (itemId: number) => {
+    const turningOn = !sameForAll[itemId];
+    setSameForAll((prev) => ({ ...prev, [itemId]: turningOn }));
+    if (turningOn) {
+      const rows = academicRows(itemId);
+      const first = rows[0] || { period: '', school_year: '' };
+      setAcademic((prev) => ({ ...prev, [itemId]: rows.map(() => ({ ...first })) }));
+    }
+  };
+
   const formatAmount = (item: ServiceItem) => {
     const val = item.amount ?? item.price;
     if (val == null) return null;
@@ -107,6 +188,34 @@ export default function ServiceItemStep({
       Alert.alert('Required', 'Please enter a reason for priority lane.');
       return;
     }
+
+    const selected = service_items.filter((i) =>
+      selectedServiceItems.includes(i.id)
+    );
+
+    const missingChoice = selected.find(
+      (i) => itemHasChoices(i) && !itemChoices[i.id]?.choice_id
+    );
+    if (missingChoice) {
+      Alert.alert('Required', `Please choose an option for "${missingChoice.name}".`);
+      return;
+    }
+
+    const missingAcademic = selected.find((i) => {
+      if (!itemNeedsAcademic(i)) return false;
+      const qty = quantities[i.id] || 1;
+      const rows = academic[i.id] || [];
+      if (rows.length < qty) return true;
+      return rows.slice(0, qty).some((r) => !r.period || !r.school_year);
+    });
+    if (missingAcademic) {
+      Alert.alert(
+        'Required',
+        `Please select the period and school year for "${missingAcademic.name}".`
+      );
+      return;
+    }
+
     onNext();
   };
 
@@ -213,6 +322,98 @@ export default function ServiceItemStep({
                       <Text style={styles.qtyButtonText}>+</Text>
                     </TouchableOpacity>
                   </View>
+                </View>
+              )}
+
+              {isSelected && itemHasChoices(item) && (
+                <View style={styles.inlineBlock}>
+                  <Text style={styles.inlineHeader}>Choose an option</Text>
+                  <View style={styles.choicePills}>
+                    {(item.choices || []).map((ch) => {
+                      const active = itemChoices[item.id]?.choice_id === ch.id;
+                      return (
+                        <TouchableOpacity
+                          key={ch.id}
+                          style={[styles.pill, active && styles.pillActive]}
+                          onPress={() =>
+                            setItemChoices((prev) => ({
+                              ...prev,
+                              [item.id]: { choice_id: ch.id, choice_label: ch.label },
+                            }))
+                          }
+                        >
+                          <Text
+                            style={[
+                              styles.pillText,
+                              active && styles.pillTextActive,
+                            ]}
+                          >
+                            {ch.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
+
+              {isSelected && itemNeedsAcademic(item) && (
+                <View style={styles.inlineBlock}>
+                  <Text style={styles.inlineHeader}>Academic details</Text>
+
+                  {(quantities[item.id] || 1) > 1 && (
+                    <TouchableOpacity
+                      style={styles.sameRow}
+                      onPress={() => toggleSameForAll(item.id)}
+                      activeOpacity={0.8}
+                    >
+                      <View
+                        style={[
+                          styles.smallCheckbox,
+                          sameForAll[item.id] && styles.checkboxActive,
+                        ]}
+                      >
+                        {sameForAll[item.id] && (
+                          <Text style={styles.checkmark}>✓</Text>
+                        )}
+                      </View>
+                      <Text style={styles.sameText}>
+                        Use the same period and school year for all copies
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {academicRows(item.id).map((row, idx) => {
+                    if (sameForAll[item.id] && idx > 0) return null;
+                    return (
+                      <View key={idx} style={styles.copyBlock}>
+                        {(quantities[item.id] || 1) > 1 &&
+                          !sameForAll[item.id] && (
+                            <Text style={styles.copyLabel}>Copy {idx + 1}</Text>
+                          )}
+
+                        <Text style={styles.fieldLabel}>Period</Text>
+                        <SelectDropdown
+                          value={row.period}
+                          options={periodOptions}
+                          placeholder="Select period"
+                          onChange={(v) =>
+                            setAcademicField(item.id, idx, 'period', v)
+                          }
+                        />
+
+                        <Text style={styles.fieldLabel}>School year</Text>
+                        <SelectDropdown
+                          value={row.school_year}
+                          options={schoolYearOptions}
+                          placeholder="Select school year"
+                          onChange={(v) =>
+                            setAcademicField(item.id, idx, 'school_year', v)
+                          }
+                        />
+                      </View>
+                    );
+                  })}
                 </View>
               )}
             </View>
@@ -407,6 +608,83 @@ const styles = StyleSheet.create({
     color: COLORS.secondary,
     minWidth: 20,
     textAlign: 'center',
+  },
+  inlineBlock: {
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.05)',
+  },
+  inlineHeader: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.secondary,
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  choicePills: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  pill: {
+    borderWidth: 1.5,
+    borderColor: '#e5e7eb',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    backgroundColor: '#fff',
+  },
+  pillActive: {
+    borderColor: COLORS.primary,
+    backgroundColor: '#fdf5f5',
+  },
+  pillText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.gray,
+  },
+  pillTextActive: {
+    color: COLORS.primary,
+  },
+  sameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  smallCheckbox: {
+    width: 18,
+    height: 18,
+    borderRadius: 5,
+    borderWidth: 2,
+    borderColor: '#ddd',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sameText: {
+    flex: 1,
+    fontSize: 12,
+    color: COLORS.gray,
+    fontWeight: '600',
+  },
+  copyBlock: {
+    marginTop: 6,
+  },
+  copyLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.secondary,
+    marginBottom: 2,
+  },
+  fieldLabel: {
+    fontSize: 11,
+    color: COLORS.gray,
+    fontWeight: '600',
+    marginTop: 8,
+    marginBottom: 4,
   },
   button: {
     marginTop: 8,
