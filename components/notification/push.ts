@@ -7,20 +7,38 @@
 |   - permission request + Expo push token retrieval
 |   - token registration for BOTH students and parents
 |
-| Delivery while closed is ONLY possible through the server push
-| (Expo -> FCM / APNs). JS timers are killed with the app, so polling can
-| never be the delivery mechanism - it is just a UI sync.
+| NOTE ON EXPO GO:
+| expo-notifications is loaded LAZILY (require() inside functions, never a
+| top-level import). Importing it inside Expo Go prints the scary
+| "Android Push notifications ... removed from Expo Go with SDK 53"
+| message even if you never call it. Lazy loading + the isExpoGo() guards
+| below keep the console clean. Remote push simply does not exist in
+| Expo Go - you MUST use a development build or an EAS build to test it.
 */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
-import * as Device from 'expo-device';
-import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
 import { API } from '../../constants/backend';
 
-export const CHANNEL_ALARM = 'proceed_alert';
-export const CHANNEL_DEFAULT = 'default';
+/*
+| IMPORTANT: an Android channel's sound is LOCKED the moment the channel is
+| first created. Changing the sound therefore needs a NEW channel id -
+| that is why these end in _v2. Bump to _v3 the next time you swap the
+| audio file, and add the old id to LEGACY_CHANNELS below.
+*/
+export const CHANNEL_ALARM = 'proceed_alert_v2';
+export const CHANNEL_DEFAULT = 'queue_updates_v2';
+
+/** Old channels to delete so the user doesn't see duplicates in Settings. */
+const LEGACY_CHANNELS = ['proceed_alert', 'proceed', 'default'];
+
+/*
+| Sound files live in assets/sounds/ and are compiled into the app by the
+| expo-notifications plugin (see app.json -> plugins -> sounds).
+*/
+const ALARM_SOUND = 'alarm.wav';
+const NOTIFY_SOUND = 'notify.wav';
 
 const TOKEN_CACHE_KEY = 'push_token_registered_for';
 
@@ -32,55 +50,90 @@ export function isExpoGo(): boolean {
   return ownership === 'expo' || env === 'storeClient';
 }
 
+/**
+ * Lazily require expo-notifications. Returns null in Expo Go so the module
+ * is never even loaded there (no console error, no crash).
+ */
+export function getNotifications(): typeof import('expo-notifications') | null {
+  if (isExpoGo()) return null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require('expo-notifications');
+  } catch (err) {
+    console.warn('expo-notifications unavailable:', err);
+    return null;
+  }
+}
+
+function getDevice(): typeof import('expo-device') | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require('expo-device');
+  } catch {
+    return null;
+  }
+}
+
 /** MAX-importance channels. Must exist BEFORE the first push arrives. */
 export async function ensureAndroidChannels(): Promise<void> {
   if (Platform.OS !== 'android') return;
+  const N = getNotifications();
+  if (!N) return;
 
-  await Notifications.setNotificationChannelAsync(CHANNEL_ALARM, {
+  // Remove the old channels first so Settings stays clean.
+  for (const id of LEGACY_CHANNELS) {
+    try {
+      await N.deleteNotificationChannelAsync(id);
+    } catch {
+      // channel may not exist - fine
+    }
+  }
+
+  await N.setNotificationChannelAsync(CHANNEL_ALARM, {
     name: 'Your Turn — Proceed Now',
-    importance: Notifications.AndroidImportance.MAX,
-    vibrationPattern: [0, 800, 400, 800, 400, 800, 400, 1200],
-    sound: 'default',
+    importance: N.AndroidImportance.MAX,
+    // Long vibration loop while the alarm sound plays.
+    vibrationPattern: [
+      0, 800, 400, 800, 400, 800, 400, 1200, 400, 800, 400, 800, 400, 1200,
+    ],
+    sound: ALARM_SOUND,
     enableVibrate: true,
     enableLights: true,
     lightColor: '#660810',
     bypassDnd: true,
-    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    lockscreenVisibility: N.AndroidNotificationVisibility.PUBLIC,
     showBadge: true,
   });
 
-  await Notifications.setNotificationChannelAsync(CHANNEL_DEFAULT, {
+  await N.setNotificationChannelAsync(CHANNEL_DEFAULT, {
     name: 'Queue Updates',
-    importance: Notifications.AndroidImportance.HIGH,
+    importance: N.AndroidImportance.HIGH,
     vibrationPattern: [0, 400, 200, 400],
-    sound: 'default',
+    sound: NOTIFY_SOUND,
     enableVibrate: true,
-  });
-
-  // Legacy channel kept so older server builds still ring loudly.
-  await Notifications.setNotificationChannelAsync('proceed', {
-    name: 'Proceed Alerts (legacy)',
-    importance: Notifications.AndroidImportance.MAX,
-    sound: 'default',
-    enableVibrate: true,
-    bypassDnd: true,
   });
 }
 
 /** Ask for permission (Android 13+ needs the runtime POST_NOTIFICATIONS prompt). */
 export async function ensurePermission(): Promise<boolean> {
-  const { status: existing } = await Notifications.getPermissionsAsync();
+  const N = getNotifications();
+  if (!N) return false;
+
+  const { status: existing } = await N.getPermissionsAsync();
   if (existing === 'granted') return true;
 
-  const { status } = await Notifications.requestPermissionsAsync({
+  const { status } = await N.requestPermissionsAsync({
     ios: { allowAlert: true, allowBadge: true, allowSound: true },
   });
   return status === 'granted';
 }
 
 export async function getExpoPushToken(): Promise<string | null> {
-  if (isExpoGo()) return null; // Expo Go has no Android push since SDK 53
-  if (!Device.isDevice) return null; // emulators never receive real pushes
+  const N = getNotifications();
+  if (!N) return null; // Expo Go - no remote push since SDK 53
+
+  const Device = getDevice();
+  if (Device && !Device.isDevice) return null; // emulators never get pushes
 
   if (!(await ensurePermission())) return null;
   await ensureAndroidChannels();
@@ -90,7 +143,7 @@ export async function getExpoPushToken(): Promise<string | null> {
     (Constants as any).easConfig?.projectId;
 
   try {
-    const { data } = await Notifications.getExpoPushTokenAsync(
+    const { data } = await N.getExpoPushTokenAsync(
       projectId ? { projectId } : undefined
     );
     return data ?? null;
@@ -104,7 +157,9 @@ export async function getExpoPushToken(): Promise<string | null> {
  * Register (or refresh) this device's push token for the signed-in user.
  * Safe to call on every launch, after every login, and on token rotation.
  */
-export async function registerPushToken(owner: PushOwner): Promise<string | null> {
+export async function registerPushToken(
+  owner: PushOwner
+): Promise<string | null> {
   const token = await getExpoPushToken();
   if (!token) return null;
 
@@ -117,19 +172,17 @@ export async function registerPushToken(owner: PushOwner): Promise<string | null
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        // new generic fields
         owner_type: owner.role,
         owner_id: owner.id,
         role: owner.role,
-        // legacy field kept so an older API build keeps working
+        // legacy fields kept so an older API build keeps working
         student_id: owner.role === 'student' ? owner.id : 0,
         parent_id: owner.role === 'parent' ? owner.id : 0,
         push_token: token,
         platform: Platform.OS,
       }),
     });
-    const ok = res.ok;
-    if (ok) await AsyncStorage.setItem(TOKEN_CACHE_KEY, cacheKey);
+    if (res.ok) await AsyncStorage.setItem(TOKEN_CACHE_KEY, cacheKey);
     return token;
   } catch (err) {
     console.warn('registerPushToken failed:', err);
@@ -139,9 +192,11 @@ export async function registerPushToken(owner: PushOwner): Promise<string | null
 
 /** Call on logout so the device stops receiving the previous user's alarms. */
 export async function unregisterPushToken(owner: PushOwner): Promise<void> {
-  const token = await AsyncStorage.getItem(TOKEN_CACHE_KEY);
+  const cached = await AsyncStorage.getItem(TOKEN_CACHE_KEY);
   await AsyncStorage.removeItem(TOKEN_CACHE_KEY);
-  if (!token) return;
+  if (!cached) return;
+
+  const token = cached.split(':').slice(2).join(':');
   try {
     await fetch(API.registerPushToken, {
       method: 'POST',
@@ -150,7 +205,7 @@ export async function unregisterPushToken(owner: PushOwner): Promise<void> {
         action: 'unregister',
         owner_type: owner.role,
         owner_id: owner.id,
-        push_token: token.split(':').slice(2).join(':'),
+        push_token: token,
       }),
     });
   } catch {

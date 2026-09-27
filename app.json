@@ -63,7 +63,12 @@
           "mode": "production",
           "icon": "./assets/images/android-icon-monochrome.png",
           "color": "#660810",
-          "enableBackgroundRemoteNotifications": true
+          "enableBackgroundRemoteNotifications": true,
+          "sounds": [
+            "./assets/sounds/alarm.wav",
+            "./assets/sounds/notify.wav"
+          ],
+          "defaultChannel": "queue_updates_v2"
         }
       ],
       [

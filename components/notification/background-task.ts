@@ -12,11 +12,14 @@
 | IMPORTANT: this file must be imported at the TOP of app/_layout.tsx so the
 | task is defined before the JS bundle finishes loading in a headless start.
 */
-import * as Notifications from 'expo-notifications';
-import * as TaskManager from 'expo-task-manager';
 import { Platform } from 'react-native';
 
-import { CHANNEL_ALARM, CHANNEL_DEFAULT, isExpoGo } from './push';
+import { CHANNEL_ALARM, CHANNEL_DEFAULT, getNotifications, isExpoGo } from './push';
+
+// expo-task-manager is safe in Expo Go; expo-notifications is loaded lazily
+// through getNotifications() so Expo Go never prints the SDK 53 push warning.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const TaskManager = require('expo-task-manager');
 
 export const BACKGROUND_NOTIFICATION_TASK = 'UNIQUEUE_BG_NOTIFICATION';
 
@@ -44,12 +47,15 @@ TaskManager.defineTask(BACKGROUND_NOTIFICATION_TASK, async ({ data, error }: any
     const hasVisible = Boolean(content?.title || payload?.title);
     if (hasVisible) return;
 
-    await Notifications.scheduleNotificationAsync({
+    const N = getNotifications();
+    if (!N) return;
+
+    await N.scheduleNotificationAsync({
       content: {
         title: extra?.title ?? "It's your turn",
         body: extra?.message ?? 'Please proceed to the window.',
-        sound: 'default',
-        priority: Notifications.AndroidNotificationPriority.MAX,
+        sound: isAlarm(extra?.type) ? 'alarm.wav' : 'notify.wav',
+        priority: N.AndroidNotificationPriority.MAX,
         data: extra,
       },
       trigger:
@@ -64,9 +70,10 @@ TaskManager.defineTask(BACKGROUND_NOTIFICATION_TASK, async ({ data, error }: any
 
 /** Registers the headless push handler. Call once at startup. */
 export async function registerBackgroundNotificationTask(): Promise<void> {
-  if (isExpoGo()) return; // no background push in Expo Go
+  const N = getNotifications();
+  if (!N || isExpoGo()) return; // no background push in Expo Go
   try {
-    await Notifications.registerTaskAsync(BACKGROUND_NOTIFICATION_TASK);
+    await N.registerTaskAsync(BACKGROUND_NOTIFICATION_TASK);
   } catch (err) {
     console.warn('registerTaskAsync failed:', err);
   }

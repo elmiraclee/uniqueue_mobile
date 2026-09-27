@@ -15,6 +15,7 @@ import {
   CHANNEL_ALARM,
   CHANNEL_DEFAULT,
   ensureAndroidChannels as ensureChannels,
+  getNotifications,
   isExpoGo as detectExpoGo,
   registerPushToken,
 } from './push';
@@ -114,15 +115,8 @@ const NotificationContext = createContext<NotificationContextValue | undefined>(
 function loadPushModules(): {
   Notifications: typeof import('expo-notifications');
 } | null {
-  if (detectExpoGo()) return null;
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const Notifications = require('expo-notifications');
-    return { Notifications };
-  } catch (err) {
-    console.warn('Push modules unavailable:', err);
-    return null;
-  }
+  const Notifications = getNotifications();
+  return Notifications ? { Notifications } : null;
 }
 
 /*
@@ -250,7 +244,8 @@ export function NotificationProvider({
           content: {
             title: n.child_name ? `${n.child_name}: ${n.title}` : n.title,
             body: n.message,
-            sound: 'default',
+            // Android ignores this (the CHANNEL owns the sound); iOS uses it.
+            sound: isAlarmType(n.type) ? 'alarm.wav' : 'notify.wav',
             priority: mods.Notifications.AndroidNotificationPriority?.MAX,
             data: {
               type: n.type,
