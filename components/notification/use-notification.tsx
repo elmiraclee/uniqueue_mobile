@@ -190,6 +190,7 @@ export function NotificationProvider({
   useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setInterval> | null = null;
+    let tokenSub: { remove: () => void } | null = null;
 
     const tryRegister = async () => {
       if (cancelled || pushRegisteredRef.current) return;
@@ -209,8 +210,19 @@ export function NotificationProvider({
     };
 
     tryRegister();
-    // Re-check every 10s until a login happens, then stop.
+    // Login registers immediately; this remains a conservative retry for
+    // restored sessions, temporary network failures, or denied permissions.
     timer = setInterval(tryRegister, 10000);
+
+    // Android can rotate the underlying FCM token. Re-register the Expo
+    // token immediately instead of waiting for the next app reinstall.
+    const N = getNotifications();
+    if (N) {
+      tokenSub = N.addPushTokenListener(() => {
+        pushRegisteredRef.current = false;
+        tryRegister();
+      });
+    }
 
     // Also re-check whenever the app returns to the foreground (covers
     // permission granted from Settings and rotated tokens).
@@ -221,6 +233,7 @@ export function NotificationProvider({
     return () => {
       cancelled = true;
       if (timer) clearInterval(timer);
+      tokenSub?.remove();
       sub.remove();
     };
   }, []);

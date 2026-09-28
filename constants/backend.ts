@@ -79,6 +79,7 @@ export const API = {
 
   // LIVE QUEUE
   getLiveQueue: `${API_URL}/get_live_queue.php`,
+  getLiveTicketSnapshot: `${API_URL}/get_live_ticket_snapshot.php`,
 
   // FEEDBACK
   getPendingFeedback: `${API_URL}/get_pending_feedback.php`,

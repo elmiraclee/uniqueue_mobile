@@ -28,6 +28,7 @@ import {
   useGoogleAuthRequest,
   type GoogleProfile,
 } from '@/utils/google-auth';
+import { registerPushToken } from '@/components/notification/push';
 import {
   COLORS,
   RADIUS,
@@ -151,6 +152,8 @@ export default function Signup() {
             await AsyncStorage.removeItem('google_pending');
             await AsyncStorage.setItem('user', JSON.stringify(result.user));
             await AsyncStorage.setItem('role', 'student');
+            const id = Number(result.user?.id ?? result.user?.student_id ?? 0);
+            if (id) await registerPushToken({ role: 'student', id });
             router.replace('/student/home');
             return;
           }
@@ -286,6 +289,8 @@ export default function Signup() {
         if (data.user) {
           await AsyncStorage.setItem('user', JSON.stringify(data.user));
           await AsyncStorage.setItem('role', 'student');
+          const id = Number(data.user?.id ?? data.user?.student_id ?? 0);
+          if (id) await registerPushToken({ role: 'student', id });
           Alert.alert('Success', 'Account created successfully!', [
             { text: 'OK', onPress: () => router.replace('/student/home') },
           ]);

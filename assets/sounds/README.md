@@ -5,8 +5,8 @@ Two files are read by the build. **The file names must stay exactly these**
 
 | File | Used for | Channel |
 | --- | --- | --- |
-| `alarm.wav`  | `next_in_line`, `called`, `in_progress` — the "it's your turn" alarm | `proceed_alert_v2` |
-| `notify.wav` | position updates, completed, cancelled | `queue_updates_v2` |
+| `alarm.wav`  | `next_in_line`, `called`, `in_progress` — the "it's your turn" alarm | `proceed_alert_v5` |
+| `notify.wav` | position updates, completed, cancelled | `queue_updates_v5` |
 
 ## Rules
 - **Format:** `.wav` (PCM 16-bit). `.mp3` works on Android but NOT on iOS - stick to wav.
@@ -33,9 +33,9 @@ file alone will NOT change the sound on phones that already installed the app. Y
 the channel id in `components/notification/push.ts`:
 
 ```ts
-export const CHANNEL_ALARM = 'proceed_alert_v3';   // was _v2
-export const CHANNEL_DEFAULT = 'queue_updates_v3'; // was _v2
-const LEGACY_CHANNELS = ['proceed_alert_v2', 'queue_updates_v2', 'proceed_alert', 'proceed', 'default'];
+export const CHANNEL_ALARM = 'proceed_alert_v5';
+export const CHANNEL_DEFAULT = 'queue_updates_v5';
+const LEGACY_CHANNELS = ['proceed_alert_v4', 'queue_updates_v4', 'proceed_alert_v3', 'queue_updates_v3', 'proceed_alert_v2', 'queue_updates_v2', 'proceed_alert', 'proceed', 'default'];
 ```
 
 ...and bump the same ids in the server files so the push targets the new channel:

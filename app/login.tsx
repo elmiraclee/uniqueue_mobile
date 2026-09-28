@@ -26,6 +26,7 @@ import {
   completeGoogleAuth,
   useGoogleAuthRequest,
 } from '@/utils/google-auth';
+import { registerPushToken } from '@/components/notification/push';
 
 export default function Login() {
   const router = useRouter();
@@ -82,6 +83,8 @@ export default function Login() {
           if (result.action === 'login') {
             await AsyncStorage.setItem('user', JSON.stringify(result.user));
             await AsyncStorage.setItem('role', 'student');
+            const id = Number(result.user?.id ?? result.user?.student_id ?? 0);
+            if (id) await registerPushToken({ role: 'student', id });
             router.replace('/student/home');
             return;
           }
@@ -139,7 +142,17 @@ export default function Login() {
       }
 
       await AsyncStorage.setItem('user', JSON.stringify(data.user));
-      await AsyncStorage.setItem('role', data.role || loginRole);
+      const signedInRole = data.role === 'parent' ? 'parent' : loginRole;
+      await AsyncStorage.setItem('role', signedInRole);
+      const ownerId = Number(
+        data.user?.id ??
+          data.user?.student_id ??
+          data.user?.parent_id ??
+          0,
+      );
+      if (ownerId) {
+        await registerPushToken({ role: signedInRole, id: ownerId });
+      }
       router.replace(loginRole === 'parent' ? '/parent/home' : '/student/home');
     } catch (error) {
       console.log('LOGIN ERROR:', error);

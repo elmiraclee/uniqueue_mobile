@@ -14,6 +14,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import AppHeader from "@/components/layout/app-header";
 import { API } from "@/constants/backend";
 import { fetchJsonOrNull, safeFetchJson } from "@/utils/api";
+import { updateLiveTicketWidget } from "@/utils/live-ticket-widget";
 
 import {
   COLORS,
@@ -70,14 +71,17 @@ export default function LiveQueueScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const [liveQueue, setLiveQueue] =
-    useState<LiveQueue | null>(null);
+  const [liveQueue, setLiveQueue] = useState<LiveQueue | null>(null);
 
-  const goBack = () => (router.canGoBack() ? router.back() : router.replace("/"));
+  const goBack = () =>
+    router.canGoBack() ? router.back() : router.replace("/");
 
   const resolveTicketId = async (): Promise<number | null> => {
     // Direct ticket id from navigation (parent home passes active_ticket_id as queueId)
-    const direct = paramInt(params.queueId) || paramInt(params.ticketId) || paramInt(params.id);
+    const direct =
+      paramInt(params.queueId) ||
+      paramInt(params.ticketId) ||
+      paramInt(params.id);
     if (direct > 0) return direct;
 
     const sid = paramInt(params.studentId) || paramInt(params.childId);
@@ -90,48 +94,64 @@ export default function LiveQueueScreen() {
       body: JSON.stringify({ student_id: sid }),
     });
     // get_current_queue.php → { success, queue: { id, ... } }
-    const tid = paramInt(cur?.queue?.id) || paramInt(cur?.ticket?.id) || paramInt(cur?.id);
+    const tid =
+      paramInt(cur?.queue?.id) ||
+      paramInt(cur?.ticket?.id) ||
+      paramInt(cur?.id);
     return tid > 0 ? tid : null;
   };
 
-const loadQueue = async () => {
-  try {
-    setErrorMsg(null);
-    const ticketId = await resolveTicketId();
-    if (!ticketId) {
-      setErrorMsg("No active queue found for this child.");
-      setLiveQueue(null);
-      return;
+  const loadQueue = async () => {
+    try {
+      setErrorMsg(null);
+      const ticketId = await resolveTicketId();
+      if (!ticketId) {
+        setErrorMsg("No active queue found for this child.");
+        setLiveQueue(null);
+        return;
+      }
+
+      const sid = paramInt(params.studentId) || paramInt(params.childId);
+      const json = await fetchJsonOrNull(
+        API.getLiveQueue,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            queue_id: ticketId,
+            ticket_id: ticketId,
+            student_id: sid || undefined,
+            child_id: sid || undefined,
+          }),
+        },
+        "Live Queue Error",
+      );
+
+      if (json?.success) {
+        setLiveQueue(json);
+        updateLiveTicketWidget({
+          ticketId,
+          ticket: json.queue?.queue_number,
+          office: json.queue?.office,
+          window: json.queue?.window,
+          status: json.queue?.status,
+          nowServing: json.now_serving,
+          peopleAhead: json.people_ahead,
+          estimatedWait: json.estimated_wait,
+        });
+      } else {
+        setErrorMsg(json?.message || "Could not load live queue");
+        console.log("Live queue API:", json?.message, "ticketId=", ticketId);
+      }
+    } catch (error) {
+      console.log("ERROR:", error);
+      setErrorMsg("Network error loading live queue");
+    } finally {
+      setLoading(false);
     }
-
-    const sid = paramInt(params.studentId) || paramInt(params.childId);
-    const json = await fetchJsonOrNull(API.getLiveQueue, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        queue_id: ticketId,
-        ticket_id: ticketId,
-        student_id: sid || undefined,
-        child_id: sid || undefined,
-      }),
-    }, 'Live Queue Error');
-
-    if (json?.success) {
-      setLiveQueue(json);
-    } else {
-      setErrorMsg(json?.message || "Could not load live queue");
-      console.log("Live queue API:", json?.message, "ticketId=", ticketId);
-    }
-
-  } catch (error) {
-    console.log("ERROR:", error);
-    setErrorMsg("Network error loading live queue");
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -158,10 +178,10 @@ const loadQueue = async () => {
   // 'waiting', 'called', 'in_progress', 'completed', 'cancelled'
   const STATUS_PRIORITY: Record<string, number> = {
     in_progress: 0, // kasalukuyang pinapapasok — laging nasa taas
-    called: 1,      // sunod na tatawagin / papasok
-    waiting: 2,     // naghihintay pa sa likod
-    completed: 3,   // tapos na
-    cancelled: 4,   // kinansela
+    called: 1, // sunod na tatawagin / papasok
+    waiting: 2, // naghihintay pa sa likod
+    completed: 3, // tapos na
+    cancelled: 4, // kinansela
   };
 
   const getStatusPriority = (status: string) => {
@@ -177,7 +197,8 @@ const loadQueue = async () => {
   // than during the previous render" ang lalabas.
   const sortedQueueList = useMemo(() => {
     return [...queueList].sort((a, b) => {
-      const priorityDiff = getStatusPriority(a.status) - getStatusPriority(b.status);
+      const priorityDiff =
+        getStatusPriority(a.status) - getStatusPriority(b.status);
       if (priorityDiff !== 0) return priorityDiff;
       return 0; // stable sort — mananatili ang orihinal na pagkakasunod-sunod kapag parehong priority
     });
@@ -201,7 +222,13 @@ const loadQueue = async () => {
       <SafeAreaView style={styles.safeArea}>
         <AppHeader title="Live Queue" />
         <View style={{ padding: 24, alignItems: "center", marginTop: 40 }}>
-          <Text style={{ color: COLORS.gray, textAlign: "center", marginBottom: 16 }}>
+          <Text
+            style={{
+              color: COLORS.gray,
+              textAlign: "center",
+              marginBottom: 16,
+            }}
+          >
             {errorMsg || "No active queue to display."}
           </Text>
           <Text
@@ -217,17 +244,13 @@ const loadQueue = async () => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-
       <AppHeader title="Live Queue" />
 
       {/* Summary section — fixed height, no scrolling */}
       <View style={styles.summary}>
-
         {/* Office + Queue hero card */}
         <View style={styles.heroCard}>
-
           <View style={styles.heroTopRow}>
-
             <View style={styles.heroOfficeCol}>
               <Text style={styles.officeName} numberOfLines={1}>
                 {liveQueue?.queue.office}
@@ -242,13 +265,11 @@ const loadQueue = async () => {
                 {liveQueue?.queue.status.toUpperCase()}
               </Text>
             </View>
-
           </View>
 
           <View style={styles.heroDivider} />
 
           <View style={styles.heroBottomRow}>
-
             <View style={styles.numberBlock}>
               <Text style={styles.label}>YOUR NUMBER</Text>
               <Text style={styles.queueNumber} numberOfLines={1}>
@@ -264,14 +285,11 @@ const loadQueue = async () => {
                 {liveQueue?.now_serving ?? "--"}
               </Text>
             </View>
-
           </View>
-
         </View>
 
         {/* Primary stats — People Ahead & Estimated Minutes */}
         <View style={styles.statsRow}>
-
           <View style={styles.statCard}>
             <Text style={styles.statValue}>{liveQueue?.people_ahead ?? 0}</Text>
             <Text style={styles.statLabel}>People Ahead</Text>
@@ -280,10 +298,11 @@ const loadQueue = async () => {
           <View style={styles.statDivider} />
 
           <View style={styles.statCard}>
-            <Text style={styles.statValue}>{liveQueue?.estimated_wait ?? 0}</Text>
+            <Text style={styles.statValue}>
+              {liveQueue?.estimated_wait ?? 0}
+            </Text>
             <Text style={styles.statLabel}>Est. Minutes</Text>
           </View>
-
         </View>
 
         {/* Queue list header */}
@@ -291,7 +310,6 @@ const loadQueue = async () => {
           <Text style={styles.sectionTitle}>Live Queue</Text>
           <Text style={styles.listCount}>{sortedQueueList.length} in line</Text>
         </View>
-
       </View>
 
       {/* Queue list — fills remaining space, scrolls only if needed */}
@@ -310,16 +328,9 @@ const loadQueue = async () => {
         keyExtractor={(item) => item.id.toString()}
         showsVerticalScrollIndicator={false}
         renderItem={({ item }) => (
-          <View
-            style={[
-              styles.queueItem,
-              item.is_you && styles.youQueue,
-            ]}
-          >
+          <View style={[styles.queueItem, item.is_you && styles.youQueue]}>
             <View>
-              <Text style={styles.queueItemNumber}>
-                {item.queue_number}
-              </Text>
+              <Text style={styles.queueItemNumber}>{item.queue_number}</Text>
 
               <Text style={styles.queueItemStatus}>
                 {item.status.toUpperCase()}
@@ -328,15 +339,12 @@ const loadQueue = async () => {
 
             {item.is_you && (
               <View style={styles.youBadge}>
-                <Text style={styles.youText}>
-                  YOU
-                </Text>
+                <Text style={styles.youText}>YOU</Text>
               </View>
             )}
           </View>
         )}
       />
-
     </SafeAreaView>
   );
 }

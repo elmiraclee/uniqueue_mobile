@@ -15,60 +15,70 @@
 | below keep the console clean. Remote push simply does not exist in
 | Expo Go - you MUST use a development build or an EAS build to test it.
 */
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import Constants from 'expo-constants';
-import { Platform } from 'react-native';
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import Constants from "expo-constants";
+import { Platform } from "react-native";
 
-import { API } from '../../constants/backend';
+import { API } from "../../constants/backend";
 
 /*
 | IMPORTANT: an Android channel's sound is LOCKED the moment the channel is
 | first created. Changing the sound therefore needs a NEW channel id -
-| that is why these end in _v2. Bump to _v3 the next time you swap the
-| audio file, and add the old id to LEGACY_CHANNELS below.
+| that is why these end in _v5. Bump the id again whenever channel behavior
+| or the audio file changes, and add the old id to LEGACY_CHANNELS below.
 */
-export const CHANNEL_ALARM = 'proceed_alert_v2';
-export const CHANNEL_DEFAULT = 'queue_updates_v2';
+export const CHANNEL_ALARM = "proceed_alert_v5";
+export const CHANNEL_DEFAULT = "queue_updates_v5";
 
 /** Old channels to delete so the user doesn't see duplicates in Settings. */
-const LEGACY_CHANNELS = ['proceed_alert', 'proceed', 'default'];
+const LEGACY_CHANNELS = [
+  "proceed_alert_v4",
+  "queue_updates_v4",
+  "proceed_alert_v3",
+  "queue_updates_v3",
+  "proceed_alert_v2",
+  "queue_updates_v2",
+  "proceed_alert",
+  "proceed",
+  "default",
+];
 
 /*
 | Sound files live in assets/sounds/ and are compiled into the app by the
 | expo-notifications plugin (see app.json -> plugins -> sounds).
 */
-const ALARM_SOUND = 'alarm.wav';
-const NOTIFY_SOUND = 'notify.wav';
+const ALARM_SOUND = "alarm.wav";
+const NOTIFY_SOUND = "notify.wav";
 
-const TOKEN_CACHE_KEY = 'push_token_registered_for';
+const TOKEN_CACHE_KEY = "push_token_registered_for";
 
-export type PushOwner = { role: 'student' | 'parent'; id: number };
+export type PushOwner = { role: "student" | "parent"; id: number };
 
 export function isExpoGo(): boolean {
   const ownership = (Constants as any).appOwnership;
   const env = (Constants as any).executionEnvironment;
-  return ownership === 'expo' || env === 'storeClient';
+  return ownership === "expo" || env === "storeClient";
 }
 
 /**
  * Lazily require expo-notifications. Returns null in Expo Go so the module
  * is never even loaded there (no console error, no crash).
  */
-export function getNotifications(): typeof import('expo-notifications') | null {
+export function getNotifications(): typeof import("expo-notifications") | null {
   if (isExpoGo()) return null;
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    return require('expo-notifications');
+    return require("expo-notifications");
   } catch (err) {
-    console.warn('expo-notifications unavailable:', err);
+    console.warn("expo-notifications unavailable:", err);
     return null;
   }
 }
 
-function getDevice(): typeof import('expo-device') | null {
+function getDevice(): typeof import("expo-device") | null {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    return require('expo-device');
+    return require("expo-device");
   } catch {
     return null;
   }
@@ -76,7 +86,7 @@ function getDevice(): typeof import('expo-device') | null {
 
 /** MAX-importance channels. Must exist BEFORE the first push arrives. */
 export async function ensureAndroidChannels(): Promise<void> {
-  if (Platform.OS !== 'android') return;
+  if (Platform.OS !== "android") return;
   const N = getNotifications();
   if (!N) return;
 
@@ -90,7 +100,7 @@ export async function ensureAndroidChannels(): Promise<void> {
   }
 
   await N.setNotificationChannelAsync(CHANNEL_ALARM, {
-    name: 'Your Turn — Proceed Now',
+    name: "Your Turn — Proceed Now",
     importance: N.AndroidImportance.MAX,
     // Long vibration loop while the alarm sound plays.
     vibrationPattern: [
@@ -99,14 +109,14 @@ export async function ensureAndroidChannels(): Promise<void> {
     sound: ALARM_SOUND,
     enableVibrate: true,
     enableLights: true,
-    lightColor: '#660810',
+    lightColor: "#660810",
     bypassDnd: true,
     lockscreenVisibility: N.AndroidNotificationVisibility.PUBLIC,
     showBadge: true,
   });
 
   await N.setNotificationChannelAsync(CHANNEL_DEFAULT, {
-    name: 'Queue Updates',
+    name: "Queue Updates",
     importance: N.AndroidImportance.HIGH,
     vibrationPattern: [0, 400, 200, 400],
     sound: NOTIFY_SOUND,
@@ -120,12 +130,12 @@ export async function ensurePermission(): Promise<boolean> {
   if (!N) return false;
 
   const { status: existing } = await N.getPermissionsAsync();
-  if (existing === 'granted') return true;
+  if (existing === "granted") return true;
 
   const { status } = await N.requestPermissionsAsync({
     ios: { allowAlert: true, allowBadge: true, allowSound: true },
   });
-  return status === 'granted';
+  return status === "granted";
 }
 
 export async function getExpoPushToken(): Promise<string | null> {
@@ -144,11 +154,11 @@ export async function getExpoPushToken(): Promise<string | null> {
 
   try {
     const { data } = await N.getExpoPushTokenAsync(
-      projectId ? { projectId } : undefined
+      projectId ? { projectId } : undefined,
     );
     return data ?? null;
   } catch (err) {
-    console.warn('getExpoPushTokenAsync failed:', err);
+    console.warn("getExpoPushTokenAsync failed:", err);
     return null;
   }
 }
@@ -158,34 +168,43 @@ export async function getExpoPushToken(): Promise<string | null> {
  * Safe to call on every launch, after every login, and on token rotation.
  */
 export async function registerPushToken(
-  owner: PushOwner
+  owner: PushOwner,
 ): Promise<string | null> {
   const token = await getExpoPushToken();
   if (!token) return null;
 
   const cacheKey = `${owner.role}:${owner.id}:${token}`;
-  const cached = await AsyncStorage.getItem(TOKEN_CACHE_KEY);
-  if (cached === cacheKey) return token; // already registered on this server
 
   try {
     const res = await fetch(API.registerPushToken, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         owner_type: owner.role,
         owner_id: owner.id,
         role: owner.role,
         // legacy fields kept so an older API build keeps working
-        student_id: owner.role === 'student' ? owner.id : 0,
-        parent_id: owner.role === 'parent' ? owner.id : 0,
+        student_id: owner.role === "student" ? owner.id : 0,
+        parent_id: owner.role === "parent" ? owner.id : 0,
         push_token: token,
         platform: Platform.OS,
       }),
     });
-    if (res.ok) await AsyncStorage.setItem(TOKEN_CACHE_KEY, cacheKey);
+    const body = await res.json().catch(() => null);
+    if (!res.ok || body?.success !== true) {
+      console.warn(
+        "Push token registration rejected:",
+        res.status,
+        body?.message ?? "Invalid server response",
+      );
+      return null;
+    }
+    // Always POST once per app launch. The local cache is only used for
+    // logout; treating any HTTP 200 as registered previously hid DB errors.
+    await AsyncStorage.setItem(TOKEN_CACHE_KEY, cacheKey);
     return token;
   } catch (err) {
-    console.warn('registerPushToken failed:', err);
+    console.warn("registerPushToken failed:", err);
     return null;
   }
 }
@@ -196,13 +215,13 @@ export async function unregisterPushToken(owner: PushOwner): Promise<void> {
   await AsyncStorage.removeItem(TOKEN_CACHE_KEY);
   if (!cached) return;
 
-  const token = cached.split(':').slice(2).join(':');
+  const token = cached.split(":").slice(2).join(":");
   try {
     await fetch(API.registerPushToken, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        action: 'unregister',
+        action: "unregister",
         owner_type: owner.role,
         owner_id: owner.id,
         push_token: token,

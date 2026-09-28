@@ -2,7 +2,7 @@
   "expo": {
     "name": "Uniqueue",
     "slug": "Uniqueue",
-    "version": "1.0.0",
+    "version": "1.2.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "uniqueue",
@@ -29,6 +29,7 @@
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_DATA_SYNC",
         "android.permission.POST_NOTIFICATIONS",
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.SCHEDULE_EXACT_ALARM",
@@ -68,7 +69,7 @@
             "./assets/sounds/alarm.wav",
             "./assets/sounds/notify.wav"
           ],
-          "defaultChannel": "queue_updates_v2"
+          "defaultChannel": "queue_updates_v5"
         }
       ],
       [

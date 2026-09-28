@@ -15,6 +15,7 @@ import { router } from 'expo-router';
 import AnimatedPressable from '../components/ui/animated-pressable';
 import { API } from '@/constants/backend';
 import { fetchJsonOrNull } from '@/utils/api';
+import { registerPushToken } from '@/components/notification/push';
 import { COLORS, RADIUS, SPACING } from '../constants/theme';
 
 export default function ParentSignup() {
@@ -53,6 +54,8 @@ export default function ParentSignup() {
       if (res?.success) {
         await AsyncStorage.setItem('user', JSON.stringify(res.user));
         await AsyncStorage.setItem('role', 'parent');
+        const id = Number(res.user?.id ?? res.user?.parent_id ?? 0);
+        if (id) await registerPushToken({ role: 'parent', id });
         Alert.alert('Welcome', 'Account created', [
           { text: 'OK', onPress: () => router.replace('/parent/home') },
         ]);

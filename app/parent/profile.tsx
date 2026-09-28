@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { clearLiveTicketWidget } from '@/utils/live-ticket-widget';
 import { router } from 'expo-router';
 
 import AppHeader from '../../components/layout/app-header';
@@ -78,6 +79,7 @@ export default function ParentProfile() {
         text: 'Sign out',
         style: 'destructive',
         onPress: async () => {
+          await clearLiveTicketWidget();
           await AsyncStorage.multiRemove(['user', 'role']);
           router.replace('/login');
         },

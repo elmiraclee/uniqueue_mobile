@@ -16,6 +16,7 @@ import { Picker } from '@react-native-picker/picker';
 import * as ImagePicker from 'expo-image-picker';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { clearLiveTicketWidget } from '@/utils/live-ticket-widget';
 import { useRouter } from 'expo-router';
 
 import { API, API_URL, ASSET_BASE_URL } from '@/constants/backend';
@@ -190,6 +191,7 @@ export default function Profile() {
         text: 'Sign Out',
         style: 'destructive',
         onPress: async () => {
+          await clearLiveTicketWidget();
           await AsyncStorage.removeItem('user');
           await AsyncStorage.removeItem('role');
           router.replace('/login');
