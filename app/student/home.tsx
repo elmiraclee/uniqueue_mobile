@@ -16,6 +16,7 @@ import FeedbackModal, {
 import CurrentQueueModal from "@/components/queue/current-queue-modal";
 import ProceedModal, { ProceedKind } from "@/components/queue/proceed-modal";
 import { useNotifications } from "@/components/notification/use-notification";
+import UnavailableServicesModal from "@/components/queue/unavailable-services-modal";
 import RequeueModal from "@/components/queue/requeue-modal";
 import { API, API_URL, ASSET_BASE_URL } from "@/constants/backend";
 import { Ionicons } from "@expo/vector-icons";
@@ -53,6 +54,14 @@ interface Office {
   today_ticket_count?: number;
   is_full?: boolean;
   transaction_type?: string;
+  // Today's availability (web get_office_queue_availability()).
+  is_open?: boolean;
+  can_join?: boolean;
+  availability_reason?: string | null;
+  open_time?: string | null;
+  close_time?: string | null;
+  cutoff_time?: string | null;
+  is_holiday?: boolean;
 }
 
 // OFFICE EVENT — e.g. "Enrollment", shown nested under its office so a
@@ -123,6 +132,9 @@ export default function StudentHome() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [currentQueue, setCurrentQueue] = useState<any>(null);
+  // Every active ticket incl. reserved ones (smart multi-queue, web parity).
+  const [allQueues, setAllQueues] = useState<any[]>([]);
+  const [showUnavailableModal, setShowUnavailableModal] = useState(false);
   const [showQueueModal, setShowQueueModal] = useState(false);
   const [studentId, setStudentId] = useState<number>(0);
 
@@ -326,6 +338,7 @@ export default function StudentHome() {
       );
       const queue = data?.success ? data.queue : null;
       setCurrentQueue(queue);
+      setAllQueues(data?.success ? data.queues || (queue ? [queue] : []) : []);
       if (queue?.id) {
         updateLiveTicketWidget({
           ticketId: Number(queue.id),
@@ -556,29 +569,56 @@ export default function StudentHome() {
     }
   }, [events]);
 
-  const joinQueue = (office: Office) => {
+  const joinQueue = async (office: Office) => {
     // Same blocking rules as the web dashboard:
     // active ticket OR pending feedback OR office full → cannot join.
     if (pendingFeedback) {
       setShowFeedbackModal(true);
       return;
     }
-    if (currentQueue || Object.values(activeEventTickets).some(Boolean)) {
-      // Already on a queue — open ticket / modal instead of starting another
-      if (currentQueue?.id) {
-        openTicketDetail();
-      } else {
-        setShowQueueModal(true);
-      }
+    if (office.can_join === false) {
+      Alert.alert(office.name, office.availability_reason || "This office is not accepting queues right now.");
       return;
     }
     if (office.is_full) {
       return;
     }
+    // Web parity (smart multi-queue): a student may queue at another office
+    // while a ticket is active, as long as the timing gate allows it.
+    const sameOffice = allQueues.find((q) => Number(q.office_id) === Number(office.id));
+    if (sameOffice) {
+      router.push({
+        pathname: "/student/ticket",
+        params: { ticketId: String(sameOffice.id), queueId: String(sameOffice.id) },
+      } as any);
+      return;
+    }
+    if (allQueues.length > 0 || Object.values(activeEventTickets).some(Boolean)) {
+      const ok = await prequeueAllowed(office);
+      if (!ok) return;
+    }
     router.push(`/student/queues/office-queue?office=${office.slug}`);
   };
 
-  const joinEventQueue = (office: Office, event: OfficeEvent) => {
+  /** Dashboard-level smart multi-queue check (web prequeue-check.php). */
+  const prequeueAllowed = async (office: Office): Promise<boolean> => {
+    try {
+      const pre = await fetchJsonOrNull(
+        `${API.prequeueCheck}?student_id=${studentId}&office_id=${office.id}&type=walkin`,
+      );
+      if (pre?.success && pre.allowed === false) {
+        Alert.alert(
+          "Cannot join yet",
+          (pre.reason || "You cannot join this office right now.") +
+            (pre.retry_at ? `\n\nTry again around ${pre.retry_at}.` : ""),
+        );
+        return false;
+      }
+    } catch {}
+    return true;
+  };
+
+  const joinEventQueue = async (office: Office, event: OfficeEvent) => {
     if (pendingFeedback) {
       setShowFeedbackModal(true);
       return;
@@ -587,13 +627,20 @@ export default function StudentHome() {
     if (activeEventTickets[event.id]) {
       return;
     }
-    if (currentQueue || Object.values(activeEventTickets).some(Boolean)) {
-      if (currentQueue?.id) openTicketDetail();
-      else setShowQueueModal(true);
+    if (office.can_join === false) {
+      Alert.alert(office.name, office.availability_reason || "This office is not accepting queues right now.");
       return;
     }
     if (office.is_full) {
       return;
+    }
+    if (allQueues.length > 0 || Object.values(activeEventTickets).some(Boolean)) {
+      if (allQueues.some((q) => Number(q.office_id) === Number(office.id))) {
+        Alert.alert("Already queued", "You already have a queue at this office.");
+        return;
+      }
+      const ok = await prequeueAllowed(office);
+      if (!ok) return;
     }
     router.push(
       `/student/queues/office-queue?office=${office.slug}&event_id=${event.id}`,
@@ -603,11 +650,14 @@ export default function StudentHome() {
   /** True when the student is blocked from joining any new queue
    *  (active regular ticket, any active event ticket, or pending feedback). */
   const hasActiveEventTicket = Object.values(activeEventTickets).some(Boolean);
-  const joinBlocked = !!(
-    currentQueue ||
-    pendingFeedback ||
-    hasActiveEventTicket
-  );
+  // Only pending feedback blocks every office (web parity); active tickets
+  // are handled per office by the smart multi-queue pre-check.
+  const joinBlocked = !!pendingFeedback;
+  const officeClosed = (o: Office) => o.can_join === false;
+  const officeHours = (o: Office) =>
+    o.open_time && o.close_time
+      ? `${String(o.open_time).slice(0, 5)} – ${String(o.close_time).slice(0, 5)}`
+      : null;
 
   const openTicketDetail = () => {
     if (!currentQueue?.id) {
@@ -835,7 +885,7 @@ export default function StudentHome() {
                   ) : (
                     <AnimatedPressable
                       style={styles.needBtn}
-                      onPress={() => setServiceNeedTarget(svc)}
+                      onPress={() => setShowUnavailableModal(true)}
                     >
                       <Text style={styles.needBtnText}>I need this</Text>
                     </AnimatedPressable>
@@ -844,6 +894,32 @@ export default function StudentHome() {
               ))}
             </View>
           )}
+
+          {/* Other active / reserved tickets (smart multi-queue) */}
+          {allQueues
+            .filter((q) => Number(q.id) !== Number(currentQueue?.id))
+            .map((q) => (
+              <AnimatedPressable
+                key={q.id}
+                style={styles.unavailableSection}
+                onPress={() =>
+                  router.push({
+                    pathname: "/student/ticket",
+                    params: { ticketId: String(q.id), queueId: String(q.id) },
+                  } as any)
+                }
+              >
+                <Text style={styles.unavailableTitle}>
+                  {q.status === "reserved" ? "Reserved queue" : "Also on queue"} · #{q.queue_number}
+                </Text>
+                <Text style={styles.unavailableOffice}>
+                  {q.office_name}
+                  {q.status === "reserved"
+                    ? ` — joins the line after #${q.depends_on_queue_number || currentQueue?.queue_number || ""}${q.depends_on_office_name ? ` at ${q.depends_on_office_name}` : ""} is done`
+                    : q.window_name ? ` · ${q.window_name}` : ""}
+                </Text>
+              </AnimatedPressable>
+            ))}
 
           {/* Proceed now banner — mirrors web's called-info panel */}
           {currentQueue &&
@@ -1056,9 +1132,11 @@ export default function StudentHome() {
                       </Text>
                     </View>
 
-                    {office.is_full ? (
+                    {office.is_full || officeClosed(office) ? (
                       <View style={styles.fullBadge}>
-                        <Text style={styles.fullBadgeText}>FULL</Text>
+                        <Text style={styles.fullBadgeText}>
+                          {office.is_full ? "FULL" : office.is_holiday ? "HOLIDAY" : "CLOSED"}
+                        </Text>
                       </View>
                     ) : (
                       <View style={styles.activeBadge}>
@@ -1071,12 +1149,19 @@ export default function StudentHome() {
                   <Text style={styles.officeDescription} numberOfLines={2}>
                     {office.description}
                   </Text>
+                  {(officeHours(office) || officeClosed(office)) && (
+                    <Text style={[styles.officeDescription, { marginTop: 4, color: officeClosed(office) ? "#dc2626" : COLORS.gray }]}>
+                      {officeClosed(office) && office.availability_reason
+                        ? office.availability_reason
+                        : `Hours today: ${officeHours(office)}${office.cutoff_time ? ` · cutoff ${String(office.cutoff_time).slice(0, 5)}` : ""}`}
+                    </Text>
+                  )}
 
                   <View style={styles.cardFooter}>
                     <AnimatedPressable
                       style={[
                         styles.joinButton,
-                        (office.is_full || joinBlocked) &&
+                        (office.is_full || joinBlocked || officeClosed(office)) &&
                           styles.joinButtonDisabled,
                       ]}
                       onPress={() => joinQueue(office)}
@@ -1086,12 +1171,14 @@ export default function StudentHome() {
                         {office.is_full
                           ? "Full for today"
                           : joinBlocked
-                            ? currentQueue
-                              ? "Already on queue"
-                              : "Feedback required"
-                            : "Join Queue"}
+                            ? "Feedback required"
+                            : officeClosed(office)
+                              ? "Not accepting queues"
+                              : allQueues.some((q) => Number(q.office_id) === Number(office.id))
+                                ? "View my ticket"
+                                : "Join Queue"}
                       </Text>
-                      {!office.is_full && !joinBlocked && (
+                      {!office.is_full && !joinBlocked && !officeClosed(office) && (
                         <Ionicons
                           name="arrow-forward"
                           size={16}
@@ -1153,7 +1240,7 @@ export default function StudentHome() {
                               styles.eventJoinButton,
                               isOnThisEventQueue &&
                                 styles.eventJoinButtonOnQueue,
-                              (office.is_full ||
+                              (office.is_full || officeClosed(office) ||
                                 (joinBlocked && !isOnThisEventQueue)) &&
                                 styles.eventJoinButtonDisabled,
                             ]}
@@ -1176,10 +1263,10 @@ export default function StudentHome() {
                                 : office.is_full
                                   ? "Full"
                                   : joinBlocked
-                                    ? currentQueue || hasActiveEventTicket
-                                      ? "Already on queue"
-                                      : "Feedback required"
-                                    : "Join"}
+                                    ? "Feedback required"
+                                    : officeClosed(office)
+                                      ? "Closed"
+                                      : "Join"}
                             </Text>
                           </AnimatedPressable>
                         </View>
@@ -1238,6 +1325,15 @@ export default function StudentHome() {
           </View>
         </View>
       )}
+
+      <UnavailableServicesModal
+        visible={showUnavailableModal}
+        onClose={() => {
+          setShowUnavailableModal(false);
+          fetchUnavailableServices(studentId);
+        }}
+        studentId={studentId}
+      />
 
       <RequeueModal
         visible={showRequeueModal}

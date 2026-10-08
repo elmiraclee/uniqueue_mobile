@@ -1,6 +1,12 @@
-import { useEffect, useState } from 'react';
+/**
+ * Parent profile — mobile version of web parent/parent-profile.php:
+ * account details, linked children, and a separate change-password form
+ * (current + new + confirm, same strength rule as the web).
+ */
+import { useCallback, useState } from 'react';
 import {
   Alert,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -9,59 +15,91 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { clearLiveTicketWidget } from '@/utils/live-ticket-widget';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 
 import AppHeader from '../../components/layout/app-header';
 import AnimatedPressable from '../../components/ui/animated-pressable';
+import PasswordChecklist from '@/components/ui/password-checklist';
 import { API } from '@/constants/backend';
 import { fetchJsonOrNull } from '@/utils/api';
+import { passwordError } from '@/utils/password';
 import { COLORS, RADIUS, SPACING } from '../../constants/theme';
+
+type Child = {
+  id: number;
+  first_name: string;
+  last_name: string;
+  sr_code: string;
+  school_level?: string;
+  account_status?: string;
+  relationship?: string;
+};
 
 export default function ParentProfile() {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [contact, setContact] = useState('');
-  const [newPassword, setNewPassword] = useState('');
+  const [memberSince, setMemberSince] = useState('');
+  const [children, setChildren] = useState<Child[]>([]);
   const [parentId, setParentId] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    (async () => {
+  const [currentPw, setCurrentPw] = useState('');
+  const [newPw, setNewPw] = useState('');
+  const [confirmPw, setConfirmPw] = useState('');
+  const [pwLoading, setPwLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
       const raw = await AsyncStorage.getItem('user');
       if (!raw) return;
       const u = JSON.parse(raw);
-      setParentId(u.id);
+      const id = Number(u.id) || 0;
+      setParentId(id);
       setFullName(u.full_name || '');
       setEmail(u.email || '');
       setContact(u.contact_number || '');
-    })();
+      const res = await fetchJsonOrNull(API.getParentProfile, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parent_id: id }),
+      });
+      if (res?.success) {
+        setFullName(res.user?.full_name || '');
+        setEmail(res.user?.email || '');
+        setContact(res.user?.contact_number || '');
+        setMemberSince(res.user?.created_at || '');
+        setChildren(res.children || []);
+      }
+    } finally {
+      setRefreshing(false);
+    }
   }, []);
 
-  const save = async () => {
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const saveDetails = async () => {
     setLoading(true);
     try {
       const res = await fetchJsonOrNull(API.updateParentProfile, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          action: 'update_details',
           parent_id: parentId,
-          full_name: fullName,
-          email,
-          contact_number: contact,
-          new_password: newPassword || undefined,
+          full_name: fullName.trim(),
+          email: email.trim(),
+          contact_number: contact.trim(),
         }),
       });
       if (res?.success) {
         const raw = await AsyncStorage.getItem('user');
-        if (raw) {
-          const u = JSON.parse(raw);
-          u.full_name = fullName;
-          u.email = email;
-          u.contact_number = contact;
-          await AsyncStorage.setItem('user', JSON.stringify(u));
-        }
-        setNewPassword('');
-        Alert.alert('Saved', 'Profile updated');
+        const u = raw ? JSON.parse(raw) : {};
+        Object.assign(u, res.user || { full_name: fullName, email, contact_number: contact });
+        await AsyncStorage.setItem('user', JSON.stringify(u));
+        if (res.user?.contact_number) setContact(res.user.contact_number);
+        Alert.alert('Saved', res.message || 'Profile updated.');
       } else {
         Alert.alert('Error', res?.message || 'Update failed');
       }
@@ -69,6 +107,37 @@ export default function ParentProfile() {
       Alert.alert('Error', 'Network error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const changePassword = async () => {
+    if (!currentPw) return Alert.alert('Password', 'Enter your current password.');
+    const err = passwordError(newPw);
+    if (err) return Alert.alert('Password', err);
+    if (newPw !== confirmPw) return Alert.alert('Password', 'New passwords do not match.');
+    setPwLoading(true);
+    try {
+      const res = await fetchJsonOrNull(API.updateParentProfile, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'change_password',
+          parent_id: parentId,
+          current_password: currentPw,
+          new_password: newPw,
+          confirm_password: confirmPw,
+        }),
+      });
+      if (res?.success) {
+        setCurrentPw(''); setNewPw(''); setConfirmPw('');
+        Alert.alert('Done', res.message || 'Password changed successfully.');
+      } else {
+        Alert.alert('Error', res?.message || 'Could not change password');
+      }
+    } catch {
+      Alert.alert('Error', 'Network error');
+    } finally {
+      setPwLoading(false);
     }
   };
 
@@ -90,40 +159,63 @@ export default function ParentProfile() {
   return (
     <View style={styles.container}>
       <AppHeader title="Parent Profile" />
-      <ScrollView contentContainerStyle={styles.scroll}>
-        <Text style={styles.label}>Full name</Text>
-        <TextInput style={styles.input} value={fullName} onChangeText={setFullName} />
-        <Text style={styles.label}>Email</Text>
-        <TextInput
-          style={styles.input}
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          keyboardType="email-address"
-        />
-        <Text style={styles.label}>Contact number</Text>
-        <TextInput
-          style={styles.input}
-          value={contact}
-          onChangeText={setContact}
-          keyboardType="phone-pad"
-        />
-        <Text style={styles.label}>New password (optional)</Text>
-        <TextInput
-          style={styles.input}
-          value={newPassword}
-          onChangeText={setNewPassword}
-          secureTextEntry
-          placeholder="Leave blank to keep current"
-        />
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
+      >
+        <View style={styles.panel}>
+          <Text style={styles.section}>Account details</Text>
+          {!!memberSince && (
+            <Text style={styles.meta}>Member since {new Date(memberSince.replace(' ', 'T')).toLocaleDateString()}</Text>
+          )}
+          <Text style={styles.label}>Full name</Text>
+          <TextInput style={styles.input} value={fullName} onChangeText={setFullName} />
+          <Text style={styles.label}>Email</Text>
+          <TextInput style={styles.input} value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
+          <Text style={styles.label}>Contact number</Text>
+          <TextInput style={styles.input} value={contact} onChangeText={setContact} keyboardType="phone-pad" placeholder="09XXXXXXXXX" />
+          <AnimatedPressable style={[styles.saveBtn, loading && { opacity: 0.6 }]} onPress={saveDetails} disabled={loading}>
+            <Text style={styles.saveText}>{loading ? 'Saving…' : 'Save changes'}</Text>
+          </AnimatedPressable>
+        </View>
 
-        <AnimatedPressable
-          style={[styles.saveBtn, loading && { opacity: 0.6 }]}
-          onPress={save}
-          disabled={loading}
-        >
-          <Text style={styles.saveText}>{loading ? 'Saving…' : 'Save changes'}</Text>
-        </AnimatedPressable>
+        <View style={styles.panel}>
+          <Text style={styles.section}>Linked children ({children.length})</Text>
+          {children.length === 0 ? (
+            <Text style={styles.meta}>No linked children yet.</Text>
+          ) : (
+            children.map((c) => (
+              <View key={c.id} style={styles.childRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.childName}>{c.first_name} {c.last_name}</Text>
+                  <Text style={styles.meta}>
+                    {c.sr_code}{c.school_level ? ` · ${c.school_level}` : ''}{c.relationship ? ` · ${c.relationship}` : ''}
+                  </Text>
+                </View>
+                <Text style={[styles.badge, c.account_status === 'profile_only' ? styles.badgeWarn : styles.badgeOk]}>
+                  {c.account_status === 'profile_only' ? 'Profile only' : 'Student account'}
+                </Text>
+              </View>
+            ))
+          )}
+          <AnimatedPressable onPress={() => router.push('/parent/add-child')} style={{ marginTop: 8 }}>
+            <Text style={{ color: COLORS.primary, fontWeight: '700' }}>+ Add a child</Text>
+          </AnimatedPressable>
+        </View>
+
+        <View style={styles.panel}>
+          <Text style={styles.section}>Change password</Text>
+          <Text style={styles.label}>Current password</Text>
+          <TextInput style={styles.input} value={currentPw} onChangeText={setCurrentPw} secureTextEntry />
+          <Text style={styles.label}>New password</Text>
+          <TextInput style={styles.input} value={newPw} onChangeText={setNewPw} secureTextEntry />
+          <Text style={styles.label}>Confirm new password</Text>
+          <TextInput style={styles.input} value={confirmPw} onChangeText={setConfirmPw} secureTextEntry />
+          <PasswordChecklist password={newPw} confirm={confirmPw} />
+          <AnimatedPressable style={[styles.saveBtn, pwLoading && { opacity: 0.6 }]} onPress={changePassword} disabled={pwLoading}>
+            <Text style={styles.saveText}>{pwLoading ? 'Updating…' : 'Update password'}</Text>
+          </AnimatedPressable>
+        </View>
 
         <AnimatedPressable style={styles.logoutBtn} onPress={logout}>
           <Text style={styles.logoutText}>Sign out</Text>
@@ -135,33 +227,22 @@ export default function ParentProfile() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  scroll: { padding: SPACING.lg },
+  scroll: { padding: SPACING.lg, paddingBottom: 48 },
+  panel: { backgroundColor: '#fff', borderRadius: RADIUS.md, padding: 14, marginBottom: 14, borderWidth: 1, borderColor: '#f3f4f6' },
+  section: { fontSize: 16, fontWeight: '800', color: COLORS.text, marginBottom: 8 },
   label: { fontWeight: '600', marginBottom: 6, color: COLORS.text },
+  meta: { fontSize: 12, color: COLORS.gray, marginBottom: 6 },
   input: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: RADIUS.md,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginBottom: SPACING.md,
-    fontSize: 16,
+    backgroundColor: '#fff', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: RADIUS.md,
+    paddingHorizontal: 14, paddingVertical: 12, marginBottom: SPACING.md, fontSize: 16,
   },
-  saveBtn: {
-    backgroundColor: COLORS.primary,
-    borderRadius: RADIUS.md,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 8,
-  },
+  childRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
+  childName: { fontWeight: '700', color: COLORS.text },
+  badge: { fontSize: 11, fontWeight: '700', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, overflow: 'hidden' },
+  badgeOk: { backgroundColor: '#dcfce7', color: '#166534' },
+  badgeWarn: { backgroundColor: '#fef3c7', color: '#92400e' },
+  saveBtn: { backgroundColor: COLORS.primary, borderRadius: RADIUS.md, paddingVertical: 14, alignItems: 'center', marginTop: 4 },
   saveText: { color: '#fff', fontWeight: '700' },
-  logoutBtn: {
-    marginTop: 24,
-    paddingVertical: 14,
-    alignItems: 'center',
-    borderRadius: RADIUS.md,
-    borderWidth: 1.5,
-    borderColor: '#ef4444',
-  },
+  logoutBtn: { marginTop: 8, paddingVertical: 14, alignItems: 'center', borderRadius: RADIUS.md, borderWidth: 1.5, borderColor: '#ef4444' },
   logoutText: { color: '#ef4444', fontWeight: '700' },
 });

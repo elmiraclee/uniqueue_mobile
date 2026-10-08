@@ -270,6 +270,14 @@ export default function Login() {
               <Text style={{ color: COLORS.primary, fontWeight: '600' }}>Forgot password?</Text>
             </Pressable>
 
+            {loginRole === 'student' && (
+              <Pressable onPress={() => router.push('/activate-account')} style={{ marginTop: 12, alignItems: 'center' }}>
+                <Text style={{ color: COLORS.primary, fontWeight: '600' }}>
+                  Parent made your profile? Activate your account
+                </Text>
+              </Pressable>
+            )}
+
             {loginRole === 'parent' && (
               <Pressable onPress={() => router.push('/parent-signup')} style={{ marginTop: 12, alignItems: 'center' }}>
                 <Text style={{ color: COLORS.primary, fontWeight: '600' }}>Create parent account</Text>

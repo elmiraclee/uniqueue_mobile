@@ -14,6 +14,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import FeedbackModal from "@/components/feedback/feedback-modal";
 import ProceedModal, { ProceedKind } from "@/components/queue/proceed-modal";
+import RequeueModal from "@/components/queue/requeue-modal";
 import {
   isAlarmType,
   useNotifications,
@@ -50,12 +51,37 @@ interface Child {
   active_status: string | null;
   active_queue_number: string | null;
   active_office: string | null;
+  active_count?: number;
+}
+
+/** One live ticket of a child (get_current_queue + get_queue_details). */
+interface LiveTicket {
+  id: number;
+  queue_number: string;
+  status: string;
+  office_name: string;
+  window_name?: string | null;
+  people_ahead?: number;
+  estimated_wait_minutes?: number | null;
+  is_reserved?: boolean;
+  is_requeued?: boolean;
+  requeue_confirmed?: boolean;
+  depends_on_queue_number?: string | null;
+  depends_on_office_name?: string | null;
+  called_at?: string | null;
 }
 
 function hasActiveTicket(c: Child): boolean {
   const id = Number(c.active_ticket_id);
-  return Number.isFinite(id) && id > 0;
+  return (Number.isFinite(id) && id > 0) || Number(c.active_count || 0) > 0;
 }
+
+const post = (url: string, body: any) =>
+  fetchJsonOrNull(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 
 export default function ParentHome() {
   const [children, setChildren] = useState<Child[]>([]);
@@ -68,9 +94,17 @@ export default function ParentHome() {
   const feedbackBlockedIds = new Set(
     pendingFeedbackList.map((f) => Number(f.student_id)),
   );
-  // One active queue per parent account (practical: parent can't be in two offices)
-  const familyHasActiveQueue = children.some((c) => hasActiveTicket(c));
-  const activeQueueChild = children.find((c) => hasActiveTicket(c));
+  // Web parity: every child can hold their own tickets (no family-wide lock).
+  const [parentIdState, setParentIdState] = useState(0);
+  const [liveByChild, setLiveByChild] = useState<Record<number, LiveTicket[]>>({});
+  const activeTicketCount = Object.values(liveByChild).reduce((n, l) => n + l.length, 0);
+  const requeueTarget = (() => {
+    for (const [cid, list] of Object.entries(liveByChild)) {
+      const t = list.find((x) => x.is_requeued && !x.requeue_confirmed);
+      if (t) return { childId: Number(cid), ticket: t };
+    }
+    return null;
+  })();
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -80,6 +114,7 @@ export default function ParentHome() {
       const user = JSON.parse(raw);
       setParentName(user.full_name || "Parent");
       const parentId = user.id;
+      setParentIdState(Number(parentId) || 0);
 
       const [kidsRes, reqRes, fbRes] = await Promise.all([
         fetchJsonOrNull(API.getParentChildren, {
@@ -102,6 +137,23 @@ export default function ParentHome() {
       if (kidsRes?.success) {
         const loadedChildren: Child[] = kidsRes.children || [];
         setChildren(loadedChildren);
+
+        // Live details for each child's active tickets (people ahead, ETA, window).
+        const liveEntries = await Promise.all(
+          loadedChildren.filter(hasActiveTicket).map(async (child) => {
+            const cur = await post(API.getCurrentQueue, { parent_id: parentId, child_id: child.id });
+            const queues: any[] = cur?.success ? cur.queues || (cur.queue ? [cur.queue] : []) : [];
+            const detailed = await Promise.all(
+              queues.map(async (q) => {
+                if (q.status === "reserved") return q as LiveTicket;
+                const d = await post(API.getQueueDetails, { parent_id: parentId, child_id: child.id, ticket_id: q.id });
+                return { ...q, ...(d?.success ? d.queue : {}) } as LiveTicket;
+              }),
+            );
+            return [child.id, detailed] as const;
+          }),
+        );
+        setLiveByChild(Object.fromEntries(liveEntries));
         const activeChild = loadedChildren.find((child) =>
           hasActiveTicket(child),
         );
@@ -135,11 +187,38 @@ export default function ParentHome() {
     }
   }, []);
 
+  // Same 5-second live refresh as the web parent dashboard.
   useFocusEffect(
     useCallback(() => {
       load();
+      const t = setInterval(load, 5000);
+      return () => clearInterval(t);
     }, [load]),
   );
+
+  const cancelTicket = (child: Child, t: LiveTicket) => {
+    Alert.alert(
+      "Cancel queue",
+      `Cancel ticket #${t.queue_number} at ${t.office_name} for ${child.first_name}?`,
+      [
+        { text: "Keep", style: "cancel" },
+        {
+          text: "Cancel queue",
+          style: "destructive",
+          onPress: async () => {
+            const res = await post(API.cancelQueue, {
+              parent_id: parentIdState,
+              child_id: child.id,
+              student_id: child.id,
+              queue_id: t.id,
+            });
+            if (!res?.success) Alert.alert("Not cancelled", res?.message || "Unable to cancel this ticket.");
+            load();
+          },
+        },
+      ],
+    );
+  };
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -200,6 +279,7 @@ export default function ParentHome() {
           <Text style={styles.sub}>
             Parent / Guardian · {children.length}{" "}
             {children.length === 1 ? "child" : "children"} linked
+            {activeTicketCount > 0 ? ` · ${activeTicketCount} active ${activeTicketCount === 1 ? "queue" : "queues"}` : ""}
           </Text>
         </View>
 
@@ -292,24 +372,35 @@ export default function ParentHome() {
                   </View>
                 </View>
 
-                {hasActiveTicket(c) ? (
-                  <View style={styles.ticketBox}>
+                {(liveByChild[c.id] || []).map((t) => (
+                  <View key={t.id} style={styles.ticketBox}>
                     <View style={styles.ticketRow}>
-                      <Text style={styles.ticketOffice}>{c.active_office}</Text>
-                      <StatusBadge status={c.active_status || "waiting"} />
+                      <Text style={styles.ticketOffice}>{t.office_name}</Text>
+                      <StatusBadge status={t.status || "waiting"} />
                     </View>
-                    <Text style={styles.queueNum}>
-                      #{c.active_queue_number}
-                    </Text>
-                    <View style={{ gap: 8, width: "100%" }}>
+                    <Text style={styles.queueNum}>#{t.queue_number}</Text>
+                    {t.is_reserved ? (
+                      <Text style={styles.cardMeta}>
+                        Reserved — joins the line after
+                        {t.depends_on_queue_number ? ` #${t.depends_on_queue_number}` : " the current ticket"}
+                        {t.depends_on_office_name ? ` at ${t.depends_on_office_name}` : ""} is done.
+                      </Text>
+                    ) : (
+                      <Text style={styles.cardMeta}>
+                        {t.window_name ? `${t.window_name} · ` : ""}
+                        {typeof t.people_ahead === "number" ? `${t.people_ahead} ahead` : ""}
+                        {t.estimated_wait_minutes != null ? ` · ~${t.estimated_wait_minutes} min` : ""}
+                      </Text>
+                    )}
+                    <View style={{ gap: 8, width: "100%", marginTop: 8 }}>
                       <AnimatedPressable
                         style={styles.outlineBtn}
                         onPress={() =>
                           router.push({
                             pathname: "/parent/ticket",
                             params: {
-                              ticketId: String(c.active_ticket_id),
-                              queueId: String(c.active_ticket_id),
+                              ticketId: String(t.id),
+                              queueId: String(t.id),
                               childId: String(c.id),
                               studentId: String(c.id),
                               asParent: "1",
@@ -319,56 +410,50 @@ export default function ParentHome() {
                       >
                         <Text style={styles.outlineBtnText}>View ticket</Text>
                       </AnimatedPressable>
-                      <AnimatedPressable
-                        style={styles.outlineBtn}
-                        onPress={() =>
-                          router.push({
-                            pathname: "/parent/live-queue",
-                            params: {
-                              queueId: String(c.active_ticket_id),
-                              childId: String(c.id),
-                              studentId: String(c.id),
-                            },
-                          } as any)
-                        }
-                      >
-                        <Text style={styles.outlineBtnText}>Live board</Text>
-                      </AnimatedPressable>
+                      {!t.is_reserved && (
+                        <AnimatedPressable
+                          style={styles.outlineBtn}
+                          onPress={() =>
+                            router.push({
+                              pathname: "/parent/live-queue",
+                              params: { queueId: String(t.id), childId: String(c.id), studentId: String(c.id) },
+                            } as any)
+                          }
+                        >
+                          <Text style={styles.outlineBtnText}>Live board</Text>
+                        </AnimatedPressable>
+                      )}
+                      {["waiting", "reserved", "next"].includes(t.status) && !t.called_at && (
+                        <AnimatedPressable
+                          style={[styles.outlineBtn, { borderColor: "#ef4444" }]}
+                          onPress={() => cancelTicket(c, t)}
+                        >
+                          <Text style={[styles.outlineBtnText, { color: "#ef4444" }]}>Cancel queue</Text>
+                        </AnimatedPressable>
+                      )}
                     </View>
                   </View>
-                ) : (
-                  <View style={styles.noTicket}>
-                    <Text style={styles.noTicketText}>No active queue</Text>
-                    {feedbackBlockedIds.has(c.id) ? (
-                      <Text style={styles.noTicketText}>
-                        Submit pending feedback first
+                ))}
+                <View style={styles.noTicket}>
+                  {!hasActiveTicket(c) && <Text style={styles.noTicketText}>No active queue</Text>}
+                  {feedbackBlockedIds.has(c.id) ? (
+                    <Text style={styles.noTicketText}>Submit pending feedback first</Text>
+                  ) : (
+                    <AnimatedPressable
+                      style={styles.outlineBtn}
+                      onPress={() =>
+                        router.push({
+                          pathname: "/parent/queue",
+                          params: { forStudentId: String(c.id), childName: `${c.first_name} ${c.last_name}` },
+                        } as any)
+                      }
+                    >
+                      <Text style={styles.outlineBtnText}>
+                        {hasActiveTicket(c) ? "Queue at another office" : "Join queue for child"}
                       </Text>
-                    ) : familyHasActiveQueue ? (
-                      <Text style={styles.noTicketText}>
-                        {activeQueueChild
-                          ? `${activeQueueChild.first_name} is already on queue. Finish or cancel that ticket first.`
-                          : "Another child is already on queue. Only one active queue at a time."}
-                      </Text>
-                    ) : (
-                      <AnimatedPressable
-                        style={styles.outlineBtn}
-                        onPress={() =>
-                          router.push({
-                            pathname: "/parent/queue",
-                            params: {
-                              forStudentId: String(c.id),
-                              childName: `${c.first_name} ${c.last_name}`,
-                            },
-                          } as any)
-                        }
-                      >
-                        <Text style={styles.outlineBtnText}>
-                          Join queue for child
-                        </Text>
-                      </AnimatedPressable>
-                    )}
-                  </View>
-                )}
+                    </AnimatedPressable>
+                  )}
+                </View>
               </View>
             ))
           )}
@@ -393,6 +478,15 @@ export default function ParentHome() {
           }}
         />
       )}
+
+      <RequeueModal
+        visible={!!requeueTarget}
+        studentId={requeueTarget?.childId ?? 0}
+        parentId={parentIdState}
+        ticketId={requeueTarget?.ticket.id ?? null}
+        queueNumber={requeueTarget?.ticket.queue_number}
+        onResolved={() => load()}
+      />
 
       <ProceedModal
         visible={!!alarm}

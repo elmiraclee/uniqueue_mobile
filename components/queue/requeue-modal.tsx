@@ -12,6 +12,8 @@ interface Props {
   studentId: number;
   ticketId: number | null;
   queueNumber?: string | null;
+  // Set when a parent responds on behalf of a linked child.
+  parentId?: number;
   // Called after the student responds (either action), so the parent can
   // refresh its current-queue state.
   onResolved: (action: 'requeued' | 'cancelled') => void;
@@ -22,7 +24,7 @@ interface Props {
 // called) and moved them out of the active slot. The student must
 // choose to either rejoin at the back of the line or cancel outright.
 // Mirrors public/assets/js/student-dashboard.js's requeue modal on web.
-export default function RequeueModal({ visible, studentId, ticketId, queueNumber, onResolved }: Props) {
+export default function RequeueModal({ visible, studentId, ticketId, queueNumber, parentId, onResolved }: Props) {
   const [submitting, setSubmitting] = useState<'requeue' | 'cancel' | null>(null);
 
   const respond = async (action: 'requeue' | 'cancel') => {
@@ -34,7 +36,11 @@ export default function RequeueModal({ visible, studentId, ticketId, queueNumber
       const response = await fetch(API.requeueRespond, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ student_id: studentId, ticket_id: ticketId, action }),
+        body: JSON.stringify(
+          parentId
+            ? { parent_id: parentId, child_id: studentId, ticket_id: ticketId, action }
+            : { student_id: studentId, ticket_id: ticketId, action },
+        ),
       });
 
       const data = await response.json();

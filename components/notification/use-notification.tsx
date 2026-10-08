@@ -372,8 +372,9 @@ export function NotificationProvider({
   }, [poll]);
 
   const markAsRead = useCallback(async (notification_id: number) => {
-    const student_id = await getStudentId();
-    if (!student_id) return;
+    const session = await getSession();
+    if (!session) return;
+    const owner = session.role === 'parent' ? { parent_id: session.id } : { student_id: session.id };
 
     setNotifications((prev) =>
       prev.map((n) => (n.id === notification_id ? { ...n, is_read: true } : n))
@@ -384,7 +385,7 @@ export function NotificationProvider({
       await fetch(API.markNotificationsRead, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ student_id, notification_id }),
+        body: JSON.stringify({ ...owner, notification_id }),
       });
     } catch (err) {
       console.warn('Failed to mark notification read:', err);
@@ -392,8 +393,9 @@ export function NotificationProvider({
   }, []);
 
   const markAllAsRead = useCallback(async () => {
-    const student_id = await getStudentId();
-    if (!student_id) return;
+    const session = await getSession();
+    if (!session) return;
+    const owner = session.role === 'parent' ? { parent_id: session.id } : { student_id: session.id };
 
     setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
     setUnreadCount(0);
@@ -402,7 +404,7 @@ export function NotificationProvider({
       await fetch(API.markNotificationsRead, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ student_id }),
+        body: JSON.stringify(owner),
       });
     } catch (err) {
       console.warn('Failed to mark all notifications read:', err);

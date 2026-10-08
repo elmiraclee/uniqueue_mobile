@@ -29,6 +29,8 @@ import {
   type GoogleProfile,
 } from '@/utils/google-auth';
 import { registerPushToken } from '@/components/notification/push';
+import PasswordChecklist from '@/components/ui/password-checklist';
+import { passwordError } from '@/utils/password';
 import {
   COLORS,
   RADIUS,
@@ -92,6 +94,7 @@ export default function Signup() {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
 
   const [collegeId, setCollegeId] = useState('');
   const [programId, setProgramId] = useState('');
@@ -245,6 +248,18 @@ export default function Signup() {
       return;
     }
 
+    if (!isGoogle) {
+      const pwErr = passwordError(password);
+      if (pwErr) {
+        Alert.alert('Weak password', pwErr);
+        return;
+      }
+      if (password !== confirmPassword) {
+        Alert.alert('Password', 'Passwords do not match.');
+        return;
+      }
+    }
+
     if (!consent) {
       Alert.alert(
         'Consent required',
@@ -273,6 +288,7 @@ export default function Signup() {
           program_id: isCollege ? Number(programId) : null,
           year_level: isCollege && yearLevel ? Number(yearLevel) : null,
           password: isGoogle ? (password || '') : password,
+          confirm_password: isGoogle ? undefined : confirmPassword,
           google_signup: isGoogle ? 1 : 0,
           google_id: isGoogle ? googlePending?.google_id : undefined,
           google_picture: isGoogle ? googlePending?.picture : undefined,
@@ -528,6 +544,17 @@ export default function Signup() {
               value={password}
               onChangeText={setPassword}
             />
+            {!googlePending && (
+              <>
+                <CustomInput
+                  placeholder="Confirm password"
+                  secureTextEntry
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                />
+                <PasswordChecklist password={password} confirm={confirmPassword} />
+              </>
+            )}
           </View>
 
           {/* Terms / Privacy consent — required on the web too */}

@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 import {
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -18,12 +19,14 @@ import { COLORS, RADIUS, SPACING } from '../../constants/theme';
 export default function ParentNotifications() {
   const [items, setItems] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [parentId, setParentId] = useState<number>(0);
 
   const load = useCallback(async () => {
     try {
       const raw = await AsyncStorage.getItem('user');
       if (!raw) return;
       const user = JSON.parse(raw);
+      setParentId(Number(user.id) || 0);
       const res = await fetchJsonOrNull(API.getParentNotifications, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -37,6 +40,20 @@ export default function ParentNotifications() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
+  const unread = items.filter((n) => !n.read_at).length;
+
+  // Same endpoint/scope as the web parent dashboard (mark-notification-read.php).
+  const markRead = async (id?: number) => {
+    if (!parentId) return;
+    const now = new Date().toISOString();
+    setItems((prev) => prev.map((n) => (!id || n.id === id ? { ...n, read_at: n.read_at || now } : n)));
+    await fetchJsonOrNull(API.markNotificationsRead, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(id ? { parent_id: parentId, notification_id: id } : { parent_id: parentId }),
+    });
+  };
+
   return (
     <View style={styles.container}>
       <AppHeader title="Notifications" />
@@ -46,6 +63,16 @@ export default function ParentNotifications() {
           <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />
         }
       >
+        {items.length > 0 && (
+          <View style={styles.toolbar}>
+            <Text style={styles.unreadText}>{unread > 0 ? `${unread} unread` : 'All caught up'}</Text>
+            {unread > 0 && (
+              <Pressable onPress={() => markRead()}>
+                <Text style={styles.markAll}>Mark all as read</Text>
+              </Pressable>
+            )}
+          </View>
+        )}
         {items.length === 0 ? (
           <View style={styles.empty}>
             <Ionicons name="notifications-outline" size={40} color={COLORS.gray} />
@@ -53,7 +80,11 @@ export default function ParentNotifications() {
           </View>
         ) : (
           items.map((n) => (
-            <View key={n.id} style={[styles.card, !n.read_at && styles.unread]}>
+            <Pressable
+              key={n.id}
+              style={[styles.card, !n.read_at && styles.unread]}
+              onPress={() => { if (!n.read_at) markRead(Number(n.id)); }}
+            >
               <Text style={styles.title}>{n.title}</Text>
               <Text style={styles.msg}>{n.message}</Text>
               <Text style={styles.meta}>
@@ -64,7 +95,7 @@ export default function ParentNotifications() {
               <Text style={styles.time}>
                 {n.created_at ? new Date(n.created_at).toLocaleString() : ''}
               </Text>
-            </View>
+            </Pressable>
           ))
         )}
       </ScrollView>
@@ -75,6 +106,9 @@ export default function ParentNotifications() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   scroll: { padding: SPACING.lg },
+  toolbar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  unreadText: { color: COLORS.gray, fontWeight: '600' },
+  markAll: { color: COLORS.primary, fontWeight: '700' },
   empty: { alignItems: 'center', paddingVertical: 48 },
   emptyText: { color: COLORS.gray, marginTop: 8 },
   card: {

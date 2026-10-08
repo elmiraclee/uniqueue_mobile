@@ -119,6 +119,13 @@ export const API = {
   getTicketDetail: `${API_URL}/get_ticket_detail.php`,
   forgotPassword: `${API_URL}/forgot_password.php`,
   getStudentLinkedParents: `${API_URL}/get_student_linked_parents.php`,
+
+  // WEB-PARITY ADDITIONS
+  activateStudent: `${API_URL}/activate_student.php`,
+  prequeueCheck: `${API_URL}/prequeue_check.php`,
+  getPossibleWindows: `${API_URL}/get_possible_windows.php`,
+  serviceNeedRequestMulti: `${API_URL}/service_need_request_multi.php`,
+  queueProcess: `${API_URL}/queue_process.php`,
 };
 
 // ============================================================

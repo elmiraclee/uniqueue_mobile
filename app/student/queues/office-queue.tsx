@@ -281,6 +281,7 @@ export default function OfficeQueue() {
       parentId?: string;
     }>();
   const actingAsParent = asParentParam === '1' || asParentParam === 'true';
+  const homePath = actingAsParent ? '/parent/home' : '/student/home';
   const [parentActorId, setParentActorId] = useState(0);
 
   const eventId = eventIdParam ? parseInt(eventIdParam, 10) : 0;
@@ -338,6 +339,17 @@ export default function OfficeQueue() {
   const [submitting, setSubmitting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  // Smart multi-queue / web parity extras.
+  const [successMessage, setSuccessMessage] = useState('');
+  const [successReserved, setSuccessReserved] = useState(false);
+  const [hybridPayMode, setHybridPayMode] = useState(false);
+  const [prequeueWarning, setPrequeueWarning] = useState<string | null>(null);
+  const [possibleWindows, setPossibleWindows] = useState<string[]>([]);
+  const [eventRequiresAcademic, setEventRequiresAcademic] = useState(false);
+  const [eventPeriods, setEventPeriods] = useState<{ id: number; label: string }[]>([]);
+  const [eventSchoolYears, setEventSchoolYears] = useState<{ id: number; school_year: string }[]>([]);
+  const [eventPeriod, setEventPeriod] = useState('');
+  const [eventSchoolYear, setEventSchoolYear] = useState('');
 
   // Which payable ticket the student picked in the cashier wizard.
   const [selectedPayableTicket, setSelectedPayableTicket] = useState<number | null>(
@@ -364,7 +376,7 @@ export default function OfficeQueue() {
     if (!officeSlug) {
       // No office selected — bounce back to the dashboard.
       Alert.alert('Error', 'No office selected.');
-      router.replace('/student/home');
+      router.replace(homePath as any);
       return;
     }
 
@@ -383,7 +395,7 @@ export default function OfficeQueue() {
     // Payables belong to the cashier queue ONLY — a request office must
     // never surface "pay at the cashier" items (web student-queue.php
     // only renders them inside the payment office).
-    if (office.transactionType !== 'payment' || isEventMode) return;
+    if (!['payment', 'hybrid'].includes(office.transactionType || '') || isEventMode) return;
     fetchPayableTickets(office.id, studentId);
   }, [office, studentId, isEventMode]);
 
@@ -433,7 +445,7 @@ export default function OfficeQueue() {
 
       if (!data.success || !data.office) {
         Alert.alert('Error', 'That office is not available.');
-        router.replace('/student/home');
+        router.replace(homePath as any);
         return;
       }
 
@@ -455,11 +467,22 @@ export default function OfficeQueue() {
         transactionType: o.transaction_type ?? 'request',
       });
 
+      // Today's availability + parent-queue setting (web validate_queue_join_gate).
+      if (!o.is_full && actingAsParent && o.parent_queue_enabled === false) {
+        Alert.alert('Not available', 'This office does not accept parent/guardian queueing.', [
+          { text: 'OK', onPress: () => router.replace(homePath as any) },
+        ]);
+      } else if (!o.is_full && o.can_join === false) {
+        Alert.alert('Not accepting queues', o.availability_reason || 'This office is not accepting queues right now.', [
+          { text: 'OK', onPress: () => router.replace(homePath as any) },
+        ]);
+      }
+
       if (o.is_full) {
         Alert.alert(
           'Office Full',
           'This office has reached its full capacity for today. Please try again tomorrow.',
-          [{ text: 'OK', onPress: () => router.replace('/student/home') }]
+          [{ text: 'OK', onPress: () => router.replace(homePath as any) }]
         );
       }
 
@@ -473,7 +496,7 @@ export default function OfficeQueue() {
     } catch (error) {
       console.log(error);
       Alert.alert('Error', 'Unable to load this office right now.');
-      router.replace('/student/home');
+      router.replace(homePath as any);
     } finally {
       setLoadingOffice(false);
     }
@@ -518,12 +541,42 @@ export default function OfficeQueue() {
 
   // A payment office is the cashier: it never lists its own service
   // items, only the completed requests waiting to be paid.
-  const isPaymentOffice = office?.transactionType === 'payment';
+  const isPaymentOffice =
+    office?.transactionType === 'payment' || (office?.transactionType === 'hybrid' && hybridPayMode);
+
+  // Body fields that tell the API a parent is acting for a linked child.
+  const actorFields = () =>
+    parentActorId > 0
+      ? { created_by_role: 'parent', created_by_parent_id: parentActorId, parent_id: parentActorId, child_id: studentId }
+      : {};
+  const actorQuery = () => (parentActorId > 0 ? `&parent_id=${parentActorId}&child_id=${studentId}` : '');
+
+  /** Smart multi-queue gate (web prequeue-check.php). Returns a reason when blocked. */
+  const runPrequeueCheck = async (svcIds: number[], type: string): Promise<string | null> => {
+    if (!office) return null;
+    try {
+      const pre = await fetchJsonOrNull(
+        `${API.prequeueCheck}?student_id=${studentId}${actorQuery()}&office_id=${office.id}&type=${type}&svc_ids=${svcIds.join(',')}`,
+      );
+      if (pre?.success && pre.allowed === false) {
+        return (pre.reason || 'You cannot join this queue yet.') + (pre.retry_at ? ` Try again around ${pre.retry_at}.` : '');
+      }
+    } catch {}
+    return null;
+  };
+
+  const showJoinSuccess = (data: any) => {
+    setQueueNumber(data.queue_number || '');
+    setAssignedWindow(data.window_name || 'Not Assigned');
+    setSuccessReserved(!!data.reserved || data.status === 'reserved');
+    setSuccessMessage(data.message || '');
+    setShowSuccessModal(true);
+  };
 
   const fetchPayableTickets = async (officeId: number, sid: number) => {
     try {
       const data = await fetchJsonOrNull(
-        `${API.getPayableTickets}?student_id=${sid}&office_id=${officeId}`
+        `${API.getPayableTickets}?student_id=${sid}&office_id=${officeId}${actorQuery()}`
       );
       if (data.success) {
         setPayableTickets(data.payable_tickets || []);
@@ -540,23 +593,11 @@ export default function OfficeQueue() {
       return;
     }
 
-    // Same hard block as joinQueue / the web ticket-status card: one
-    // active ticket at a time, including payment tickets.
-    try {
-      const cur = await fetchJsonOrNull(API.getCurrentQueue, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ student_id: studentId }),
-      });
-      if (cur?.success && cur?.queue?.id) {
-        Alert.alert(
-          'Already on queue',
-          `You already have an active ticket (#${cur.queue.queue_number || cur.queue.id}). Finish or cancel it before joining another.`
-        );
-        return;
-      }
-    } catch {
-      // continue; the server will also reject
+    // Web parity: smart multi-queue gate instead of a hard one-ticket block.
+    const cashierBlock = await runPrequeueCheck([], queueType || 'walkin');
+    if (cashierBlock) {
+      Alert.alert('Cannot join yet', cashierBlock);
+      return;
     }
 
     setPayingTicketId(sourceTicketId);
@@ -572,13 +613,12 @@ export default function OfficeQueue() {
           source_ticket_id: sourceTicketId,
           priority: office.priorityEnabled ? priority : false,
           priority_reason: office.priorityEnabled ? priorityReason : '',
+          ...actorFields(),
         }),
       });
       const data = await response.json();
       if (data.success) {
-        setQueueNumber(data.queue_number);
-        setAssignedWindow(data.window_name || 'Not Assigned');
-        setShowSuccessModal(true);
+        showJoinSuccess(data);
         setPayableTickets((prev) =>
           prev.filter((t) => t.ticket_id !== sourceTicketId)
         );
@@ -593,6 +633,33 @@ export default function OfficeQueue() {
     }
   };
 
+  // Web parity: warn early (after service selection) and preview which
+  // counters could serve the selection, like student-queue.php does.
+  useEffect(() => {
+    if (!office || !studentId || isEventMode || isPaymentOffice) return;
+    if (!selectedServiceItems.length) {
+      setPrequeueWarning(null);
+      setPossibleWindows([]);
+      return;
+    }
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      const reason = await runPrequeueCheck(selectedServiceItems, queueType);
+      if (!cancelled) setPrequeueWarning(reason);
+      try {
+        const w = await fetchJsonOrNull(
+          `${API.getPossibleWindows}?office_id=${office.id}&type=${queueType}&svc_ids=${selectedServiceItems.join(',')}`,
+        );
+        if (!cancelled) setPossibleWindows((w?.windows || []).map((x: any) => x.name));
+      } catch {}
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [office?.id, studentId, selectedServiceItems, queueType, isEventMode, isPaymentOffice]);
+
   const fetchEventDetail = async (opts: { silent?: boolean } = {}) => {
     if (!office) return;
     const silent = !!opts.silent;
@@ -601,13 +668,13 @@ export default function OfficeQueue() {
       if (!silent) setLoadingEvent(true);
 
       const data = await fetchJsonOrNull(
-        `${API_BASE}/office-queue.php?action=event&event_id=${eventId}&office_id=${office.id}&student_id=${studentId}`
+        `${API_BASE}/office-queue.php?action=event&event_id=${eventId}&office_id=${office.id}&student_id=${studentId}${actorQuery()}`
       );
 
       if (!data.success) {
         if (!silent) {
           Alert.alert('Error', data.message || 'This event is not available.');
-          router.replace('/student/home');
+          router.replace(homePath as any);
         }
         return;
       }
@@ -623,6 +690,20 @@ export default function OfficeQueue() {
       setCurrentStepIndex(nextCurrentStepIndex);
       setEventCompleted(!!data.event_completed);
       setEventActiveTicket(data.active_ticket);
+      setEventRequiresAcademic(!!data.current_step_requires_academic);
+      if (data.current_step_requires_academic) {
+        const stepOfficeId = Number(data.current_step?.office_id || office.id);
+        fetchJsonOrNull(API.getAcademicData, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ office_id: stepOfficeId }),
+        }).then((ac) => {
+          if (ac?.success) {
+            setEventPeriods(ac.periods || []);
+            setEventSchoolYears(ac.school_years || []);
+          }
+        });
+      }
 
       // Auto-follow the student's view forward when their current-step
       // ticket completes and the event moves on. If they'd browsed away
@@ -643,7 +724,7 @@ export default function OfficeQueue() {
       console.log(error);
       if (!silent) {
         Alert.alert('Error', 'Unable to load this event right now.');
-        router.replace('/student/home');
+        router.replace(homePath as any);
       }
     } finally {
       if (!silent) setLoadingEvent(false);
@@ -748,6 +829,7 @@ export default function OfficeQueue() {
     !isActiveTicketForCurrentStep &&
     allEventRequirementsChecked &&
     (!priority || priorityReason.trim().length > 0) &&
+    (!eventRequiresAcademic || (!!eventPeriod && !!eventSchoolYear)) &&
     !submitting;
 
   const joinEventQueue = async () => {
@@ -768,6 +850,11 @@ export default function OfficeQueue() {
       return;
     }
 
+    if (eventRequiresAcademic && (!eventPeriod || !eventSchoolYear)) {
+      Alert.alert('Error', 'Please choose the academic period and school year for this step.');
+      return;
+    }
+
     try {
       setSubmitting(true);
 
@@ -782,6 +869,8 @@ export default function OfficeQueue() {
           priority: office?.priorityEnabled ? priority : false,
           priority_reason: office?.priorityEnabled ? priorityReason : '',
           req_check: checkedEventReqIds,
+          ...(eventRequiresAcademic ? { academic_period: eventPeriod, school_year: eventSchoolYear } : {}),
+          ...actorFields(),
         }),
       });
 
@@ -790,6 +879,8 @@ export default function OfficeQueue() {
       if (data.success) {
         setQueueNumber(data.queue_number || '');
         setAssignedWindow(data.window_name || 'Not Assigned');
+        setSuccessReserved(!!data.reserved || data.status === 'reserved');
+        setSuccessMessage(data.message || '');
 
         // Refresh immediately so eventActiveTicket/currentStep reflect
         // the ticket we just created right away — otherwise the Join
@@ -836,24 +927,6 @@ export default function OfficeQueue() {
   const joinQueue = async () => {
     if (!office) return;
 
-    // Hard block: cannot join while another queue is already active
-    try {
-      const cur = await fetchJsonOrNull(API.getCurrentQueue, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ student_id: studentId }),
-      });
-      if (cur?.success && cur?.queue?.id) {
-        Alert.alert(
-          'Already on queue',
-          `You already have an active ticket (#${cur.queue.queue_number || cur.queue.id}). Finish or cancel it before joining another.`
-        );
-        return;
-      }
-    } catch {
-      // continue; server will also reject
-    }
-
     if (queueType === 'walkin' && !office.walkinEnabled) {
       Alert.alert('Error', 'Walk-in queueing is not available for this office.');
       return;
@@ -876,6 +949,12 @@ export default function OfficeQueue() {
 
     if (office.priorityEnabled && priority && !priorityReason.trim()) {
       Alert.alert('Error', 'Please enter a reason for priority lane.');
+      return;
+    }
+
+    const gate = await runPrequeueCheck(selectedServiceItems, queueType);
+    if (gate) {
+      Alert.alert('Cannot join yet', gate);
       return;
     }
 
@@ -915,19 +994,14 @@ export default function OfficeQueue() {
           priority: office.priorityEnabled ? priority : false,
           priority_reason: office.priorityEnabled ? priorityReason : '',
           service_items: items,
-          ...(parentActorId > 0
-            ? { created_by_role: 'parent', created_by_parent_id: parentActorId, parent_id: parentActorId }
-            : {}),
+          ...actorFields(),
         }),
       });
 
       const data = await response.json();
 
       if (data.success) {
-
-        setQueueNumber(data.queue_number || '');
-        setAssignedWindow(data.window_name || 'Not Assigned');
-        setShowSuccessModal(true);
+        showJoinSuccess(data);
       } else {
         Alert.alert('Error', data.message);
       }
@@ -995,7 +1069,7 @@ export default function OfficeQueue() {
               </Text>
               <TouchableOpacity
                 style={styles.modalButton}
-                onPress={() => router.replace('/student/home')}
+                onPress={() => router.replace(homePath as any)}
               >
                 <Text style={styles.modalButtonText}>Back to Dashboard</Text>
               </TouchableOpacity>
@@ -1116,6 +1190,37 @@ export default function OfficeQueue() {
                 </View>
               )}
 
+              {isViewingCurrentStep && eventRequiresAcademic && !isActiveTicketForCurrentStep && (
+                <View style={styles.eventPriorityBox}>
+                  <Text style={styles.eventReqText}>Academic period *</Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginVertical: 6 }}>
+                    {eventPeriods.map((p) => (
+                      <TouchableOpacity
+                        key={p.id}
+                        onPress={() => setEventPeriod(p.label)}
+                        style={[styles.parityChip, eventPeriod === p.label && styles.parityChipOn]}
+                      >
+                        <Text style={[styles.parityChipText, eventPeriod === p.label && { color: '#fff' }]}>{p.label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  <Text style={styles.eventReqText}>School year *</Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                    {eventSchoolYears.map((y) => (
+                      <TouchableOpacity
+                        key={y.id}
+                        onPress={() => setEventSchoolYear(y.school_year)}
+                        style={[styles.parityChip, eventSchoolYear === y.school_year && styles.parityChipOn]}
+                      >
+                        <Text style={[styles.parityChipText, eventSchoolYear === y.school_year && { color: '#fff' }]}>
+                          {y.school_year}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
+
               <View style={styles.eventStepActions}>
                 {showJoinEventButton ? (
                   <TouchableOpacity
@@ -1152,7 +1257,7 @@ export default function OfficeQueue() {
               <Text style={styles.eventCardStepTitle}>No steps configured for this event.</Text>
               <TouchableOpacity
                 style={styles.modalButton}
-                onPress={() => router.replace('/student/home')}
+                onPress={() => router.replace(homePath as any)}
               >
                 <Text style={styles.modalButtonText}>Back to Dashboard</Text>
               </TouchableOpacity>
@@ -1165,6 +1270,11 @@ export default function OfficeQueue() {
              Step 1 pick walk-in / appointment, step 2 pick what to pay
              for — exactly the two-step wizard the web shows. */
           <>
+            {office.transactionType === 'hybrid' && (
+              <TouchableOpacity style={styles.parityBanner} onPress={() => { setHybridPayMode(false); setStep(1); }}>
+                <Text style={styles.parityBannerText}>‹ Back to requesting a service</Text>
+              </TouchableOpacity>
+            )}
             <StepIndicator current={step > 2 ? 2 : step} steps={CASHIER_STEPS} />
 
             {step === 1 && (
@@ -1312,6 +1422,18 @@ export default function OfficeQueue() {
           </>
         ) : (
           <>
+        {office.transactionType === 'hybrid' && payableTickets.length > 0 && step === 1 && (
+          <TouchableOpacity style={styles.parityBanner} onPress={() => { setHybridPayMode(true); setStep(1); }}>
+            <Text style={styles.parityBannerText}>
+              Pay for a completed request instead ({payableTickets.length}) ›
+            </Text>
+          </TouchableOpacity>
+        )}
+        {!!prequeueWarning && (
+          <View style={[styles.parityBanner, { backgroundColor: '#fef3c7', borderColor: '#f59e0b' }]}>
+            <Text style={[styles.parityBannerText, { color: '#92400e' }]}>{prequeueWarning}</Text>
+          </View>
+        )}
         <StepIndicator current={step} />
 
         {step === 1 && (
@@ -1361,6 +1483,13 @@ export default function OfficeQueue() {
           />
         )}
 
+        {step === 4 && possibleWindows.length > 0 && (
+          <View style={styles.parityBanner}>
+            <Text style={styles.parityBannerText}>
+              Possible counter{possibleWindows.length > 1 ? 's' : ''}: {possibleWindows.join(', ')}
+            </Text>
+          </View>
+        )}
         {step === 4 && (
           <ReviewStep
             queueType={queueType}
@@ -1385,7 +1514,7 @@ export default function OfficeQueue() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>
-              {isEventMode ? "Step joined!" : "You're in the queue!"}
+              {successReserved ? 'Queue reserved!' : isEventMode ? "Step joined!" : "You're in the queue!"}
             </Text>
 
             {!!queueNumber && (
@@ -1394,6 +1523,10 @@ export default function OfficeQueue() {
 
             <Text style={styles.modalLabel}>Assigned Counter</Text>
             <Text style={styles.windowText}>{assignedWindow}</Text>
+
+            {successReserved && !!successMessage && (
+              <Text style={[styles.modalSubtitle, { color: '#b45309' }]}>{successMessage}</Text>
+            )}
 
             <Text style={styles.modalSubtitle}>
               {isEventMode
@@ -1405,8 +1538,10 @@ export default function OfficeQueue() {
               style={styles.modalButton}
               onPress={() => {
                 setShowSuccessModal(false);
+                setSuccessReserved(false);
+                setSuccessMessage('');
                 resetForm();
-                router.replace('/student/home');
+                router.replace(homePath as any);
               }}
             >
               <Text style={styles.modalButtonText}>OK</Text>
@@ -1419,6 +1554,18 @@ export default function OfficeQueue() {
 }
 
 const styles = StyleSheet.create({
+  parityBanner: {
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.primary + '10',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+  },
+  parityBannerText: { color: COLORS.primary, fontWeight: '700', fontSize: 13 },
+  parityChip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: COLORS.primary },
+  parityChipOn: { backgroundColor: COLORS.primary },
+  parityChipText: { color: COLORS.primary, fontWeight: '600', fontSize: 12 },
   container: {
     flex: 1,
     backgroundColor: COLORS.background,

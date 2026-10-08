@@ -7,7 +7,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "uniqueue",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
@@ -25,7 +25,7 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "edgeToEdgeEnabled": true,
+      
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "android.permission.FOREGROUND_SERVICE",

@@ -16,6 +16,8 @@ import AnimatedPressable from '../components/ui/animated-pressable';
 import { API } from '@/constants/backend';
 import { fetchJsonOrNull } from '@/utils/api';
 import { registerPushToken } from '@/components/notification/push';
+import PasswordChecklist from '@/components/ui/password-checklist';
+import { passwordError } from '@/utils/password';
 import { COLORS, RADIUS, SPACING } from '../constants/theme';
 
 export default function ParentSignup() {
@@ -25,18 +27,24 @@ export default function ParentSignup() {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [loading, setLoading] = useState(false);
+  const [consent, setConsent] = useState(false);
 
   const submit = async () => {
-    if (!fullName.trim() || !email.trim() || !password) {
-      Alert.alert('Required', 'Full name, email and password are required');
+    if (!fullName.trim() || !email.trim() || !contact.trim() || !password) {
+      Alert.alert('Required', 'Full name, email, contact number and password are required');
       return;
     }
-    if (password.length < 6) {
-      Alert.alert('Password', 'At least 6 characters');
+    const pwErr = passwordError(password);
+    if (pwErr) {
+      Alert.alert('Password', pwErr);
       return;
     }
     if (password !== confirm) {
       Alert.alert('Password', 'Passwords do not match');
+      return;
+    }
+    if (!consent) {
+      Alert.alert('Terms', 'You must agree to the Terms of Use and Privacy Notice.');
       return;
     }
     setLoading(true);
@@ -47,8 +55,10 @@ export default function ParentSignup() {
         body: JSON.stringify({
           full_name: fullName.trim(),
           email: email.trim(),
-          contact_number: contact.trim() || null,
+          contact_number: contact.trim(),
           password,
+          confirm_password: confirm,
+          consent_privacy: consent ? 1 : 0,
         }),
       });
       if (res?.success) {
@@ -90,13 +100,13 @@ export default function ParentSignup() {
           keyboardType="email-address"
         />
 
-        <Text style={styles.label}>Contact number</Text>
+        <Text style={styles.label}>Contact number *</Text>
         <TextInput
           style={styles.input}
           value={contact}
           onChangeText={setContact}
           keyboardType="phone-pad"
-          placeholder="Optional — can also be used to log in"
+          placeholder="09XXXXXXXXX or +639XXXXXXXXX"
         />
 
         <Text style={styles.label}>Password *</Text>
@@ -104,6 +114,17 @@ export default function ParentSignup() {
 
         <Text style={styles.label}>Confirm password *</Text>
         <TextInput style={styles.input} value={confirm} onChangeText={setConfirm} secureTextEntry />
+        <PasswordChecklist password={password} confirm={confirm} />
+
+        <AnimatedPressable style={styles.consentRow} onPress={() => setConsent((v) => !v)}>
+          <View style={[styles.checkbox, consent && styles.checkboxOn]}>
+            {consent && <Text style={{ color: '#fff', fontWeight: '800' }}>✓</Text>}
+          </View>
+          <Text style={styles.consentText}>
+            I agree to the UniQueue Terms of Use and Privacy Notice, and consent to the processing of my and my
+            child's personal data for queue management.
+          </Text>
+        </AnimatedPressable>
 
         <AnimatedPressable
           style={[styles.btn, loading && { opacity: 0.6 }]}
@@ -143,5 +164,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 8,
   },
+  consentRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 8 },
+  checkbox: {
+    width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: COLORS.primary,
+    alignItems: 'center', justifyContent: 'center', marginTop: 2,
+  },
+  checkboxOn: { backgroundColor: COLORS.primary },
+  consentText: { flex: 1, color: COLORS.text, fontSize: 13, lineHeight: 18 },
   btnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
 });
