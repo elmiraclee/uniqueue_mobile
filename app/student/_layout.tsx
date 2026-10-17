@@ -103,6 +103,7 @@ export default function StudentTabsLayout() {
 
       <Tabs.Screen name="queues" options={{ href: null }} />
       <Tabs.Screen name="live-queue" options={{ href: null }} />
+      <Tabs.Screen name="live-monitor" options={{ href: null }} />
       <Tabs.Screen name="ticket" options={{ href: null }} />
     </Tabs>
   );

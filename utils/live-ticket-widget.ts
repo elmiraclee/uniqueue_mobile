@@ -1,5 +1,6 @@
 import { Platform } from "react-native";
 import { API } from "../constants/backend";
+import type { UniqueueWidgetNativeModule } from "../modules/uniqueue-widget";
 
 type WidgetPayload = {
   ticketId: number;
@@ -12,15 +13,26 @@ type WidgetPayload = {
   estimatedWait?: number | null;
 };
 
-function nativeWidget(): any | null {
+let cachedWidget: UniqueueWidgetNativeModule | null | undefined;
+
+function nativeWidget(): UniqueueWidgetNativeModule | null {
   if (Platform.OS !== "android") return null;
+  if (cachedWidget !== undefined) return cachedWidget;
   try {
-    // Lazy require keeps web/iOS bundles from trying to resolve an Android module.
+    // Lazy require keeps web/iOS bundles from touching the Android module.
+    // The module itself uses requireOptionalNativeModule, so it resolves to
+    // null (instead of throwing) in Expo Go or builds without the widget.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    return require("../modules/uniqueue-widget").default;
+    cachedWidget = require("../modules/uniqueue-widget").default ?? null;
   } catch {
-    return null;
+    cachedWidget = null;
   }
+  return cachedWidget ?? null;
+}
+
+/** True when the native widget code is compiled into this build. */
+export function isLiveTicketWidgetAvailable(): boolean {
+  return nativeWidget() !== null;
 }
 
 export async function updateLiveTicketWidget(

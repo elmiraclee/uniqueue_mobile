@@ -80,6 +80,8 @@ export const API = {
   // LIVE QUEUE
   getLiveQueue: `${API_URL}/get_live_queue.php`,
   getLiveTicketSnapshot: `${API_URL}/get_live_ticket_snapshot.php`,
+  // Office-wide live monitor (port of web api/public-live-queue.php)
+  publicLiveQueue: `${API_URL}/public_live_queue.php`,
 
   // FEEDBACK
   getPendingFeedback: `${API_URL}/get_pending_feedback.php`,

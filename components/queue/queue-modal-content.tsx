@@ -15,12 +15,14 @@ interface QueueDetails {
   type: string;
   joined_at: string;
   window_name?: string | null;
-  people_ahead: number;
+  people_ahead: number | null;
   service_items: { name: string; quantity: number }[];
   event_step_title?: string | null;
   event_name?: string | null;
   priority?: number | boolean;
   priority_reason?: string | null;
+  called_at?: string | null;
+  can_cancel?: boolean;
 }
 
 interface Props {
@@ -56,8 +58,12 @@ export default function QueueModalContent({ loading, queue, onCancel, onClose, o
   const status = (queue.status || '').toLowerCase();
   const isCalled = status === 'called' || status === 'in_progress';
   const isNext = status === 'next';
-  // Only allow cancel while still waiting / next (mirrors web).
-  const canCancel = status === 'waiting' || status === 'next';
+  // Web rule (student-queue-ticket.php / api_ticket_can_cancel): waiting,
+  // reserved or next, and never once the ticket has been called.
+  const canCancel =
+    typeof queue.can_cancel === 'boolean'
+      ? queue.can_cancel
+      : ['waiting', 'reserved', 'next'].includes(status) && !queue.called_at;
 
   return (
     <View style={styles.content}>

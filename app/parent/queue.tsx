@@ -21,9 +21,10 @@ import { COLORS, RADIUS, SPACING } from '../../constants/theme';
 
 /**
  * Parent office picker → joins a queue on behalf of a linked child.
- * Web parity (parent-dashboard.php): each child can hold their own tickets
- * (no family-wide lock); offices show today's availability, parent-queue
- * setting, active events, and unavailable services can be requested.
+ * Web parity (parent-dashboard.php / parent-dashboard.js): a child that
+ * already has an active queue (or pending feedback) cannot join another one;
+ * offices show today's availability, parent-queue setting, active events,
+ * and unavailable services can be requested.
  */
 export default function ParentQueueForChild() {
   const { forStudentId, childName } = useLocalSearchParams<{ forStudentId?: string; childName?: string }>();
@@ -34,22 +35,43 @@ export default function ParentQueueForChild() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showUnavailable, setShowUnavailable] = useState(false);
+  // Web: "{first} already has an active queue." / pending-feedback block.
+  const [childBlock, setChildBlock] = useState<string | null>(null);
+  const firstName = String(childName || '').trim().split(/\s+/)[0] || 'This child';
 
   const load = useCallback(async () => {
     try {
       const raw = await AsyncStorage.getItem('user');
-      if (raw) setParentId(Number(JSON.parse(raw).id) || 0);
-      const [data, ev] = await Promise.all([
+      const pid = raw ? Number(JSON.parse(raw).id) || 0 : 0;
+      setParentId(pid);
+      const postJson = (url: string, body: any) =>
+        fetchJsonOrNull(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+      const [data, ev, cur, fb] = await Promise.all([
         fetchJsonOrNull(API.getOffice),
         fetchJsonOrNull(`${API.officeQueue}?action=events`),
+        childId ? postJson(API.getCurrentQueue, { parent_id: pid, child_id: childId }) : null,
+        childId ? postJson(API.getParentPendingFeedback, { parent_id: pid }) : null,
       ]);
+      const hasQueue = !!(cur?.success && (cur.queue || (cur.queues || []).length));
+      const hasFeedback = !!(fb?.success && (fb.pending || []).some((f: any) => Number(f.student_id) === childId));
+      setChildBlock(
+        hasQueue
+          ? `${firstName} already has an active queue.`
+          : hasFeedback
+            ? `Submit ${firstName}’s pending feedback before joining a new queue.`
+            : null,
+      );
       if (data?.success) setOffices(data.offices || []);
       setEvents(ev?.success ? ev.events || [] : []);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [childId, firstName]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -62,6 +84,10 @@ export default function ParentQueueForChild() {
 
   const go = async (office: any, eventId?: number) => {
     if (!childId) return;
+    if (childBlock) {
+      Alert.alert('Cannot join', childBlock);
+      return;
+    }
     const reason = blockReason(office);
     if (reason) {
       Alert.alert(office.name, reason);
@@ -84,6 +110,7 @@ export default function ParentQueueForChild() {
         forStudentId: String(childId),
         asParent: '1',
         parentId: String(parentId),
+        childName: String(childName || ''),
         ...(eventId ? { event_id: String(eventId) } : {}),
       },
     } as any);
@@ -96,6 +123,7 @@ export default function ParentQueueForChild() {
     <View style={styles.container}>
       <AppHeader title="Join queue for child" showBack />
       <Text style={styles.banner}>Queuing for {childName || 'child'}</Text>
+      {!!childBlock && <Text style={styles.blockNote}>{childBlock}</Text>}
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} color={COLORS.primary} />
       ) : (
@@ -128,7 +156,7 @@ export default function ParentQueueForChild() {
           {offices.map((o) => {
             const reason = blockReason(o);
             return (
-              <AnimatedPressable key={o.id} style={[styles.card, !!reason && { opacity: 0.6 }]} onPress={() => go(o)}>
+              <AnimatedPressable key={o.id} style={[styles.card, (!!reason || !!childBlock) && { opacity: 0.6 }]} onPress={() => go(o)}>
                 <View style={styles.icon}>
                   <Ionicons name="business-outline" size={22} color={COLORS.primary} />
                 </View>
@@ -167,6 +195,7 @@ export default function ParentQueueForChild() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
+  blockNote: { marginHorizontal: SPACING.lg, marginBottom: 6, padding: 10, borderRadius: RADIUS.md, backgroundColor: '#fef2f2', color: '#b91c1c', fontWeight: '600', fontSize: 13 },
   banner: { paddingHorizontal: SPACING.lg, paddingVertical: 10, color: COLORS.gray, fontSize: 13 },
   scroll: { padding: SPACING.lg, paddingBottom: 40 },
   section: { fontWeight: '800', color: COLORS.text, marginBottom: 8, marginTop: 4 },

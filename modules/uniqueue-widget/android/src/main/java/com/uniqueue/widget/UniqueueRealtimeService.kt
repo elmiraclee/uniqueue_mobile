@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
 import android.net.Uri
 import android.os.Build
@@ -64,18 +65,63 @@ class UniqueueRealtimeService : Service() {
   private var worker: Thread? = null
   private var wakeLock: PowerManager.WakeLock? = null
 
+  private var isForeground = false
+
   override fun onCreate() {
     super.onCreate()
     createChannels()
-    startForeground(LIVE_NOTIFICATION_ID, buildLiveNotification("Connecting to live queue…"))
-    val power = getSystemService(Context.POWER_SERVICE) as PowerManager
-    wakeLock = power.newWakeLock(
-      PowerManager.PARTIAL_WAKE_LOCK,
-      "Uniqueue:LiveTicketSync"
-    ).apply { acquire() }
+    // startForeground() throws on Android 12+ when the OS refuses a
+    // background foreground-service start (widget update, boot, OEM limits;
+    // Android 15 also blocks dataSync from BOOT_COMPLETED). Without this
+    // guard the whole app process crashed in the background.
+    isForeground = try {
+      val notification = buildLiveNotification("Connecting to live queue…")
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        startForeground(
+          LIVE_NOTIFICATION_ID,
+          notification,
+          ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+        )
+      } else {
+        startForeground(LIVE_NOTIFICATION_ID, notification)
+      }
+      true
+    } catch (_: Throwable) {
+      false
+    }
+    if (!isForeground) {
+      // Push + periodic widget refresh remain as fallbacks.
+      UniqueueWidgetProvider.scheduleNextRefresh(this)
+      stopSelf()
+      return
+    }
+    try {
+      val power = getSystemService(Context.POWER_SERVICE) as PowerManager
+      wakeLock = power.newWakeLock(
+        PowerManager.PARTIAL_WAKE_LOCK,
+        "Uniqueue:LiveTicketSync"
+      ).apply {
+        setReferenceCounted(false)
+        acquire()
+      }
+    } catch (_: Throwable) {
+      wakeLock = null
+    }
+  }
+
+  // Android 15+: dataSync foreground services have a daily time limit.
+  // The service must stop itself here or the OS crashes the app.
+  override fun onTimeout(startId: Int, fgsType: Int) {
+    running.set(false)
+    UniqueueWidgetProvider.scheduleNextRefresh(this)
+    stopSelf()
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    if (!isForeground) {
+      stopSelf()
+      return START_NOT_STICKY
+    }
     if (running.compareAndSet(false, true)) {
       worker = Thread({ runLoop() }, "uniqueue-live-ticket").apply { start() }
     }
@@ -86,7 +132,11 @@ class UniqueueRealtimeService : Service() {
     running.set(false)
     worker?.interrupt()
     worker = null
-    if (wakeLock?.isHeld == true) wakeLock?.release()
+    try {
+      if (wakeLock?.isHeld == true) wakeLock?.release()
+    } catch (_: Throwable) {
+      // already released
+    }
     wakeLock = null
     super.onDestroy()
   }

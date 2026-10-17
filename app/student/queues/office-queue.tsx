@@ -18,6 +18,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API, API_URL } from '@/constants/backend';
 import { fetchJsonOrNull, safeFetchJson } from '@/utils/api';
 import AppHeader from '../../../components/layout/app-header';
+import UnavailableServicesModal from '../../../components/queue/unavailable-services-modal';
 import ServiceItemStep from '../../../components/queue-step/service-item-step';
 import QueueTypeStep from '../../../components/queue-step/queue-type-step';
 import RequirementStep from '../../../components/queue-step/requirement-step';
@@ -67,6 +68,15 @@ export interface EventStep {
   office_name: string;
   office_slug: string;
   service_items: EventStepServiceItem[];
+  // Pure payment step linked to an earlier request step (web: "Requested at"
+  // + "Amount to Pay" rows on the event confirm card).
+  linked_source?: {
+    office_name: string;
+    queue_number: string;
+    total: number;
+    amount_complete: boolean;
+    service_items?: { name: string; quantity: number; amount: number | null }[];
+  } | null;
 }
 
 export interface EventInfo {
@@ -273,12 +283,14 @@ export default function OfficeQueue() {
     forStudentId: forStudentIdParam,
     asParent: asParentParam,
     parentId: parentIdParam,
+    childName: childNameParam,
   } = useLocalSearchParams<{
       office?: string;
       event_id?: string;
       forStudentId?: string;
       asParent?: string;
       parentId?: string;
+      childName?: string;
     }>();
   const actingAsParent = asParentParam === '1' || asParentParam === 'true';
   const homePath = actingAsParent ? '/parent/home' : '/student/home';
@@ -288,6 +300,10 @@ export default function OfficeQueue() {
   const isEventMode = !!eventId;
 
   const [office, setOffice] = useState<Office | null>(null);
+  // Web: "currently unavailable services" button (with count) next to the
+  // office title, opening the request-a-service popup for this office.
+  const [unavailableCount, setUnavailableCount] = useState(0);
+  const [showUnavailable, setShowUnavailable] = useState(false);
   const [loadingOffice, setLoadingOffice] = useState(true);
 
   // Event-mode state
@@ -740,6 +756,19 @@ export default function OfficeQueue() {
   // The step currently being displayed — may be an earlier step the
   // student is browsing back to, not necessarily the one they can submit.
   const viewStep = viewIndex !== null ? eventSteps[viewIndex] ?? currentStep : currentStep;
+  useEffect(() => {
+    if (!office?.id || !studentId) return;
+    let cancelled = false;
+    fetchJsonOrNull(API.getUnavailableServices, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ student_id: studentId, office_id: office.id }),
+    }).then((res) => {
+      if (!cancelled) setUnavailableCount(res?.success ? (res.services || []).length : 0);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [office?.id, studentId]);
+
   const isViewingCurrentStep =
     viewIndex === null || currentStepIndex === null || viewIndex === currentStepIndex;
 
@@ -1045,6 +1074,22 @@ export default function OfficeQueue() {
     <View style={styles.container}>
       <AppHeader title={isEventMode ? (eventInfo?.name ?? 'Event Queue') : `${office.name} Queue`} />
 
+      {actingAsParent && (
+        <View style={styles.childBanner}>
+          <Text style={styles.childBannerText}>
+            Queue for <Text style={{ fontWeight: '800' }}>{childNameParam || 'your child'}</Text>
+          </Text>
+        </View>
+      )}
+
+      {unavailableCount > 0 && (
+        <TouchableOpacity style={styles.uvBtn} onPress={() => setShowUnavailable(true)}>
+          <Text style={styles.uvBtnText}>
+            ⓘ {unavailableCount} currently unavailable {unavailableCount === 1 ? 'service' : 'services'} · Request
+          </Text>
+        </TouchableOpacity>
+      )}
+
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={
@@ -1109,6 +1154,30 @@ export default function OfficeQueue() {
                 <Text style={styles.eventCardDescription}>{viewStep.description}</Text>
               )}
               <Text style={styles.eventCardOffice}>at {viewStep?.office_name}</Text>
+
+              {isViewingCurrentStep && !!currentStep?.linked_source && (
+                <View style={styles.linkedBox}>
+                  <View style={styles.linkedRow}>
+                    <Text style={styles.linkedLabel}>Requested at</Text>
+                    <Text style={styles.linkedValue}>
+                      {currentStep.linked_source.office_name} · Queue #{currentStep.linked_source.queue_number}
+                    </Text>
+                  </View>
+                  {(currentStep.linked_source.service_items ?? []).map((it, i) => (
+                    <Text key={`${it.name}-${i}`} style={styles.linkedItem}>
+                      • {it.name}{it.quantity > 1 ? ` ×${it.quantity}` : ''}
+                    </Text>
+                  ))}
+                  <View style={styles.linkedRow}>
+                    <Text style={styles.linkedLabel}>Amount to Pay</Text>
+                    <Text style={styles.linkedValue}>
+                      {currentStep.linked_source.amount_complete
+                        ? `₱${Number(currentStep.linked_source.total || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                        : 'Amount to be confirmed'}
+                    </Text>
+                  </View>
+                </View>
+              )}
 
               {!isViewingCurrentStep && !isFutureStep && (
                 <Text style={styles.eventDocNoReq}>
@@ -1478,6 +1547,7 @@ export default function OfficeQueue() {
             queueType={queueType}
             appointmentSlipConfirmed={appointmentSlipConfirmed}
             setAppointmentSlipConfirmed={setAppointmentSlipConfirmed}
+            itemChoices={itemChoices}
             onNext={() => setStep(4)}
             onBack={() => setStep(2)}
           />
@@ -1549,11 +1619,50 @@ export default function OfficeQueue() {
           </View>
         </View>
       </Modal>
+
+      <UnavailableServicesModal
+        visible={showUnavailable}
+        onClose={() => setShowUnavailable(false)}
+        studentId={studentId}
+        parentId={actingAsParent ? parentActorId : undefined}
+        officeId={office.id}
+        childName={actingAsParent ? childNameParam : undefined}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  childBanner: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: COLORS.primary + '12',
+  },
+  childBannerText: { color: COLORS.primary, textAlign: 'center' },
+  uvBtn: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    borderStyle: 'dashed',
+  },
+  uvBtnText: { color: COLORS.primary, fontWeight: '700', textAlign: 'center', fontSize: 13 },
+  linkedBox: {
+    marginTop: 10,
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: '#f8fafc',
+    gap: 4,
+  },
+  linkedRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
+  linkedLabel: { color: COLORS.gray, fontSize: 12 },
+  linkedValue: { flexShrink: 1, textAlign: 'right', fontWeight: '700', color: COLORS.text, fontSize: 13 },
+  linkedItem: { fontSize: 12, color: COLORS.text },
+
   parityBanner: {
     borderWidth: 1,
     borderColor: COLORS.primary,

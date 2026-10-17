@@ -11,7 +11,7 @@ interface Props {
     status: string;
     type: string;
     window_name?: string | null;
-    people_ahead: number;
+    people_ahead: number | null;
     joined_at: string;
     priority?: number | boolean;
     priority_reason?: string | null;
@@ -34,7 +34,7 @@ export default function QueueDetailsCard({ queue }: Props) {
     { label: 'Office', value: queue.office_name },
     { label: 'Queue Type', value: queue.type.toUpperCase() },
     { label: 'Window', value: queue.window_name || 'Not Assigned' },
-    { label: 'People Ahead', value: String(queue.people_ahead) },
+    { label: 'People Ahead', value: queue.people_ahead == null ? '—' : String(queue.people_ahead) },
     { label: 'Joined', value: formatDate(queue.joined_at) },
   ];
 

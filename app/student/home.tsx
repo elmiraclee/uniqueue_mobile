@@ -34,6 +34,7 @@ import {
   SPACING,
   TYPOGRAPHY,
 } from "../../constants/theme";
+import { formatDuration } from "@/utils/format-duration";
 import { fetchJsonOrNull } from "@/utils/api";
 import {
   clearLiveTicketWidget,
@@ -132,6 +133,9 @@ export default function StudentHome() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [currentQueue, setCurrentQueue] = useState<any>(null);
+  // Live stats for the current ticket (web dashboard: People Ahead,
+  // Estimated Wait, Assigned Window, Estimated Call Time).
+  const [queueLive, setQueueLive] = useState<any>(null);
   // Every active ticket incl. reserved ones (smart multi-queue, web parity).
   const [allQueues, setAllQueues] = useState<any[]>([]);
   const [showUnavailableModal, setShowUnavailableModal] = useState(false);
@@ -339,6 +343,17 @@ export default function StudentHome() {
       const queue = data?.success ? data.queue : null;
       setCurrentQueue(queue);
       setAllQueues(data?.success ? data.queues || (queue ? [queue] : []) : []);
+      if (queue?.id) {
+        fetchJsonOrNull(API.getQueueDetails, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ student_id: studentId, ticket_id: queue.id }),
+        })
+          .then((d) => setQueueLive(d?.success ? d.queue : null))
+          .catch(() => {});
+      } else {
+        setQueueLive(null);
+      }
       if (queue?.id) {
         updateLiveTicketWidget({
           ticketId: Number(queue.id),
@@ -1035,7 +1050,28 @@ export default function StudentHome() {
                   color={COLORS.gray}
                 />
               </View>
-            ) : (
+            ) : null}
+
+            {/* Web dashboard live rows */}
+            {currentQueue && (
+              <View style={styles.liveGrid}>
+                {[
+                  ["People Ahead", queueLive?.people_ahead ?? "—"],
+                  ["Estimated Wait", formatDuration(queueLive?.estimated_wait_minutes)],
+                  ["Assigned Window", queueLive?.window_name || currentQueue.window_name || "Not yet assigned"],
+                  ["Estimated Call Time", queueLive?.estimated_label || queueLive?.estimated_call_time || "—"],
+                ].map(([label, value]) => (
+                  <View key={String(label)} style={styles.liveRow}>
+                    <Text style={styles.liveLabel}>{label}</Text>
+                    <Text style={styles.liveValue} numberOfLines={1}>
+                      {String(value)}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {!currentQueue ? (
               <View style={styles.noQueueState}>
                 <View style={styles.noQueueIcon}>
                   <Ionicons
@@ -1051,7 +1087,23 @@ export default function StudentHome() {
                   </Text>
                 </View>
               </View>
-            )}
+            ) : null}
+          </AnimatedPressable>
+
+          {/* Entry to office live monitor — web "Live Queue" page */}
+          <AnimatedPressable
+            style={styles.liveMonitorBtn}
+            onPress={() =>
+              router.push({
+                pathname: "/student/live-monitor",
+                params: currentQueue?.office_id
+                  ? { officeId: String(currentQueue.office_id) }
+                  : {},
+              } as any)
+            }
+          >
+            <Ionicons name="tv-outline" size={16} color={COLORS.primary} />
+            <Text style={styles.liveMonitorText}>View Live Queue Monitor</Text>
           </AnimatedPressable>
 
           {/* Dashboard stats — mirrors web dash-hero__stats */}
@@ -1377,6 +1429,41 @@ export default function StudentHome() {
 }
 
 const styles = StyleSheet.create({
+  liveGrid: {
+    marginTop: SPACING.sm,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    paddingTop: SPACING.sm,
+    gap: 6,
+  },
+  liveRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: SPACING.sm,
+  },
+  liveLabel: { fontSize: 12, color: COLORS.gray, fontWeight: "600" },
+  liveValue: {
+    flexShrink: 1,
+    fontSize: 13,
+    color: COLORS.secondary,
+    fontWeight: "800",
+    textAlign: "right",
+  },
+  liveMonitorBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    marginTop: SPACING.sm,
+    paddingVertical: SPACING.sm,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.primaryTint,
+    backgroundColor: COLORS.cream,
+  },
+  liveMonitorText: { color: COLORS.primary, fontWeight: "700", fontSize: 13 },
+
   container: {
     flex: 1,
     backgroundColor: COLORS.background,

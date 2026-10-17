@@ -17,7 +17,61 @@ import AnimatedPressable from '../../components/ui/animated-pressable';
 import StatusBadge from '../../components/ui/status-badge';
 import { API } from '@/constants/backend';
 import { fetchJsonOrNull } from '@/utils/api';
+import { formatDuration } from '@/utils/format-duration';
 import { COLORS, RADIUS, SPACING } from '../../constants/theme';
+
+/** Port of web queue-ticket-live.js copyFor(): headline + sub per state. */
+function liveCopy(status: string, ahead: number, isParent: boolean, subject: string) {
+  if (status === 'completed' || status === 'done') {
+    return {
+      head: isParent ? `${subject} is done` : 'Your transaction is complete',
+      sub: isParent
+        ? 'The transaction has been completed. Feedback can be submitted from your dashboard.'
+        : 'Thanks for queueing. Please submit your feedback before joining another queue.',
+    };
+  }
+  if (status === 'cancelled') {
+    return {
+      head: isParent ? `${subject}'s queue was cancelled` : 'Your queue was cancelled',
+      sub: 'This ticket is no longer in the queue.',
+    };
+  }
+  if (status === 'reserved') {
+    return {
+      head: isParent ? `${subject} has a reserved queue` : 'Your queue is reserved',
+      sub: isParent
+        ? `The queue will activate after ${subject}'s current office service is completed.`
+        : 'This queue is held safely while your current office service is being completed.',
+    };
+  }
+  if (status === 'in_progress') {
+    return {
+      head: isParent ? `${subject} is being served now` : 'You are being served now',
+      sub: isParent ? 'Staff are handling the transaction at the window.' : 'Please stay at the window until staff finish.',
+    };
+  }
+  if (status === 'called') {
+    return {
+      head: isParent ? `${subject} has been called` : "It's your turn",
+      sub: isParent ? `Please make sure ${subject} proceeds to the window now.` : 'Please proceed to your window now.',
+    };
+  }
+  if (status === 'next' || ahead === 0) {
+    return {
+      head: isParent ? `${subject} is next in line` : "You're next in line",
+      sub: isParent
+        ? `Have ${subject} ready — the window will call them shortly.`
+        : 'Get ready — your window will call you shortly.',
+    };
+  }
+  if (ahead === 1) {
+    return { head: isParent ? `1 person ahead of ${subject}` : '1 person ahead of you', sub: 'Almost there.' };
+  }
+  return {
+    head: `${ahead} people ahead of ${isParent ? subject : 'you'}`,
+    sub: 'Still waiting. This updates on its own.',
+  };
+}
 
 function paramStr(v: unknown): string {
   if (v == null) return '';
@@ -175,22 +229,59 @@ export default function TicketDetailScreen() {
           ) : null}
         </View>
 
-        <View style={styles.stats}>
-          <View style={styles.stat}>
-            <Text style={styles.statLabel}>Ahead</Text>
-            <Text style={styles.statVal}>{ticket.people_ahead ?? '—'}</Text>
-          </View>
-          <View style={styles.stat}>
-            <Text style={styles.statLabel}>Now serving</Text>
-            <Text style={styles.statVal}>{ticket.now_serving || '—'}</Text>
-          </View>
-          <View style={styles.stat}>
-            <Text style={styles.statLabel}>Window</Text>
-            <Text style={styles.statVal}>{ticket.window_name || 'TBA'}</Text>
-          </View>
-        </View>
+{(() => {
+          const status = String(ticket.status || 'waiting');
+          const ahead = typeof ticket.people_ahead === 'number' ? ticket.people_ahead : 0;
+          const isOver = ['completed', 'done', 'cancelled', 'expired'].includes(status);
+          const skipped = !!ticket.is_requeued && !['completed', 'done', 'cancelled', 'expired'].includes(status);
+          const subject = ticket.first_name || 'Your child';
+          // Skipped by staff and not answered yet: out of the line (no position / ETA).
+          const copy = skipped
+            ? {
+                head: asParent ? `${subject} was skipped` : 'You were skipped',
+                sub: 'Not in line right now. Choose to rejoin (end of the line) or cancel.',
+              }
+            : liveCopy(status, ahead, asParent, subject);
+          let note: string | null = null;
+          if (!isOver && ticket.is_reserved) {
+            note = 'Reserved queue: it will become active automatically after your current office service is completed.';
+          } else if (!isOver && ticket.all_windows_closed) {
+            note = 'Every window in this office is closed right now, so no one can be called yet. The ticket keeps its place in line.';
+          } else if (skipped) {
+            note = 'Skipped tickets are not counted in the line until you respond. Rejoining puts you at the end of the line.';
+          }
+          return (
+            <View style={styles.livePanel}>
+              <Text style={styles.liveHead}>{copy.head}</Text>
+              <Text style={styles.liveSub}>{copy.sub}</Text>
+              <View style={styles.stats}>
+                <View style={styles.stat}>
+                  <Text style={styles.statLabel}>Ahead</Text>
+                  <Text style={styles.statVal}>{isOver || skipped ? '—' : ahead}</Text>
+                </View>
+                <View style={styles.stat}>
+                  <Text style={styles.statLabel}>Est. wait</Text>
+                  <Text style={styles.statVal}>
+                    {isOver || skipped ? '—' : formatDuration(ticket.estimated_wait_minutes)}
+                  </Text>
+                </View>
+                <View style={styles.stat}>
+                  <Text style={styles.statLabel}>Window</Text>
+                  <Text style={styles.statVal} numberOfLines={1}>{ticket.window_name || 'To be assigned'}</Text>
+                </View>
+              </View>
+              {!isOver && !skipped && !!ticket.estimated_label && (
+                <Text style={styles.liveEta}>Estimated call time: {ticket.estimated_label}</Text>
+              )}
+              {!!ticket.now_serving && !isOver && (
+                <Text style={styles.liveEta}>Now serving: {ticket.now_serving}</Text>
+              )}
+              {!!note && <Text style={styles.liveNote}>{note}</Text>}
+            </View>
+          );
+        })()}
 
-        <Text style={styles.section}>Services</Text>
+                <Text style={styles.section}>Services</Text>
         {(ticket.service_items || []).map((it: any, i: number) => (
           <View key={i} style={styles.itemCard}>
             <Text style={styles.itemName}>
@@ -255,10 +346,15 @@ const styles = StyleSheet.create({
   office: { fontWeight: '700', fontSize: 16, color: COLORS.text },
   qn: { fontSize: 36, fontWeight: '800', color: COLORS.primary, marginVertical: 4 },
   meta: { color: COLORS.gray, fontSize: 13 },
+  livePanel: { backgroundColor: '#fff', borderRadius: RADIUS.lg, padding: SPACING.md, marginTop: 12 },
+  liveHead: { fontSize: 17, fontWeight: '800', color: COLORS.primary },
+  liveSub: { fontSize: 13, color: COLORS.gray, marginTop: 2 },
+  liveEta: { fontSize: 13, color: COLORS.text, fontWeight: '600', marginTop: 10, textAlign: 'center' },
+  liveNote: { fontSize: 12, color: '#92400e', backgroundColor: '#fef3c7', borderRadius: 8, padding: 8, marginTop: 10 },
   stats: { flexDirection: 'row', gap: 8, marginTop: 12 },
   stat: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: COLORS.background,
     borderRadius: RADIUS.md,
     padding: 12,
     alignItems: 'center',

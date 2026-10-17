@@ -13,6 +13,7 @@ interface ServiceItem {
   id: number;
   name: string;
   requirements: string[];
+  choices?: { id: number; label: string; requirements?: string[] }[];
 }
 
 interface Props {
@@ -29,6 +30,9 @@ interface Props {
   queueType: 'walkin' | 'appointment';
   appointmentSlipConfirmed: boolean;
   setAppointmentSlipConfirmed: (value: boolean) => void;
+  // Selected choice per service item — its own extra requirements are
+  // added to the checklist (web: service_item_choice_requirements).
+  itemChoices?: Record<number, { choice_id: number; choice_label: string }>;
   onNext: () => void;
   onBack: () => void;
 }
@@ -41,6 +45,7 @@ export default function RequirementStep({
   queueType,
   appointmentSlipConfirmed,
   setAppointmentSlipConfirmed,
+  itemChoices = {},
   onNext,
   onBack,
 }: Props) {
@@ -115,7 +120,14 @@ export default function RequirementStep({
     ...new Set(
       service_items
         .filter((item) => selectedServiceItems.includes(item.id))
-        .flatMap((item) => item.requirements)
+        .flatMap((item) => {
+          const base = item.requirements ?? [];
+          const sel = itemChoices[item.id];
+          const choice = sel
+            ? (item.choices ?? []).find((c) => Number(c.id) === Number(sel.choice_id))
+            : undefined;
+          return [...base, ...(choice?.requirements ?? [])];
+        })
     ),
   ];
 

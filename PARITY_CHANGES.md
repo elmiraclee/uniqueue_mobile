@@ -32,3 +32,25 @@ cron_scan_notifications.php (removed invisible characters that caused a PHP pars
 ## Still recommended
 The API still trusts student_id/parent_id sent by the app. Add token auth (issue a token at login,
 verify it in lib/shared.php) before going wide.
+
+## Round 2 — copy web capabilities to mobile
+- Student home: current-queue card shows People Ahead, Estimated Wait, Assigned Window,
+  Estimated Call Time (web dashboard rows); button to the new Live Queue Monitor.
+- NEW Live Queue Monitor (`/student/live-monitor`, `/parent/live-monitor`): office tabs, open
+  windows only, paused state, now serving / next / waiting with est. call time, your ticket highlighted, 3s refresh.
+- Live queue board: estimated call time + per-ticket ETA.
+- Ticket screen: web live panel (state headline/sub, Ahead / Est. wait / Window, est. call time,
+  reserved / all-windows-closed / requeued notes); cancel follows `can_cancel`.
+- Cancel rule everywhere = web (waiting/reserved/next and never once called).
+- Requirements step includes the selected choice's own requirements.
+- Office queue: "Queue for {child}" banner for parents; "currently unavailable services" button +
+  request popup for this office; payment event steps show "Requested at" + "Amount to Pay".
+- Parent home: 3s refresh, per-ticket People Ahead / Estimated Wait / Window / Estimated Call Time,
+  "{child} is being called! Proceed now to {window}", Last updated + Refresh, Profile only /
+  Student account badge, hero stats incl. Offices open, live monitor link; joining another queue is
+  blocked while the child has an active queue or pending feedback (web parent dashboard rule) —
+  also enforced in the parent office picker.
+
+## Round 3
+- Ticket / live queue / cards: skipped-and-unanswered tickets show "You were skipped" with no
+  position or ETA (people ahead may be null).

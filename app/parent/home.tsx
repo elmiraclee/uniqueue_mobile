@@ -25,6 +25,7 @@ import StatusBadge from "../../components/ui/status-badge";
 import Skeleton from "../../components/ui/skeleton";
 import { API } from "@/constants/backend";
 import { fetchJsonOrNull } from "@/utils/api";
+import { formatDuration } from "@/utils/format-duration";
 import {
   clearLiveTicketWidget,
   updateLiveTicketWidget,
@@ -69,6 +70,9 @@ interface LiveTicket {
   depends_on_queue_number?: string | null;
   depends_on_office_name?: string | null;
   called_at?: string | null;
+  estimated_call_time?: string | null;
+  estimated_label?: string | null;
+  can_cancel?: boolean;
 }
 
 function hasActiveTicket(c: Child): boolean {
@@ -106,6 +110,9 @@ export default function ParentHome() {
     return null;
   })();
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Web parent dashboard: "Offices open" hero stat + "Last updated" stamp.
+  const [officesOpen, setOfficesOpen] = useState<number | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<string>("");
 
   const load = useCallback(async () => {
     try {
@@ -116,7 +123,7 @@ export default function ParentHome() {
       const parentId = user.id;
       setParentIdState(Number(parentId) || 0);
 
-      const [kidsRes, reqRes, fbRes] = await Promise.all([
+      const [kidsRes, reqRes, fbRes, officeRes] = await Promise.all([
         fetchJsonOrNull(API.getParentChildren, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -132,7 +139,16 @@ export default function ParentHome() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ parent_id: parentId }),
         }),
+        fetchJsonOrNull(API.getOffice),
       ]);
+      if (officeRes?.success) {
+        const list: any[] = officeRes.offices || [];
+        setOfficesOpen(
+          typeof officeRes.stats?.open_offices === "number"
+            ? officeRes.stats.open_offices
+            : list.filter((o) => !!o.is_open).length,
+        );
+      }
 
       if (kidsRes?.success) {
         const loadedChildren: Child[] = kidsRes.children || [];
@@ -168,6 +184,9 @@ export default function ParentHome() {
           clearLiveTicketWidget();
         }
         setLoadError(null);
+        setLastUpdated(
+          new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" }),
+        );
       } else {
         setChildren([]);
         setLoadError(
@@ -187,11 +206,11 @@ export default function ParentHome() {
     }
   }, []);
 
-  // Same 5-second live refresh as the web parent dashboard.
+  // Same 3-second live refresh as the web parent dashboard (parent-dashboard.js).
   useFocusEffect(
     useCallback(() => {
       load();
-      const t = setInterval(load, 5000);
+      const t = setInterval(load, 3000);
       return () => clearInterval(t);
     }, [load]),
   );
@@ -281,6 +300,20 @@ export default function ParentHome() {
             {children.length === 1 ? "child" : "children"} linked
             {activeTicketCount > 0 ? ` · ${activeTicketCount} active ${activeTicketCount === 1 ? "queue" : "queues"}` : ""}
           </Text>
+          <View style={styles.heroStats}>
+            <View style={styles.heroStat}>
+              <Text style={styles.heroStatValue}>{children.length}</Text>
+              <Text style={styles.heroStatLabel}>Children</Text>
+            </View>
+            <View style={styles.heroStat}>
+              <Text style={styles.heroStatValue}>{activeTicketCount}</Text>
+              <Text style={styles.heroStatLabel}>Active queues</Text>
+            </View>
+            <View style={styles.heroStat}>
+              <Text style={styles.heroStatValue}>{officesOpen ?? "—"}</Text>
+              <Text style={styles.heroStatLabel}>Offices open</Text>
+            </View>
+          </View>
         </View>
 
         {pendingFeedbackList.map((fb) => (
@@ -318,7 +351,16 @@ export default function ParentHome() {
         )}
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Linked children</Text>
+          <View style={styles.sectionHead}>
+            <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>Linked children</Text>
+            <AnimatedPressable style={styles.refreshBtn} onPress={onRefresh}>
+              <Ionicons name="refresh" size={14} color={COLORS.primary} />
+              <Text style={styles.refreshText}>Refresh</Text>
+            </AnimatedPressable>
+          </View>
+          {!!lastUpdated && (
+            <Text style={styles.lastUpdated}>Last updated {lastUpdated}</Text>
+          )}
           {loadError ? (
             <View style={styles.empty}>
               <Text style={[styles.emptyText, { color: "#b91c1c" }]}>
@@ -370,6 +412,21 @@ export default function ParentHome() {
                     </Text>
                     <Text style={styles.cardMeta}>{c.relationship}</Text>
                   </View>
+                  <View
+                    style={[
+                      styles.acctBadge,
+                      c.account_status === "profile_only" && styles.acctBadgeProfile,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.acctBadgeText,
+                        c.account_status === "profile_only" && { color: COLORS.warning },
+                      ]}
+                    >
+                      {c.account_status === "profile_only" ? "Profile only" : "Student account"}
+                    </Text>
+                  </View>
                 </View>
 
                 {(liveByChild[c.id] || []).map((t) => (
@@ -386,11 +443,30 @@ export default function ParentHome() {
                         {t.depends_on_office_name ? ` at ${t.depends_on_office_name}` : ""} is done.
                       </Text>
                     ) : (
-                      <Text style={styles.cardMeta}>
-                        {t.window_name ? `${t.window_name} · ` : ""}
-                        {typeof t.people_ahead === "number" ? `${t.people_ahead} ahead` : ""}
-                        {t.estimated_wait_minutes != null ? ` · ~${t.estimated_wait_minutes} min` : ""}
-                      </Text>
+                      <>
+                        {(["called", "in_progress"].includes(t.status) || !!t.called_at) && (
+                          <View style={styles.calledAlert}>
+                            <Ionicons name="megaphone-outline" size={16} color={COLORS.success} />
+                            <Text style={styles.calledAlertText}>
+                              {c.first_name} is being called! Proceed now to{" "}
+                              {t.window_name || "the assigned window"}.
+                            </Text>
+                          </View>
+                        )}
+                        <View style={styles.liveGrid}>
+                          {[
+                            ["People Ahead", typeof t.people_ahead === "number" ? String(t.people_ahead) : "—"],
+                            ["Estimated Wait", formatDuration(t.estimated_wait_minutes)],
+                            ["Assigned Window", t.window_name || "Not yet assigned"],
+                            ["Estimated Call Time", t.estimated_label || t.estimated_call_time || "—"],
+                          ].map(([label, value]) => (
+                            <View key={label} style={styles.liveRow}>
+                              <Text style={styles.liveLabel}>{label}</Text>
+                              <Text style={styles.liveValue} numberOfLines={1}>{value}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      </>
                     )}
                     <View style={{ gap: 8, width: "100%", marginTop: 8 }}>
                       <AnimatedPressable
@@ -423,7 +499,20 @@ export default function ParentHome() {
                           <Text style={styles.outlineBtnText}>Live board</Text>
                         </AnimatedPressable>
                       )}
-                      {["waiting", "reserved", "next"].includes(t.status) && !t.called_at && (
+                      {!t.is_reserved && (
+                        <AnimatedPressable
+                          style={styles.outlineBtn}
+                          onPress={() =>
+                            router.push({
+                              pathname: "/parent/live-monitor",
+                              params: { childId: String(c.id) },
+                            } as any)
+                          }
+                        >
+                          <Text style={styles.outlineBtnText}>Office live monitor</Text>
+                        </AnimatedPressable>
+                      )}
+                      {(t.can_cancel ?? (["waiting", "reserved", "next"].includes(t.status) && !t.called_at)) && (
                         <AnimatedPressable
                           style={[styles.outlineBtn, { borderColor: "#ef4444" }]}
                           onPress={() => cancelTicket(c, t)}
@@ -436,8 +525,14 @@ export default function ParentHome() {
                 ))}
                 <View style={styles.noTicket}>
                   {!hasActiveTicket(c) && <Text style={styles.noTicketText}>No active queue</Text>}
-                  {feedbackBlockedIds.has(c.id) ? (
-                    <Text style={styles.noTicketText}>Submit pending feedback first</Text>
+                  {hasActiveTicket(c) ? (
+                    // Web parent dashboard blocks joining while the child already
+                    // has an active queue ("{first} already has an active queue.").
+                    <Text style={styles.noTicketText}>{c.first_name || "This child"} already has an active queue.</Text>
+                  ) : feedbackBlockedIds.has(c.id) ? (
+                    <Text style={styles.noTicketText}>
+                      Submit {c.first_name || "this child"}’s pending feedback before joining a new queue.
+                    </Text>
                   ) : (
                     <AnimatedPressable
                       style={styles.outlineBtn}
@@ -448,9 +543,7 @@ export default function ParentHome() {
                         } as any)
                       }
                     >
-                      <Text style={styles.outlineBtnText}>
-                        {hasActiveTicket(c) ? "Queue at another office" : "Join queue for child"}
-                      </Text>
+                      <Text style={styles.outlineBtnText}>Join queue for child</Text>
                     </AnimatedPressable>
                   )}
                 </View>
@@ -527,9 +620,58 @@ const styles = StyleSheet.create({
   greeting: { color: "rgba(255,255,255,0.85)", fontSize: 13 },
   name: { color: "#fff", fontSize: 22, fontWeight: "700", marginTop: 4 },
   sub: { color: "rgba(255,255,255,0.9)", fontSize: 13, marginTop: 4 },
+  heroStats: { flexDirection: "row", gap: 8, marginTop: SPACING.md },
+  heroStat: {
+    flex: 1,
+    backgroundColor: "rgba(255,255,255,0.14)",
+    borderRadius: RADIUS.md,
+    paddingVertical: 8,
+    alignItems: "center",
+  },
+  heroStatValue: { color: "#fff", fontSize: 18, fontWeight: "800" },
+  heroStatLabel: { color: "rgba(255,255,255,0.85)", fontSize: 11, marginTop: 2 },
+  sectionHead: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  refreshBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+  },
+  refreshText: { color: COLORS.primary, fontWeight: "700", fontSize: 12 },
+  lastUpdated: { fontSize: 11, color: COLORS.gray, marginBottom: SPACING.sm },
+  acctBadge: {
+    backgroundColor: COLORS.successLight,
+    borderRadius: RADIUS.full,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  acctBadgeProfile: { backgroundColor: COLORS.warningLight },
+  acctBadgeText: { fontSize: 10, fontWeight: "800", color: COLORS.success },
+  calledAlert: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: COLORS.successLight,
+    borderRadius: RADIUS.sm,
+    padding: 8,
+    marginBottom: 6,
+  },
+  calledAlertText: { flex: 1, color: COLORS.success, fontWeight: "700", fontSize: 13 },
+  liveGrid: { gap: 4, marginTop: 2 },
+  liveRow: { flexDirection: "row", justifyContent: "space-between", gap: 8 },
+  liveLabel: { fontSize: 12, color: COLORS.gray },
+  liveValue: { flexShrink: 1, fontSize: 12, fontWeight: "700", color: COLORS.text, textAlign: "right" },
   section: { marginBottom: SPACING.lg },
   sectionTitle: {
-    ...TYPOGRAPHY.h3,
     marginBottom: SPACING.sm,
     color: COLORS.text,
   },

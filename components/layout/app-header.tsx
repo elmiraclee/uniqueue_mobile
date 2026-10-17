@@ -18,6 +18,8 @@ interface HeaderProps {
   title?: string;
   onNotificationPress?: () => void;
   onBackPress?: () => void;
+  /** Accepted for screens that pass it; the header has no back button. */
+  showBack?: boolean;
 }
 
 export default function AppHeader({

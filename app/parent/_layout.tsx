@@ -103,6 +103,10 @@ export default function ParentTabsLayout() {
         options={{ href: null, title: 'Live Queue' }}
       />
       <Tabs.Screen
+        name="live-monitor"
+        options={{ href: null, title: 'Live Monitor' }}
+      />
+      <Tabs.Screen
         name="ticket"
         options={{ href: null, title: 'Ticket' }}
       />

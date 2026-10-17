@@ -3,11 +3,12 @@ import {
   ActivityIndicator,
   FlatList,
   RefreshControl,
-  SafeAreaView,
   StyleSheet,
   Text,
   View,
+  Platform,
 } from "react-native";
+import { SafeAreaView, type Edge } from "react-native-safe-area-context";
 
 import { router, useLocalSearchParams } from "expo-router";
 
@@ -24,11 +25,20 @@ import {
   TYPOGRAPHY,
 } from "@/constants/theme";
 
+// AppHeader already pads for the Android status bar, so only apply the
+// top inset on iOS (same visual result as the old react-native SafeAreaView).
+const SAFE_AREA_EDGES: Edge[] =
+  Platform.OS === "ios"
+    ? ["top", "bottom", "left", "right"]
+    : ["bottom", "left", "right"];
+
 interface QueueItem {
   id: number;
   queue_number: string;
   status: string;
   is_you: boolean;
+  eta_minutes?: number;
+  eta_time?: string | null;
 }
 
 interface LiveQueue {
@@ -43,9 +53,14 @@ interface LiveQueue {
 
   now_serving: string | null;
 
-  people_ahead: number;
+  people_ahead: number | null;
 
   estimated_wait: number;
+
+  // Web realtime estimate (same as web ticket page)
+  estimated_wait_minutes?: number | null;
+  estimated_call_time?: string | null;
+  estimated_label?: string | null;
 
   queue_list: QueueItem[];
 }
@@ -206,7 +221,7 @@ export default function LiveQueueScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView style={styles.safeArea} edges={SAFE_AREA_EDGES}>
         <AppHeader title="Live Queue" />
         <ActivityIndicator
           size="large"
@@ -219,7 +234,7 @@ export default function LiveQueueScreen() {
 
   if (errorMsg || !liveQueue) {
     return (
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView style={styles.safeArea} edges={SAFE_AREA_EDGES}>
         <AppHeader title="Live Queue" />
         <View style={{ padding: 24, alignItems: "center", marginTop: 40 }}>
           <Text
@@ -243,7 +258,7 @@ export default function LiveQueueScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={SAFE_AREA_EDGES}>
       <AppHeader title="Live Queue" />
 
       {/* Summary section — fixed height, no scrolling */}
@@ -291,7 +306,7 @@ export default function LiveQueueScreen() {
         {/* Primary stats — People Ahead & Estimated Minutes */}
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
-            <Text style={styles.statValue}>{liveQueue?.people_ahead ?? 0}</Text>
+            <Text style={styles.statValue}>{liveQueue?.people_ahead ?? "—"}</Text>
             <Text style={styles.statLabel}>People Ahead</Text>
           </View>
 
@@ -303,7 +318,24 @@ export default function LiveQueueScreen() {
             </Text>
             <Text style={styles.statLabel}>Est. Minutes</Text>
           </View>
+
+          <View style={styles.statDivider} />
+
+          <View style={styles.statCard}>
+            <Text style={[styles.statValue, { fontSize: 20 }]} numberOfLines={1}>
+              {liveQueue?.estimated_call_time ?? "--"}
+            </Text>
+            <Text style={styles.statLabel}>Est. Call Time</Text>
+          </View>
         </View>
+
+        {!!liveQueue?.estimated_label && (
+          <Text style={styles.etaLabel}>
+            {liveQueue.estimated_call_time
+              ? `Estimated call time: ${liveQueue.estimated_label}`
+              : liveQueue.estimated_label}
+          </Text>
+        )}
 
         {/* Queue list header */}
         <View style={styles.listHeaderRow}>
@@ -334,6 +366,9 @@ export default function LiveQueueScreen() {
 
               <Text style={styles.queueItemStatus}>
                 {item.status.toUpperCase()}
+                {item.status === "waiting" && item.eta_time
+                  ? ` · Est. ${item.eta_time} (~${item.eta_minutes ?? 0} mins)`
+                  : ""}
               </Text>
             </View>
 
@@ -493,6 +528,14 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     textAlign: "center",
     letterSpacing: 0.2,
+  },
+
+  etaLabel: {
+    marginTop: SPACING.sm,
+    textAlign: "center",
+    color: COLORS.secondary,
+    fontSize: 13,
+    fontWeight: "700",
   },
 
   listHeaderRow: {
