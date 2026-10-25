@@ -1,3 +1,4 @@
+import { clientAlert } from '@/components/client/client-ui';
 import React from 'react';
 import {
     Alert,
@@ -90,7 +91,7 @@ export default function RequirementStep({
           style={styles.button}
           onPress={() => {
             if (!appointmentSlipConfirmed) {
-              Alert.alert(
+              clientAlert(
                 'Required',
                 'Please confirm you have your Appointment Slip.'
               );
@@ -154,7 +155,7 @@ export default function RequirementStep({
       checkedCurrentRequirements.length <
       requirements.length
     ) {
-      Alert.alert(
+      clientAlert(
         'Incomplete',
         'Please check all requirements before proceeding.'
       );

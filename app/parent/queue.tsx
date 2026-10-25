@@ -1,3 +1,4 @@
+import { clientAlert } from '@/components/client/client-ui';
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
@@ -36,6 +37,7 @@ export default function ParentQueueForChild() {
   const [refreshing, setRefreshing] = useState(false);
   const [showUnavailable, setShowUnavailable] = useState(false);
   // Web: "{first} already has an active queue." / pending-feedback block.
+  const [feedbackOffices,setFeedbackOffices]=useState<number[]>([]);
   const [childBlock, setChildBlock] = useState<string | null>(null);
   const firstName = String(childName || '').trim().split(/\s+/)[0] || 'This child';
 
@@ -57,13 +59,11 @@ export default function ParentQueueForChild() {
         childId ? postJson(API.getParentPendingFeedback, { parent_id: pid }) : null,
       ]);
       const hasQueue = !!(cur?.success && (cur.queue || (cur.queues || []).length));
-      const hasFeedback = !!(fb?.success && (fb.pending || []).some((f: any) => Number(f.student_id) === childId));
+      setFeedbackOffices(fb?.success?(fb.pending||[]).filter((f:any)=>Number(f.student_id)===childId).map((f:any)=>Number(f.office_id)):[]);
       setChildBlock(
         hasQueue
           ? `${firstName} already has an active queue.`
-          : hasFeedback
-            ? `Submit ${firstName}’s pending feedback before joining a new queue.`
-            : null,
+          : null,
       );
       if (data?.success) setOffices(data.offices || []);
       setEvents(ev?.success ? ev.events || [] : []);
@@ -76,6 +76,7 @@ export default function ParentQueueForChild() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const blockReason = (o: any): string | null => {
+    if(feedbackOffices.includes(Number(o.id)))return 'Submit the pending CSM for this office before queueing here again.';
     if (o.parent_queue_enabled === false) return 'This office does not accept parent/guardian queueing.';
     if (o.can_join === false) return o.availability_reason || 'This office is not accepting queues right now.';
     if (o.is_full) return 'This office has reached its daily capacity.';
@@ -85,12 +86,12 @@ export default function ParentQueueForChild() {
   const go = async (office: any, eventId?: number) => {
     if (!childId) return;
     if (childBlock) {
-      Alert.alert('Cannot join', childBlock);
+      clientAlert('Cannot join', childBlock);
       return;
     }
     const reason = blockReason(office);
     if (reason) {
-      Alert.alert(office.name, reason);
+      clientAlert(office.name, reason);
       return;
     }
     // Early smart multi-queue check (same as the web dashboard pre-check).
@@ -99,7 +100,7 @@ export default function ParentQueueForChild() {
         `${API.prequeueCheck}?parent_id=${parentId}&child_id=${childId}&office_id=${office.id}&type=walkin&dashboard=1`,
       );
       if (pre?.success && pre.allowed === false) {
-        Alert.alert('Cannot join yet', pre.reason + (pre.retry_at ? `\n\nTry again around ${pre.retry_at}.` : ''));
+        clientAlert('Cannot join yet', pre.reason + (pre.retry_at ? `\n\nTry again around ${pre.retry_at}.` : ''));
         return;
       }
     } catch {}

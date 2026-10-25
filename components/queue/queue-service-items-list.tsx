@@ -7,6 +7,8 @@ import { COLORS, ICON_SIZES, RADIUS, SPACING, TYPOGRAPHY } from '../../constants
 interface ServiceItem {
   name: string;
   quantity: number;
+  choice_label?: string;
+  academic?: {copy_number?:number;academic_period?:string;period?:string;school_year?:string}[];
 }
 
 interface Props {
@@ -52,7 +54,7 @@ export default function QueueServiceItemsList({ service_items, eventStepTitle, e
             <View key={index} style={[styles.item, index % 2 === 1 && styles.itemAlt]}>
               <View style={styles.nameRow}>
                 <Ionicons name="document-text-outline" size={ICON_SIZES.sm} color={COLORS.primary} />
-                <Text style={styles.name}>{item.name}</Text>
+                <View style={{flex:1,gap:6}}><Text style={styles.name}>{item.name}{item.choice_label?` — ${item.choice_label}`:''}</Text>{item.academic?.map((a,i)=><Text key={i} style={{fontSize:14,lineHeight:20,color:'#625b5d'}}>Copy {a.copy_number||i+1}: {a.academic_period||a.period} / {a.school_year}</Text>)}</View>
               </View>
               <View style={styles.qtyBadge}>
                 <Text style={styles.qty}>x{item.quantity}</Text>
@@ -99,7 +101,7 @@ const styles = StyleSheet.create({
   },
   name: {
     flex: 1,
-    fontSize: 12.5,
+    fontSize: 16,
     fontWeight: '600',
     color: COLORS.text,
   },

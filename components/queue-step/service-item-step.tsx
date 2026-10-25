@@ -1,3 +1,5 @@
+import { TourTarget } from '@/components/tutorial/tutorial';
+import { clientAlert } from '@/components/client/client-ui';
 import React, { useMemo, useState } from 'react';
 import {
   Alert,
@@ -113,6 +115,8 @@ export default function ServiceItemStep({
     if (action === 'add') newQty++;
     if (action === 'minus' && current > 1) newQty--;
     setQuantities({ ...quantities, [id]: newQty });
+    if (sameForAll[id]) setAcademic(prev=>{const first=prev[id]?.[0]||{period:'',school_year:''};return {...prev,[id]:Array.from({length:newQty},()=>({...first}))}});
+    else setAcademic(prev=>({...prev,[id]:(prev[id]||[]).slice(0,newQty)}));
   };
 
   const itemHasChoices = (item: ServiceItem) =>
@@ -181,11 +185,11 @@ export default function ServiceItemStep({
 
   const next = () => {
     if (selectedServiceItems.length === 0) {
-      Alert.alert('Required', 'Select at least one service item.');
+      clientAlert('Required', 'Select at least one service item.');
       return;
     }
     if (priorityEnabled && priority && !priorityReason.trim()) {
-      Alert.alert('Required', 'Please enter a reason for priority lane.');
+      clientAlert('Required', 'Please enter a reason for priority lane.');
       return;
     }
 
@@ -197,7 +201,7 @@ export default function ServiceItemStep({
       (i) => itemHasChoices(i) && !itemChoices[i.id]?.choice_id
     );
     if (missingChoice) {
-      Alert.alert('Required', `Please choose an option for "${missingChoice.name}".`);
+      clientAlert('Required', `Please choose an option for "${missingChoice.name}".`);
       return;
     }
 
@@ -209,7 +213,7 @@ export default function ServiceItemStep({
       return rows.slice(0, qty).some((r) => !r.period || !r.school_year);
     });
     if (missingAcademic) {
-      Alert.alert(
+      clientAlert(
         'Required',
         `Please select the period and school year for "${missingAcademic.name}".`
       );
@@ -272,7 +276,7 @@ export default function ServiceItemStep({
               key={item.id}
               style={[styles.card, isSelected && styles.selected]}
             >
-              <TouchableOpacity
+              <TourTarget id={`service-${item.id}`}><TouchableOpacity
                 style={styles.cardRow}
                 onPress={() => toggle(item.id)}
               >
@@ -296,10 +300,10 @@ export default function ServiceItemStep({
                     )}
                   </View>
                 </View>
-              </TouchableOpacity>
+              </TouchableOpacity></TourTarget>
 
               {isSelected && (
-                <View style={styles.qtyContainer}>
+                <TourTarget id={`quantity-${item.id}`}><View style={styles.qtyContainer}>
                   <Text style={styles.qtyLabel}>Copies</Text>
                   <View style={styles.qtyControls}>
                     <TouchableOpacity
@@ -322,7 +326,7 @@ export default function ServiceItemStep({
                       <Text style={styles.qtyButtonText}>+</Text>
                     </TouchableOpacity>
                   </View>
-                </View>
+                </View></TourTarget>
               )}
 
               {isSelected && itemHasChoices(item) && (
@@ -358,7 +362,7 @@ export default function ServiceItemStep({
               )}
 
               {isSelected && itemNeedsAcademic(item) && (
-                <View style={styles.inlineBlock}>
+                <TourTarget id={`academic-${item.id}`}><View style={styles.inlineBlock}>
                   <Text style={styles.inlineHeader}>Academic details</Text>
 
                   {(quantities[item.id] || 1) > 1 && (
@@ -414,20 +418,20 @@ export default function ServiceItemStep({
                       </View>
                     );
                   })}
-                </View>
+                </View></TourTarget>
               )}
             </View>
           );
         })
       )}
 
-      <PriorityStep
+      <TourTarget id="priority"><PriorityStep
         priority={priority}
         setPriority={setPriority}
         priorityReason={priorityReason}
         setPriorityReason={setPriorityReason}
         priorityEnabled={priorityEnabled}
-      />
+      /></TourTarget>
 
       <TouchableOpacity style={styles.button} onPress={next}>
         <Text style={styles.buttonText}>Continue</Text>

@@ -1,3 +1,4 @@
+import { clientFetch, getSessionToken } from '@/utils/client-fetch';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import React, {
@@ -30,7 +31,8 @@ export interface QueueNotification {
     | 'called'
     | 'in_progress'
     | 'completed'
-    | 'cancelled';
+    | 'cancelled'
+    | 'relationship_unlinked';
   title: string;
   message: string;
   queue_number: string;
@@ -76,13 +78,15 @@ type Session = { role: 'student' | 'parent'; id: number } | null;
  */
 async function getSession(): Promise<Session> {
   try {
-    const [raw, role] = await Promise.all([
+    const [raw, role, token] = await Promise.all([
       AsyncStorage.getItem('user'),
       AsyncStorage.getItem('role'),
+      getSessionToken(),
     ]);
-    if (!raw) return null;
+    // Cached profile data alone is not an authenticated session.
+    if (!raw || !token || !['student', 'parent'].includes(role ?? '')) return null;
     const user = JSON.parse(raw);
-    const id = Number(user?.id ?? user?.student_id ?? 0);
+    const id = Number(user?.id ?? (role === 'parent' ? user?.parent_id : user?.student_id) ?? 0);
     if (!id) return null;
     return { role: role === 'parent' ? 'parent' : 'student', id };
   } catch {
@@ -138,6 +142,7 @@ export function NotificationProvider({
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
 
+  const accountKeyRef = useRef<string | null>(null);
   const seenIdsRef = useRef<Set<number>>(new Set());
   // `${ticket_id}:${type}` keys already shown as a system notification,
   // so a locally-posted alert and the server's push never double-ring.
@@ -248,7 +253,7 @@ export function NotificationProvider({
       const mods = loadPushModules();
       if (!mods) return;
 
-      const key = `${n.ticket_id}:${n.type}`;
+      const key = n.ticket_id ? `${n.ticket_id}:${n.type}` : `account:${n.id}`;
       if (presentedKeysRef.current.has(key)) return;
       presentedKeysRef.current.add(key);
 
@@ -288,18 +293,21 @@ export function NotificationProvider({
 
     try {
       const session = await getSession();
-      if (!session) return;
+      if (!session) {setNotifications([]);setUnreadCount(0);accountKeyRef.current=null;seenIdsRef.current.clear();presentedKeysRef.current.clear();isFirstLoadRef.current=true;return;}
+      const accountKey=session.role+':'+session.id;
+      if(accountKeyRef.current!==accountKey){accountKeyRef.current=accountKey;seenIdsRef.current.clear();presentedKeysRef.current.clear();isFirstLoadRef.current=true;setNotifications([]);setUnreadCount(0)}
 
       // Parents watch their linked children's queues through their own
       // endpoint; students generate + read their own notifications.
+      const endpoint = session.role === 'parent' ? API.getParentNotifications : API.checkNotifications;
       const res =
         session.role === 'parent'
-          ? await fetch(API.getParentNotifications, {
+          ? await clientFetch(API.getParentNotifications, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ parent_id: session.id }),
             })
-          : await fetch(API.checkNotifications, {
+          : await clientFetch(API.checkNotifications, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ student_id: session.id }),
@@ -308,9 +316,19 @@ export function NotificationProvider({
       const responseText = await res.text();
 
       if (!res.ok || !contentType.toLowerCase().includes('application/json')) {
-        const warning = `Notification API returned ${res.status} (${contentType || 'unknown content type'})`;
+        // Only display known authentication codes, never raw bodies/tokens.
+        let authCode = '';
+        if (res.status === 401) {
+          try {
+            const code = JSON.parse(responseText).code;
+            if (['AUTH_TOKEN_MISSING', 'AUTH_TOKEN_INVALID', 'AUTH_SESSION_EXPIRED', 'AUTH_ACCOUNT_UNAVAILABLE'].includes(code)) {
+              authCode = ` [${code}]`;
+            }
+          } catch { /* A proxy may return non-JSON errors. */ }
+        }
+        const warning = `Notification API returned ${res.status}${authCode} (${contentType || 'unknown content type'})`;
         if (lastPollWarningRef.current !== warning) {
-          console.warn(`${warning}: ${API.checkNotifications}`);
+          console.warn(`${warning}: ${endpoint}`);
           lastPollWarningRef.current = warning;
         }
         return;
@@ -328,6 +346,9 @@ export function NotificationProvider({
       }
 
       if (!data.success) return;
+      lastPollWarningRef.current = null;
+      const currentSession = await getSession();
+      if (!currentSession || currentSession.role + ':' + currentSession.id !== accountKey) return;
 
       // The parent endpoint returns read_at instead of is_read and adds
       // the child's name — normalise both shapes here.
@@ -382,7 +403,7 @@ export function NotificationProvider({
     setUnreadCount((prev) => Math.max(0, prev - 1));
 
     try {
-      await fetch(API.markNotificationsRead, {
+      await clientFetch(API.markNotificationsRead, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...owner, notification_id }),
@@ -401,7 +422,7 @@ export function NotificationProvider({
     setUnreadCount(0);
 
     try {
-      await fetch(API.markNotificationsRead, {
+      await clientFetch(API.markNotificationsRead, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(owner),

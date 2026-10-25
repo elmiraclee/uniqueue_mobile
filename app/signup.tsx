@@ -1,3 +1,7 @@
+import { gradeChoices, useGradeOptions } from '@/hooks/use-grade-options';
+import { clientAlert } from '@/components/client/client-ui';
+import { clientFetch } from '@/utils/client-fetch';
+import { useClientUI } from '@/components/client/client-ui';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -48,45 +52,14 @@ const SCHOOL_LEVELS: { label: string; value: SchoolLevel }[] = [
   { label: 'College', value: 'College' },
 ];
 
-// Same option lists the web signup form builds in JS.
-const GRADE_OPTIONS: Record<SchoolLevel, string[]> = {
-  Elementary: [
-    'Kindergarten',
-    'Grade 1',
-    'Grade 2',
-    'Grade 3',
-    'Grade 4',
-    'Grade 5',
-    'Grade 6',
-  ],
-  JHS: ['Grade 7', 'Grade 8', 'Grade 9', 'Grade 10'],
-  SHS: ['Grade 11', 'Grade 12'],
-  College: [
-    '1st Year',
-    '2nd Year',
-    '3rd Year',
-    '4th Year',
-    '5th Year',
-    '6th Year',
-    'Irregular',
-  ],
-};
-
 // College year level sent to the API, derived from the grade / year pick.
-const COLLEGE_YEAR_VALUE: Record<string, string> = {
-  '1st Year': '1',
-  '2nd Year': '2',
-  '3rd Year': '3',
-  '4th Year': '4',
-  '5th Year': '5',
-  '6th Year': '6',
-  Irregular: '',
-};
+
 
 const SR_CODE_PATTERN = /^\d{2}-\d{5}$/;
 const NAME_PATTERN = /^[A-Za-zÑñ' -]{1,50}$/;
 
 export default function Signup() {
+  const clientUI=useClientUI();
   const router = useRouter();
 
   const [srCode, setSrCode] = useState('');
@@ -107,6 +80,7 @@ export default function Signup() {
 
   // Multi school-level support (web auth/signup.php parity). College is
   // the only level that carries college / program / college year level.
+  const gradeCatalog=useGradeOptions();
   const [schoolLevel, setSchoolLevel] = useState<SchoolLevel>('College');
   const [gradeYear, setGradeYear] = useState('');
   const [consent, setConsent] = useState(false);
@@ -148,7 +122,7 @@ export default function Signup() {
         try {
           const result = await completeGoogleAuth(googleResponse.authentication);
           if (!result.ok) {
-            Alert.alert('Google Sign-Up', result.message);
+            clientAlert('Google Sign-Up', result.message);
             return;
           }
           if (result.action === 'login') {
@@ -167,7 +141,7 @@ export default function Signup() {
           await AsyncStorage.setItem('google_pending', JSON.stringify(result.google));
         } catch (e) {
           console.log(e);
-          Alert.alert('Google Sign-Up', 'Something went wrong.');
+          clientAlert('Google Sign-Up', 'Something went wrong.');
         } finally {
           setGoogleLoading(false);
         }
@@ -183,7 +157,7 @@ export default function Signup() {
 
   const fetchColleges = async () => {
     try {
-      const response = await fetch(API.getColleges);
+      const response = await clientFetch(API.getColleges);
       const data = await response.json();
       setColleges(data);
     } catch (error) {
@@ -193,7 +167,7 @@ export default function Signup() {
 
   const fetchPrograms = async (id: string) => {
     try {
-      const response = await fetch(`${API.getPrograms}?college_id=${id}`);
+      const response = await clientFetch(`${API.getPrograms}?college_id=${id}`);
       const data = await response.json();
       setPrograms(data);
     } catch (error) {
@@ -215,12 +189,13 @@ export default function Signup() {
   // College year level is derived from the grade / year selection.
   useEffect(() => {
     if (schoolLevel !== 'College') return;
-    setYearLevel(COLLEGE_YEAR_VALUE[gradeYear] ?? '');
-  }, [schoolLevel, gradeYear]);
+    setYearLevel(String(gradeCatalog.grades.find(g=>g.school_level===schoolLevel&&g.value===gradeYear)?.year_level??''));
+  }, [schoolLevel, gradeYear, gradeCatalog.grades]);
 
   const isCollege = schoolLevel === 'College';
 
   const handleSignup = async () => {
+    if(gradeCatalog.loading||gradeCatalog.error)return clientAlert('Grade choices','Load the current grade choices before signing up.');
     const isGoogle = !!googlePending;
     if (
       !srCode.trim() ||
@@ -231,17 +206,17 @@ export default function Signup() {
       (isCollege && (!collegeId || !programId)) ||
       (!isGoogle && !password.trim())
     ) {
-      Alert.alert('Error', 'Please complete all fields.');
+      clientAlert('Error', 'Please complete all fields.');
       return;
     }
 
     if (!SR_CODE_PATTERN.test(srCode.trim())) {
-      Alert.alert('Invalid SR-Code', 'Use the format YY-NNNNN (e.g. 23-12345).');
+      clientAlert('Invalid SR-Code', 'Use the format YY-NNNNN (e.g. 23-12345).');
       return;
     }
 
     if (!NAME_PATTERN.test(firstName.trim()) || !NAME_PATTERN.test(lastName.trim())) {
-      Alert.alert(
+      clientAlert(
         'Invalid name',
         'Names may only contain letters, spaces, apostrophes, and hyphens.'
       );
@@ -251,17 +226,17 @@ export default function Signup() {
     if (!isGoogle) {
       const pwErr = passwordError(password);
       if (pwErr) {
-        Alert.alert('Weak password', pwErr);
+        clientAlert('Weak password', pwErr);
         return;
       }
       if (password !== confirmPassword) {
-        Alert.alert('Password', 'Passwords do not match.');
+        clientAlert('Password', 'Passwords do not match.');
         return;
       }
     }
 
     if (!consent) {
-      Alert.alert(
+      clientAlert(
         'Consent required',
         'You must agree to the Terms of Use and Privacy Notice to create an account.'
       );
@@ -271,7 +246,7 @@ export default function Signup() {
     try {
       setLoading(true);
 
-      const response = await fetch(API.signup, {
+      const response = await clientFetch(API.signup, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -290,13 +265,14 @@ export default function Signup() {
           password: isGoogle ? (password || '') : password,
           confirm_password: isGoogle ? undefined : confirmPassword,
           google_signup: isGoogle ? 1 : 0,
+          google_registration_token: isGoogle ? googlePending?.registration_token : undefined,
           google_id: isGoogle ? googlePending?.google_id : undefined,
           google_picture: isGoogle ? googlePending?.picture : undefined,
         }),
       });
 
       const text = await response.text();
-      console.log(text);
+
 
       const data = JSON.parse(text);
 
@@ -307,20 +283,19 @@ export default function Signup() {
           await AsyncStorage.setItem('role', 'student');
           const id = Number(data.user?.id ?? data.user?.student_id ?? 0);
           if (id) await registerPushToken({ role: 'student', id });
-          Alert.alert('Success', 'Account created successfully!', [
-            { text: 'OK', onPress: () => router.replace('/student/home') },
-          ]);
+          await AsyncStorage.setItem('client_tour_new',`student:${data.user.id}`);
+          clientUI.success({title:'Account created successfully',message:'Your account is ready. You can now join an office queue and follow your transactions.',confirmLabel:'Continue to Dashboard',onConfirm:()=>router.replace('/student/home')});
         } else {
-          Alert.alert('Success', 'Account created successfully!', [
+          clientAlert('Success', 'Account created successfully!', [
             { text: 'OK', onPress: () => router.replace('/login') },
           ]);
         }
       } else {
-        Alert.alert('Signup Failed', data.message);
+        clientAlert('Signup Failed', data.message);
       }
     } catch (error) {
       console.log(error);
-      Alert.alert('Error', 'Cannot connect to server');
+      clientAlert('Error', 'Cannot connect to server');
     } finally {
       setLoading(false);
     }
@@ -421,7 +396,7 @@ export default function Signup() {
               disabled={googleLoading || loading}
               onPress={async () => {
                 if (!googleReady || !googleRequest) {
-                  Alert.alert(
+                  clientAlert(
                     'Google Sign-Up',
                     'Set GOOGLE_WEB_CLIENT_ID in constants/backend.ts, then restart Expo.'
                   );
@@ -432,7 +407,7 @@ export default function Signup() {
                   await promptGoogle();
                 } catch (e) {
                   console.log(e);
-                  Alert.alert('Google Sign-Up', 'Could not open Google sign-in.');
+                  clientAlert('Google Sign-Up', 'Could not open Google sign-in.');
                 } finally {
                   setGoogleLoading(false);
                 }
@@ -476,6 +451,8 @@ export default function Signup() {
           {/* Academic Information */}
           <View style={styles.panel}>
             {renderSectionLabel('library-outline', 'Academic Information')}
+            {gradeCatalog.loading&&<Text>Loading grade choices…</Text>}
+            {!!gradeCatalog.error&&<><Text style={{color:'#ad2132',fontSize:14}}>{gradeCatalog.error}</Text><CustomButton title="Retry grade choices" outlined onPress={()=>void gradeCatalog.reload()}/></>}
 
             {renderPickerField(
               'School Level',
@@ -490,10 +467,7 @@ export default function Signup() {
               setGradeYear,
               [
                 { label: 'Select grade / year level', value: '' },
-                ...GRADE_OPTIONS[schoolLevel].map((g) => ({
-                  label: g,
-                  value: g,
-                })),
+                ...gradeChoices(gradeCatalog.grades,schoolLevel).map(g=>({label:g.label,value:g.value})),
               ]
             )}
 

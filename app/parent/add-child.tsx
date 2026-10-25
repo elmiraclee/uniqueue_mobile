@@ -1,270 +1,43 @@
-import { useEffect, useState } from 'react';
-import {
-  Alert,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { router } from 'expo-router';
+import { useEffect, useRef, useState } from 'react';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
-
-import AppHeader from '../../components/layout/app-header';
-import AnimatedPressable from '../../components/ui/animated-pressable';
-import { API } from '@/constants/backend';
-import { fetchJsonOrNull } from '@/utils/api';
-import { COLORS, RADIUS, SPACING, TYPOGRAPHY } from '../../constants/theme';
-
-/*
-|--------------------------------------------------------------------------
-| Web parity — parent/add-child.php
-|--------------------------------------------------------------------------
-| One form, no "link vs create" toggle. The child's name, SR Code, school
-| level and grade / year level are always required, and the school level
-| decides what happens:
-|
-|   Elementary          -> parent-managed profile, linked right away
-|   JHS / SHS / College -> the student must already have a UniQueue
-|                          account and must approve the link request
-*/
-const LEVELS: { label: string; value: SchoolLevel }[] = [
-  { label: 'Elementary', value: 'Elementary' },
-  { label: 'Junior High School (JHS)', value: 'JHS' },
-  { label: 'Senior High School (SHS)', value: 'SHS' },
-  { label: 'College', value: 'College' },
-];
-const RELATIONS = ['Parent/Guardian', 'Mother', 'Father', 'Guardian'];
-
-type SchoolLevel = 'Elementary' | 'JHS' | 'SHS' | 'College';
-
-const GRADE_OPTIONS: Record<SchoolLevel, string[]> = {
-  Elementary: [
-    'Kindergarten',
-    'Grade 1',
-    'Grade 2',
-    'Grade 3',
-    'Grade 4',
-    'Grade 5',
-    'Grade 6',
-  ],
-  JHS: ['Grade 7', 'Grade 8', 'Grade 9', 'Grade 10'],
-  SHS: ['Grade 11', 'Grade 12'],
-  College: [
-    '1st Year',
-    '2nd Year',
-    '3rd Year',
-    '4th Year',
-    '5th Year',
-    '6th Year',
-    'Irregular',
-  ],
-};
-
-const NAME_PATTERN = /^[A-Za-zÑñ' -]{1,50}$/;
-
-export default function AddChildScreen() {
-  const [srCode, setSrCode] = useState('');
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [schoolLevel, setSchoolLevel] = useState<SchoolLevel>('College');
-  const [gradeYear, setGradeYear] = useState('');
-  const [relationship, setRelationship] = useState('Parent/Guardian');
-  const [loading, setLoading] = useState(false);
-
-  // Elementary children are parent-managed; everyone else needs approval.
-  const isElementary = schoolLevel === 'Elementary';
-
-  useEffect(() => {
-    setGradeYear('');
-  }, [schoolLevel]);
-
-  const submit = async () => {
-    if (!/^\d{2}-\d{5}$/.test(srCode.trim())) {
-      Alert.alert('Invalid SR Code', 'Use format YY-NNNNN (e.g. 26-12345)');
-      return;
-    }
-    if (!firstName.trim() || !lastName.trim()) {
-      Alert.alert('Required', "Enter the child's first and last name.");
-      return;
-    }
-    if (
-      !NAME_PATTERN.test(firstName.trim()) ||
-      !NAME_PATTERN.test(lastName.trim())
-    ) {
-      Alert.alert(
-        'Invalid name',
-        'Names may only contain letters, spaces, apostrophes, and hyphens.'
-      );
-      return;
-    }
-    if (!gradeYear) {
-      Alert.alert('Required', "Select the child's grade / year level.");
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const raw = await AsyncStorage.getItem('user');
-      const user = raw ? JSON.parse(raw) : null;
-      if (!user?.id) {
-        Alert.alert('Error', 'Not logged in');
-        return;
-      }
-
-      // The server decides between an immediate link and an approval
-      // request from the school level — same rule as the web form.
-      const body: any = {
-        parent_id: user.id,
-        sr_code: srCode.trim(),
-        relationship,
-        first_name: firstName.trim(),
-        last_name: lastName.trim(),
-        school_level: schoolLevel,
-        grade_year: gradeYear,
-      };
-
-      const res = await fetchJsonOrNull(API.parentAddChild, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-
-      if (res?.success) {
-        const msg = res.mode === 'request'
-          ? (res.message || 'Link request sent. Waiting for student to accept.')
-          : (res.message || 'Child linked. You can see them on the Children tab.');
-        Alert.alert('Success', msg, [
-          { text: 'OK', onPress: () => router.replace('/parent/home') },
-        ]);
-      } else {
-        Alert.alert('Failed', res?.message || 'Could not add child');
-      }
-    } catch (e: any) {
-      Alert.alert('Error', e?.message || 'Network error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <View style={styles.container}>
-      <AppHeader title="Add / Link Child" showBack />
-      <ScrollView contentContainerStyle={styles.scroll}>
-        <Text style={styles.hint}>
-          Add a child from Elementary through College. Elementary profiles are
-          parent-managed; JHS, SHS, and College links require the student&apos;s
-          approval. Use the name exactly as shown on the student&apos;s school
-          record.
-        </Text>
-
-        <Text style={styles.label}>SR Code *</Text>
-        <TextInput
-          style={styles.input}
-          value={srCode}
-          onChangeText={setSrCode}
-          placeholder="26-12345"
-          autoCapitalize="none"
-          keyboardType="numbers-and-punctuation"
-        />
-
-        <Text style={styles.label}>First name *</Text>
-        <TextInput style={styles.input} value={firstName} onChangeText={setFirstName} />
-
-        <Text style={styles.label}>Last name *</Text>
-        <TextInput style={styles.input} value={lastName} onChangeText={setLastName} />
-
-        <Text style={styles.label}>School level *</Text>
-        <View style={styles.pickerWrap}>
-          <Picker
-            selectedValue={schoolLevel}
-            onValueChange={(value) => setSchoolLevel(value as SchoolLevel)}
-          >
-            {LEVELS.map((l) => (
-              <Picker.Item key={l.value} label={l.label} value={l.value} />
-            ))}
-          </Picker>
-        </View>
-
-        <Text style={styles.label}>Grade / Year Level *</Text>
-        <View style={styles.pickerWrap}>
-          <Picker selectedValue={gradeYear} onValueChange={setGradeYear}>
-            <Picker.Item label="Select grade / year level" value="" />
-            {GRADE_OPTIONS[schoolLevel].map((g) => (
-              <Picker.Item key={g} label={g} value={g} />
-            ))}
-          </Picker>
-        </View>
-
-        <Text style={styles.note}>
-          {isElementary
-            ? 'This child will be added as a parent-managed profile and linked to your account right away.'
-            : 'The student must already have a UniQueue account. They will get a link request to approve.'}
-        </Text>
-
-        <Text style={styles.label}>Relationship</Text>
-        <View style={styles.pickerWrap}>
-          <Picker selectedValue={relationship} onValueChange={setRelationship}>
-            {RELATIONS.map((r) => (
-              <Picker.Item key={r} label={r} value={r} />
-            ))}
-          </Picker>
-        </View>
-
-        <AnimatedPressable
-          style={[styles.submit, loading && { opacity: 0.6 }]}
-          onPress={submit}
-          disabled={loading}
-        >
-          <Text style={styles.submitText}>
-            {loading
-              ? 'Saving…'
-              : isElementary
-                ? 'Add Child'
-                : 'Send link request'}
-          </Text>
-        </AnimatedPressable>
-      </ScrollView>
-    </View>
-  );
+import { router } from 'expo-router';
+import AppHeader from '@/components/layout/app-header';
+import CustomInput from '@/components/ui/custom-input';
+import CustomButton from '@/components/ui/custom-button';
+import { TourTarget, TutorialScrollView } from '@/components/tutorial/tutorial';
+import { useClientUI } from '@/components/client/client-ui';
+import { gradeChoices, useGradeOptions } from '@/hooks/use-grade-options';
+import { clientFetch } from '@/utils/client-fetch';
+import { API_URL } from '@/constants/backend';
+type Check={state:'valid'|'invalid'|'unavailable';message:string};
+export default function AddChild(){
+ const ui=useClientUI(),catalog=useGradeOptions(),[mode,setMode]=useState<'create'|'link'>('create'),[first,setFirst]=useState(''),[last,setLast]=useState(''),[sr,setSr]=useState(''),[grade,setGrade]=useState(''),[relation,setRelation]=useState('Parent/Guardian'),[check,setCheck]=useState<Check|null>(null),[checking,setChecking]=useState(false),[busy,setBusy]=useState(false),[retry,setRetry]=useState(0);
+ const sequence=useRef(0),body={mode,first_name:first.trim(),last_name:last.trim(),sr_code:sr.trim(),grade_year:grade,relationship:relation};
+ const key=JSON.stringify(body),valid=/^[A-Za-zÑñ' -]{1,50}$/.test(body.first_name)&&/^[A-Za-zÑñ' -]{1,50}$/.test(body.last_name)&&/^\d{2}-\d{5}$/.test(body.sr_code)&&(mode==='link'||gradeChoices(catalog.grades,'Elementary').some(g=>g.value===grade));
+ useEffect(()=>{const n=++sequence.current;setCheck(null);setChecking(valid);if(!valid)return;
+ const abort=new AbortController();let deadline:ReturnType<typeof setTimeout>|undefined;
+ const timer=setTimeout(async()=>{deadline=setTimeout(()=>abort.abort(),8000);try{
+ const response=await clientFetch(API_URL+'/parent_check_child.php',{method:'POST',headers:{'Content-Type':'application/json'},body:key,signal:abort.signal});
+ const data=await response.json();if(!response.ok||!data.success)throw new Error('Checker unavailable');
+ if(sequence.current===n)setCheck({state:data.allowed?'valid':'invalid',message:data.message||'Check your details.'});
+ }catch{if(sequence.current===n)setCheck({state:'unavailable',message:'Live check could not finish. You may submit for final server validation.'});}
+ finally{if(deadline)clearTimeout(deadline);if(sequence.current===n)setChecking(false)}},500);
+ return()=>{sequence.current++;clearTimeout(timer);if(deadline)clearTimeout(deadline);abort.abort()};
+ },[key,valid,retry]);
+ async function submit(){if(busy||checking||!valid||!check||check.state==='invalid')return;setBusy(true);
+ try{const response=await clientFetch(API_URL+'/parent_add_child.php',{method:'POST',headers:{'Content-Type':'application/json'},body:key});const data=await response.json();if(data.success)ui.success({title:data.mode==='request'?'Link request sent':'Child linked',message:data.message||'Your children list has been updated.',confirmLabel:'Continue',onConfirm:()=>router.replace('/parent/home')});else{setCheck({state:'invalid',message:data.message||'Check the details and try again.'});ui.notify(data.message||'Could not save.','error')}}catch{ui.notify('Connection failed. Check Children before submitting again.','error')}finally{setBusy(false)}}
+ const formatSR=(value:string)=>{const d=value.replace(/\D/g,'').slice(0,7);setSr(d.length>2?d.slice(0,2)+'-'+d.slice(2):d)};
+ return <View style={s.root}><AppHeader title="Add / Link Child" showBack/><TutorialScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
+ <Text style={s.title}>Add / Link Child</Text>
+ <TourTarget id="child-mode"><View style={s.row}>{(['create','link'] as const).map(v=><Pressable key={v} disabled={busy} accessibilityRole="button" accessibilityState={{selected:mode===v}} onPress={()=>setMode(v)} style={[s.tab,mode===v&&s.selected]}><Text style={{color:mode===v?'white':'#650610',fontWeight:'700',fontSize:16}}>{v==='create'?'Add Child':'Link Existing'}</Text></Pressable>)}</View><Text style={s.copy}>{mode==='create'?'Create a parent-managed Elementary profile. Choose Link Existing if a profile already exists.':'Use the exact school-record name and SR Code. Elementary links immediately; JHS, SHS and College require student approval.'}</Text></TourTarget>
+ <TourTarget id="child-form"><View style={{gap:12}}><Text style={s.label}>First name *</Text><CustomInput accessibilityLabel="First name" value={first} onChangeText={setFirst} editable={!busy} maxLength={50}/><Text style={s.label}>Last name *</Text><CustomInput accessibilityLabel="Last name" value={last} onChangeText={setLast} editable={!busy} maxLength={50}/><Text style={s.label}>SR Code *</Text><CustomInput accessibilityLabel="SR Code" value={sr} onChangeText={formatSR} editable={!busy} placeholder="YY-NNNNN" keyboardType="number-pad" maxLength={8}/></View></TourTarget>
+ {mode==='create'&&<><Text style={s.label}>Elementary grade *</Text>{catalog.loading&&<Text style={s.copy}>Loading current grades…</Text>}{!!catalog.error&&<><Text style={s.error}>{catalog.error}</Text><CustomButton title="Retry grades" outlined onPress={()=>void catalog.reload()}/></>}<View style={s.picker}><Picker accessibilityLabel="Elementary grade" enabled={!busy&&!catalog.loading} selectedValue={grade} onValueChange={setGrade}><Picker.Item label="Select grade" value=""/>{gradeChoices(catalog.grades,'Elementary').map(g=><Picker.Item key={g.value} label={g.label} value={g.value}/>)}</Picker></View></>}
+ <Text style={s.label}>Relationship</Text><View style={s.picker}><Picker accessibilityLabel="Relationship" enabled={!busy} selectedValue={relation} onValueChange={setRelation}>{['Parent/Guardian','Mother','Father','Guardian'].map(g=><Picker.Item key={g} label={g} value={g}/>)}</Picker></View>
+ <Text accessibilityLiveRegion="polite" style={[s.copy,check?.state==='invalid'&&s.error]}>{checking?'Checking details…':check?.message||'Complete the required details to check.'}</Text>
+ <Text style={s.copy}>Live matching does not create a profile/link or prove guardianship. Final submission always revalidates your details.</Text>
+ {valid&&!checking&&<CustomButton title="Check again" outlined disabled={busy} onPress={()=>setRetry(v=>v+1)}/>}
+ <CustomButton title={mode==='create'?'Add Child':'Submit link request'} disabled={busy||checking||!valid||!check||check.state==='invalid'} loading={busy} onPress={()=>void submit()}/>
+ </TutorialScrollView></View>;
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  scroll: { padding: SPACING.lg, paddingBottom: 40 },
-  hint: { color: COLORS.gray, marginBottom: SPACING.lg, lineHeight: 20 },
-  label: { fontWeight: '600', marginBottom: 6, color: COLORS.text },
-  note: {
-    color: COLORS.gray,
-    fontSize: 13,
-    lineHeight: 18,
-    marginBottom: SPACING.md,
-  },
-  input: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: RADIUS.md,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginBottom: SPACING.md,
-    fontSize: 16,
-  },
-  pickerWrap: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: RADIUS.md,
-    marginBottom: SPACING.md,
-    overflow: 'hidden',
-  },
-  submit: {
-    backgroundColor: COLORS.primary,
-    borderRadius: RADIUS.md,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: SPACING.md,
-  },
-  submitText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-});
+const s=StyleSheet.create({root:{flex:1,backgroundColor:'#f3eded'},content:{padding:16,paddingBottom:32,gap:14},title:{fontSize:24,lineHeight:30,fontWeight:'700',color:'#650610'},copy:{fontSize:16,lineHeight:24,color:'#555'},label:{fontSize:16,lineHeight:24,fontWeight:'600',color:'#444'},row:{flexDirection:'row',gap:12},tab:{flex:1,minHeight:48,alignItems:'center',justifyContent:'center',borderWidth:1,borderColor:'#650610',borderRadius:8},selected:{backgroundColor:'#650610'},picker:{backgroundColor:'white',borderRadius:8,borderWidth:1,borderColor:'#d8cccc'},error:{fontSize:14,lineHeight:21,color:'#ad2132'}});

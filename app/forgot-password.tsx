@@ -1,3 +1,5 @@
+import { clientAlert } from '@/components/client/client-ui';
+import CustomInput from '@/components/ui/custom-input';
 import { useEffect, useRef, useState } from 'react';
 import {
   Alert,
@@ -70,15 +72,15 @@ export default function ForgotPassword() {
 
   const requestOtp = async () => {
     if (!email.trim()) {
-      Alert.alert('Email required');
+      clientAlert('Email required');
       return;
     }
     if (emailStatus === 'invalid') {
-      Alert.alert('Invalid email', 'Please enter a valid email address.');
+      clientAlert('Invalid email', 'Please enter a valid email address.');
       return;
     }
     if (emailStatus === 'notfound') {
-      Alert.alert('No account found', 'That email is not registered in UniQueue.');
+      clientAlert('No account found', 'That email is not registered in UniQueue.');
       return;
     }
     setLoading(true);
@@ -95,13 +97,13 @@ export default function ForgotPassword() {
       if (res?.success) {
         setMasked(res.masked || email);
         setStep(2);
-        Alert.alert('Check your email', res.message || 'OTP sent if email is registered.');
+        clientAlert('Check your email', res.message || 'OTP sent if email is registered.');
       } else {
         const detail =
           res?.debug ||
           result.error ||
           (result.raw ? `Server said: ${String(result.raw).slice(0, 300)}` : '');
-        Alert.alert(
+        clientAlert(
           'Could not send code',
           [res?.message || 'Failed', detail].filter(Boolean).join('\n\n')
         );
@@ -120,7 +122,7 @@ export default function ForgotPassword() {
         body: JSON.stringify({ action: 'verify_otp', email: email.trim().toLowerCase(), otp }),
       });
       if (res?.success) setStep(3);
-      else Alert.alert('Error', res?.message || 'Invalid OTP');
+      else clientAlert('Error', res?.message || 'Invalid OTP');
     } finally {
       setLoading(false);
     }
@@ -140,11 +142,11 @@ export default function ForgotPassword() {
   const resetPw = async () => {
     const problems = passwordProblems(password);
     if (problems.length) {
-      Alert.alert('Password too weak', problems.join('\n'));
+      clientAlert('Password too weak', problems.join('\n'));
       return;
     }
     if (password !== confirm) {
-      Alert.alert('Passwords do not match');
+      clientAlert('Passwords do not match');
       return;
     }
     setLoading(true);
@@ -160,11 +162,11 @@ export default function ForgotPassword() {
         }),
       });
       if (res?.success) {
-        Alert.alert('Done', 'Password updated. You can sign in now.', [
+        clientAlert('Done', 'Password updated. You can sign in now.', [
           { text: 'OK', onPress: () => router.replace('/login') },
         ]);
       } else {
-        Alert.alert('Error', res?.message || 'Reset failed');
+        clientAlert('Error', res?.message || 'Reset failed');
       }
     } finally {
       setLoading(false);
@@ -251,12 +253,12 @@ export default function ForgotPassword() {
         {step === 3 && (
           <>
             <Text style={styles.label}>New password</Text>
-            <TextInput style={styles.input} value={password} onChangeText={setPassword} secureTextEntry />
+            <CustomInput style={styles.input} value={password} onChangeText={setPassword} secureTextEntry />
             <Text style={styles.hint}>
               Must have at least 8 characters, an uppercase and lowercase letter, a number, and a special character.
             </Text>
             <Text style={styles.label}>Confirm</Text>
-            <TextInput style={styles.input} value={confirm} onChangeText={setConfirm} secureTextEntry />
+            <CustomInput style={styles.input} value={confirm} onChangeText={setConfirm} secureTextEntry />
             <AnimatedPressable style={styles.btn} onPress={resetPw} disabled={loading}>
               <Text style={styles.btnText}>{loading ? 'Saving…' : 'Update password'}</Text>
             </AnimatedPressable>

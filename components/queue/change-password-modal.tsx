@@ -1,3 +1,10 @@
+import { clientAlert } from '@/components/client/client-ui';
+import { clientFetch } from '@/utils/client-fetch';
+import PasswordChecklist from '@/components/ui/password-checklist';
+import { passwordError } from '@/utils/password';
+import { ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import { useClientUI } from '@/components/client/client-ui';
+import CustomInput from '@/components/ui/custom-input';
 import React, { useState } from 'react';
 import {
   Alert,
@@ -22,6 +29,7 @@ interface Props {
 }
 
 export default function ChangePasswordModal({ visible, studentId, onClose }: Props) {
+  const clientUI=useClientUI();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -40,24 +48,24 @@ export default function ChangePasswordModal({ visible, studentId, onClose }: Pro
 
   const submit = async () => {
     if (!currentPassword || !newPassword || !confirmPassword) {
-      Alert.alert('Missing Fields', 'Please fill in all fields.');
+      clientAlert('Missing Fields', 'Please fill in all fields.');
       return;
     }
 
-    if (newPassword.length < 8) {
-      Alert.alert('Weak Password', 'New password must be at least 8 characters long.');
+    if (passwordError(newPassword)) {
+      clientAlert('Weak Password', passwordError(newPassword)||'Check password requirements.');
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      Alert.alert('Mismatch', 'New password and confirmation do not match.');
+      clientAlert('Mismatch', 'New password and confirmation do not match.');
       return;
     }
 
     try {
       setSubmitting(true);
 
-      const response = await fetch(API.changePassword, {
+      const response = await clientFetch(API.changePassword, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -71,14 +79,14 @@ export default function ChangePasswordModal({ visible, studentId, onClose }: Pro
       const data = await response.json();
 
       if (data.success) {
-        Alert.alert('Success', data.message);
+        clientUI.notify(data.message||'Password updated.');
         handleClose();
       } else {
-        Alert.alert('Unable to Change Password', data.message);
+        clientAlert('Unable to Change Password', data.message);
       }
     } catch (error) {
       console.log('CHANGE PASSWORD ERROR:', error);
-      Alert.alert('Error', 'Something went wrong. Please try again.');
+      clientAlert('Error', 'Something went wrong. Please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -86,8 +94,8 @@ export default function ChangePasswordModal({ visible, studentId, onClose }: Pro
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={handleClose}>
-      <View style={styles.overlay}>
-        <View style={styles.modal}>
+      <KeyboardAvoidingView behavior={Platform.OS==='ios'?'padding':undefined} style={styles.overlay}>
+        <ScrollView keyboardShouldPersistTaps="handled" style={{maxHeight:"90%"}} contentContainerStyle={styles.modal}>
           <TouchableOpacity style={styles.closeButton} onPress={handleClose} hitSlop={8}>
             <Ionicons name="close" size={22} color={COLORS.gray} />
           </TouchableOpacity>
@@ -95,7 +103,7 @@ export default function ChangePasswordModal({ visible, studentId, onClose }: Pro
           <Text style={styles.title}>Change Password</Text>
 
           <Text style={styles.label}>Current Password</Text>
-          <TextInput
+          <CustomInput
             style={styles.input}
             value={currentPassword}
             onChangeText={setCurrentPassword}
@@ -105,7 +113,7 @@ export default function ChangePasswordModal({ visible, studentId, onClose }: Pro
           />
 
           <Text style={styles.label}>New Password</Text>
-          <TextInput
+          <CustomInput
             style={styles.input}
             value={newPassword}
             onChangeText={setNewPassword}
@@ -115,7 +123,7 @@ export default function ChangePasswordModal({ visible, studentId, onClose }: Pro
           />
 
           <Text style={styles.label}>Confirm New Password</Text>
-          <TextInput
+          <CustomInput
             style={styles.input}
             value={confirmPassword}
             onChangeText={setConfirmPassword}
@@ -124,6 +132,7 @@ export default function ChangePasswordModal({ visible, studentId, onClose }: Pro
             placeholderTextColor={COLORS.accent}
           />
 
+          <PasswordChecklist password={newPassword} confirm={confirmPassword}/>
           <TouchableOpacity
             style={styles.submitButton}
             onPress={submit}
@@ -134,8 +143,8 @@ export default function ChangePasswordModal({ visible, studentId, onClose }: Pro
               {submitting ? 'Updating…' : 'Update Password'}
             </Text>
           </TouchableOpacity>
-        </View>
-      </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

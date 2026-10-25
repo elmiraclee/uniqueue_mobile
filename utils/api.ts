@@ -1,8 +1,9 @@
+import { clientFetch } from '@/utils/client-fetch';
 /**
  * Safe JSON fetch helpers.
  * Prevents "JSON Parse error: Unexpected end of input" when the server
  * returns an empty body, HTML error page, or non-JSON response.
- * Also retries once on empty HTTP 5xx (common on shared hosting under load).
+ * Retries read-only requests once on empty HTTP 5xx. Never repeats a write.
  */
 
 export type ApiResult<T = any> = {
@@ -18,7 +19,7 @@ async function fetchOnce(
   init?: RequestInit
 ): Promise<ApiResult> {
   try {
-    const res = await fetch(input, init);
+    const res = await clientFetch(input, init);
     const raw = await res.text();
 
     if (!raw || !raw.trim()) {
@@ -68,6 +69,7 @@ export async function safeFetchJson(
   // Shared hosts sometimes return empty 500 under concurrent load.
   // Retry once after a short delay.
   if (
+    ['GET','HEAD'].includes((init?.method||'GET').toUpperCase()) &&
     !result.data &&
     result.status >= 500 &&
     (!result.raw || !result.raw.trim())

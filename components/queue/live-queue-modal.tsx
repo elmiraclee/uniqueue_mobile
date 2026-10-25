@@ -203,7 +203,7 @@ export default function LiveQueueModal({
         if (!silent) setLoading(true);
         setError(null);
 
-        const json = await fetchJsonOrNull(`${API.getOfficeQueue}?office_id=${office.id}`);
+        const json = await fetchJsonOrNull(`${API.officeQueue}?office_id=${office.id}`);
 
         if (json.success) {
           setData(json);

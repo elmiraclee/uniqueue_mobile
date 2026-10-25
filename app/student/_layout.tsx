@@ -1,3 +1,5 @@
+import { getSessionToken } from '@/utils/client-fetch';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -7,6 +9,7 @@ import { Redirect, Tabs } from 'expo-router';
 import { COLORS } from '../../constants/theme';
 
 export default function StudentTabsLayout() {
+  const insets=useSafeAreaInsets();
   const [ready, setReady] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [role, setRole] = useState<string | null>(null);
@@ -17,9 +20,10 @@ export default function StudentTabsLayout() {
     (async () => {
       try {
         const user = await AsyncStorage.getItem('user');
+        const token = await getSessionToken();
         const r = await AsyncStorage.getItem('role');
         if (!cancelled) {
-          setIsLoggedIn(!!user);
+          setIsLoggedIn(!!token && !!user);
           setRole(r);
         }
       } catch {
@@ -62,11 +66,12 @@ export default function StudentTabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
+        tabBarLabelStyle: { fontSize: 14, fontWeight: '600' },
         tabBarActiveTintColor: COLORS.primary,
         tabBarInactiveTintColor: COLORS.gray,
         tabBarStyle: {
-          height: 65,
-          paddingBottom: 8,
+          height: 60 + Math.max(insets.bottom, 8),
+          paddingBottom: Math.max(insets.bottom, 8),
           paddingTop: 8,
         },
       }}
@@ -84,7 +89,7 @@ export default function StudentTabsLayout() {
       <Tabs.Screen
         name="queue"
         options={{
-          title: 'Queue',
+          title: 'Transactions',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="people-outline" size={size} color={color} />
           ),

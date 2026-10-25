@@ -18,7 +18,7 @@ const LOCAL_URL = `http://${IP_ADDRESS}/uniqueue_api`;
 
 const PRODUCTION_URL = "https://uni-queue.site/uniqueue_api"; // <-- update this to your real domain
 
-export const API_URL = USE_PRODUCTION ? PRODUCTION_URL : LOCAL_URL;
+export const API_URL = (process.env.EXPO_PUBLIC_API_URL || (USE_PRODUCTION ? PRODUCTION_URL : LOCAL_URL)).replace(/\/$/, '');
 
 // Some screens build endpoint URLs directly instead of going through
 // the API object below; they import API_BASE for that.
@@ -53,6 +53,7 @@ export const API = {
   // SIGNUP.TSX
   signup: `${API_URL}/signup.php`,
   getColleges: `${API_URL}/get_colleges.php`,
+  getGradeOptions: `${API_URL}/get_grade_options.php`,
   getPrograms: `${API_URL}/get_programs.php`,
 
   // QUEUE / OFFICE-QUEUE

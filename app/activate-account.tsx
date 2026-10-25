@@ -1,3 +1,4 @@
+import { gradeChoices, useGradeOptions } from '@/hooks/use-grade-options';
 /**
  * Activate a parent-created student profile — mobile version of
  * web auth/activate-student.php (same validation + rules).
@@ -25,14 +26,10 @@ import { registerPushToken } from '@/components/notification/push';
 import PasswordChecklist from '@/components/ui/password-checklist';
 
 type Level = 'JHS' | 'SHS' | 'College';
-const GRADES: Record<Level, string[]> = {
-  JHS: ['Grade 7', 'Grade 8', 'Grade 9', 'Grade 10'],
-  SHS: ['Grade 11', 'Grade 12'],
-  College: ['1st Year', '2nd Year', '3rd Year', '4th Year', '5th Year'],
-};
 const NAME_RE = /^[a-zA-ZñÑ' -]{1,50}$/;
 
 export default function ActivateAccount() {
+  const gradeCatalog=useGradeOptions();
   const [srCode, setSrCode] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -44,6 +41,7 @@ export default function ActivateAccount() {
   const [loading, setLoading] = useState(false);
 
   const submit = async () => {
+    if(gradeCatalog.loading||gradeCatalog.error||!gradeChoices(gradeCatalog.grades,level).some(g=>g.value===grade))return Alert.alert('Grade choices','Load and select a valid grade / year level.');
     if (!/^\d{2}-\d{5}$/.test(srCode.trim())) return Alert.alert('SR Code', 'SR Code must use the format YY-NNNNN.');
     if (!NAME_RE.test(firstName.trim()) || !NAME_RE.test(lastName.trim()))
       return Alert.alert('Name', 'Enter the name exactly as it appears on the existing student profile.');
@@ -123,9 +121,10 @@ export default function ActivateAccount() {
         </View>
 
         <Text style={styles.label}>Grade / Year</Text>
+        {gradeCatalog.loading&&<Text>Loading current grade choices…</Text>}{!!gradeCatalog.error&&<Pressable onPress={()=>void gradeCatalog.reload()}><Text style={{color:"#ad2132",fontSize:14}}>Grade choices unavailable. Tap to retry.</Text></Pressable>}
         <View style={styles.row}>
-          {GRADES[level].map((g) => (
-            <Chip key={g} label={g} active={grade === g} onPress={() => setGrade(grade === g ? '' : g)} />
+          {gradeChoices(gradeCatalog.grades,level).map((option) => (
+            <Chip key={option.value} label={option.label} active={grade === option.value} onPress={() => setGrade(grade === option.value ? '' : option.value)} />
           ))}
         </View>
 

@@ -1,3 +1,4 @@
+import { clientAlert } from '@/components/client/client-ui';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -142,7 +143,7 @@ export default function TicketDetailScreen() {
 
   const cancel = () => {
     if (!ticket?.can_cancel) return;
-    Alert.alert('Cancel queue', 'Cancel this queue? This cannot be undone.', [
+    clientAlert('Cancel queue', 'Cancel this queue? This cannot be undone.', [
       { text: 'No', style: 'cancel' },
       {
         text: 'Yes',
@@ -166,11 +167,11 @@ export default function TicketDetailScreen() {
               body: JSON.stringify(body),
             });
             if (res?.success) {
-              Alert.alert('Cancelled', res.message || 'Queue cancelled', [
+              clientAlert('Cancelled', res.message || 'Queue cancelled', [
                 { text: 'OK', onPress: () => router.back() },
               ]);
             } else {
-              Alert.alert('Error', res?.message || 'Could not cancel');
+              clientAlert('Error', res?.message || 'Could not cancel');
             }
           } finally {
             setCancelling(false);

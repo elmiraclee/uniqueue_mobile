@@ -1,3 +1,4 @@
+import { clientAlert } from '@/components/client/client-ui';
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Modal, StyleSheet, View } from 'react-native';
 
@@ -78,12 +79,12 @@ export default function CurrentQueueModal({ visible, studentId, onClose, onCance
           onClose();
           (onCompleted ?? onCancelled)();
         } else if (!silent) {
-          Alert.alert('Error', data.message);
+          clientAlert('Error', data.message);
         }
       }
     } catch (error) {
       console.log('QUEUE DETAILS ERROR:', error);
-      if (!silent) Alert.alert('Error', 'Unable to load queue details.');
+      if (!silent) clientAlert('Error', 'Unable to load queue details.');
     } finally {
       if (!silent) setLoading(false);
     }
@@ -92,7 +93,7 @@ export default function CurrentQueueModal({ visible, studentId, onClose, onCance
   const confirmCancel = () => {
     if (!queue) return;
 
-    Alert.alert('Cancel Queue', 'Are you sure you want to cancel your queue?', [
+    clientAlert('Cancel Queue', 'Are you sure you want to cancel your queue?', [
       { text: 'No', style: 'cancel' },
       { text: 'Yes', style: 'destructive', onPress: cancelQueue },
     ]);
@@ -111,16 +112,16 @@ export default function CurrentQueueModal({ visible, studentId, onClose, onCance
       }, 'Cancel Queue Error');
 
       if (data?.success) {
-        Alert.alert('Success', data.message);
+        clientAlert('Success', data.message);
         queueRef.current = null;
         onCancelled();
         onClose();
       } else {
-        Alert.alert('Unable to Cancel', data.message);
+        clientAlert('Unable to Cancel', data.message);
       }
     } catch (error) {
       console.log(error);
-      Alert.alert('Error', 'Something went wrong.');
+      clientAlert('Error', 'Something went wrong.');
     } finally {
       setLoading(false);
     }

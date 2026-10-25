@@ -14,6 +14,8 @@ function promisify(fn) {
   };
 }
 module.exports = {
+  TextEncoder: globalThis.TextEncoder,
+  TextDecoder: globalThis.TextDecoder,
   inherits,
   promisify,
   deprecate: (fn) => fn,

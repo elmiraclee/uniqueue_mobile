@@ -1,3 +1,4 @@
+import { TourTarget, TutorialStage, TutorialCoach, useTutorial } from '@/components/tutorial/tutorial';
 import { Ionicons } from '@expo/vector-icons';
 import {
     FlatList,
@@ -30,6 +31,7 @@ const TYPE_META: Record<
   QueueNotification['type'],
   { icon: keyof typeof Ionicons.glyphMap; statusKey: keyof typeof STATUS_COLORS }
 > = {
+  relationship_unlinked: { icon: 'unlink-outline', statusKey: 'cancelled' },
   position_update: { icon: 'people-outline', statusKey: 'waiting' },
   next_in_line: { icon: 'walk-outline', statusKey: 'waiting' },
   called: { icon: 'megaphone-outline', statusKey: 'called' },
@@ -49,6 +51,7 @@ function timeAgo(dateString: string) {
 }
 
 export default function NotificationModal({ visible, onClose }: NotificationModalProps) {
+  const guide=useTutorial();
   const { notifications, unreadCount, loading, refresh, markAsRead, markAllAsRead } =
     useNotifications();
 
@@ -93,6 +96,8 @@ export default function NotificationModal({ visible, onClose }: NotificationModa
     );
   };
 
+  if (!visible) return null;
+
   return (
     <Modal
       visible={visible}
@@ -100,8 +105,8 @@ export default function NotificationModal({ visible, onClose }: NotificationModa
       transparent
       onRequestClose={onClose}
     >
-      <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
+      <View style={{flex:1}}><TutorialStage modal><Pressable style={styles.backdrop} onPress={onClose}>
+        <Pressable style={[styles.sheet,guide.notificationStep&&{maxHeight:"100%"}]} onPress={(e) => e.stopPropagation()}>
           <View style={styles.header}>
             <Text style={styles.headerTitle}>
               Notifications
@@ -120,6 +125,7 @@ export default function NotificationModal({ visible, onClose }: NotificationModa
             </View>
           </View>
 
+          <TourTarget id="notice-list"><Text style={{fontSize:14,lineHeight:20,color:COLORS.gray,padding:16}}>Queue updates and account notices. Tap an unread notice to mark it read, or use Mark all read.</Text></TourTarget>
           {notifications.length === 0 ? (
             <View style={styles.emptyState}>
               <Ionicons name="notifications-off-outline" size={36} color={COLORS.gray} />
@@ -137,7 +143,7 @@ export default function NotificationModal({ visible, onClose }: NotificationModa
             />
           )}
         </Pressable>
-      </Pressable>
+      </Pressable></TutorialStage><TutorialCoach modal/></View>
     </Modal>
   );
 }

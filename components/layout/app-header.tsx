@@ -1,180 +1,25 @@
-import { usePathname } from 'expo-router';
+import { router,usePathname } from 'expo-router';
+import { useIsFocused } from 'expo-router';
 import { useState } from 'react';
-import {
-  Image,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
-
+import { Image,StyleSheet,Text,Pressable,View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-
 import { COLORS } from '../../constants/theme';
 import NotificationModal from '../notification/notification-modal';
 import { useNotifications } from '../notification/use-notification';
-
-interface HeaderProps {
-  title?: string;
-  onNotificationPress?: () => void;
-  onBackPress?: () => void;
-  /** Accepted for screens that pass it; the header has no back button. */
-  showBack?: boolean;
+import { TourTarget,useTutorial } from '../tutorial/tutorial';
+import { useClientUI } from '../client/client-ui';
+interface HeaderProps {title?:string;onNotificationPress?:()=>void;onBackPress?:()=>void;showBack?:boolean}
+export default function AppHeader({title,onNotificationPress,onBackPress,showBack}:HeaderProps){
+ const focused=useIsFocused();
+ const path=usePathname(),insets=useSafeAreaInsets(),guide=useTutorial(),ui=useClientUI();
+ const [visible,setVisible]=useState(false);const {unreadCount}=useNotifications();
+ const label=title||(path.includes('/home')?'Queue Dashboard':path.includes('/queue')?'Transactions':path.includes('/profile')?(path.startsWith('/parent')?'Parent Profile':'Student Profile'):'UniQueue');
+ return <View style={[s.container,{paddingTop:Math.max(insets.top,12)}]}>
+ {showBack&&<Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={onBackPress||(()=>router.back())} style={s.icon}><Ionicons name="chevron-back" size={24} color={COLORS.primary}/></Pressable>}
+ <View style={{flex:1,minWidth:0}}><TourTarget id="header"><View style={s.left}><Image source={require('../../assets/images/logo.png')} style={s.logo}/><Text numberOfLines={2} accessibilityRole="header" style={s.title}>{label}</Text></View></TourTarget></View>
+ <TourTarget id="help"><Pressable accessibilityLabel="Open guided tutorial" accessibilityRole="button" onPress={()=>void guide.start()} onLongPress={()=>ui.confirm({title:'Restart guided tutorial?',message:'Start from the first step. No account or transaction data will change.',confirmLabel:'Restart guide',onConfirm:()=>void guide.start(true)})} style={s.icon}><Ionicons name="help-circle-outline" size={26} color={COLORS.primary}/></Pressable></TourTarget>
+ <TourTarget id="bell"><Pressable accessibilityLabel={`Notifications, ${unreadCount} unread`} accessibilityRole="button" onPress={()=>{setVisible(true);onNotificationPress?.()}} style={s.icon}><Ionicons name="notifications-outline" size={24} color={COLORS.primary}/>{unreadCount>0&&<View style={s.badge}><Text style={s.badgeText}>{unreadCount>9?'9+':unreadCount}</Text></View>}</Pressable></TourTarget>
+ <NotificationModal visible={visible||(focused&&guide.notificationStep)} onClose={()=>{setVisible(false);if(guide.notificationStep)guide.pause()}}/></View>;
 }
-
-export default function AppHeader({
-  title,
-  onNotificationPress,
-  onBackPress,
-}: HeaderProps) {
-  const pathname = usePathname();
-
-  const [notificationsVisible, setNotificationsVisible] = useState(false);
-  const { unreadCount } = useNotifications();
-
-  const handleNotificationPress = () => {
-    setNotificationsVisible(true);
-    onNotificationPress?.();
-  };
-
-  const getHeaderTitle = () => {
-    if (title) {
-      return title;
-    }
-
-    if (pathname.includes('/home')) {
-      return 'Queue Dashboard';
-    }
-
-    if (pathname.includes('/queue')) {
-      return 'Queue Transactions';
-    }
-
-    if (pathname.includes('/profile')) {
-      return 'Student Profile';
-    }
-
-    return 'UniQueue';
-  };
-
-  return (
-    <View style={styles.container}>
-      <View style={styles.leftContainer}>
-        <Image
-          source={require('../../assets/images/logo.png')}
-          style={styles.logo}
-        />
-
-        <View>
-          <Text style={styles.title}>
-            {getHeaderTitle()}
-          </Text>
-        </View>
-      </View>
-
-      <View style={styles.rightContainer}>
-        <TouchableOpacity
-          style={styles.iconButton}
-          onPress={handleNotificationPress}
-        >
-          <Ionicons
-            name="notifications-outline"
-            size={24}
-            color={COLORS.primary}
-          />
-          {unreadCount > 0 && (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>
-                {unreadCount > 9 ? '9+' : unreadCount}
-              </Text>
-            </View>
-          )}
-        </TouchableOpacity>
-      </View>
-
-      <NotificationModal
-        visible={notificationsVisible}
-        onClose={() => setNotificationsVisible(false)}
-      />
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  container: {
-    backgroundColor: COLORS.white,
-    paddingHorizontal: 20,
-    paddingTop: 35,
-    paddingBottom: 15,
-
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-
-    elevation: 4,
-
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-  },
-
-  leftContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-
-  backButton: {
-    marginRight: 10,
-    padding: 4,
-    borderRadius: 999,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  logo: {
-    width: 45,
-    height: 45,
-    resizeMode: 'contain',
-    marginRight: 12,
-  },
-
-  title: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: COLORS.primary,
-  },
-
-  userName: {
-    fontSize: 13,
-    color: COLORS.gray,
-  },
-
-  rightContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-
-  iconButton: {
-    marginLeft: 15,
-    padding: 2,
-  },
-
-  badge: {
-    position: 'absolute',
-    top: -2,
-    right: -4,
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
-    paddingHorizontal: 3,
-    backgroundColor: COLORS.danger,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  badgeText: {
-    color: COLORS.white,
-    fontSize: 9,
-    fontWeight: '700',
-  },
-});
+const s=StyleSheet.create({container:{backgroundColor:'#fff',paddingHorizontal:12,paddingBottom:12,flexDirection:'row',alignItems:'center',gap:2,borderBottomWidth:1,borderColor:'#e8dfe1'},left:{flexDirection:'row',alignItems:'center',gap:8},logo:{width:32,height:32,resizeMode:'contain'},title:{fontSize:18,lineHeight:23,fontWeight:'700',color:COLORS.primary,flexShrink:1},icon:{minWidth:44,minHeight:44,alignItems:'center',justifyContent:'center',borderRadius:10},badge:{position:'absolute',right:0,top:0,minWidth:18,height:18,borderRadius:9,paddingHorizontal:3,backgroundColor:COLORS.danger,alignItems:'center',justifyContent:'center'},badgeText:{color:'#fff',fontSize:11,fontWeight:'700'}});

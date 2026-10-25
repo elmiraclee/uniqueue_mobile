@@ -1,3 +1,4 @@
+import { clientAlert } from '@/components/client/client-ui';
 import React from 'react';
 import {
   Alert,
@@ -75,12 +76,12 @@ export default function DocumentStep({
 
   const next = () => {
     if (selectedDocuments.length === 0) {
-      Alert.alert('Required', 'Select at least one document.');
+      clientAlert('Required', 'Select at least one document.');
       return;
     }
 
     if (priorityEnabled && priority && !priorityReason.trim()) {
-      Alert.alert('Required', 'Please enter a reason for priority lane.');
+      clientAlert('Required', 'Please enter a reason for priority lane.');
       return;
     }
 

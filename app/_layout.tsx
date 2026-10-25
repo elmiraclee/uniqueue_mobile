@@ -2,13 +2,16 @@
 // before the rest of the bundle loads (needed for killed-app delivery).
 import '../components/notification/background-task';
 
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { TutorialProvider } from '../components/tutorial/tutorial';
+import { ClientUIProvider } from '../components/client/client-ui';
 import { Stack } from 'expo-router';
 
 import { NotificationProvider } from '../components/notification/use-notification';
 
 export default function RootLayout() {
   return (
-    <NotificationProvider>
+    <SafeAreaProvider><ClientUIProvider><TutorialProvider><NotificationProvider>
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="login" />
         <Stack.Screen name="signup" />
@@ -18,6 +21,6 @@ export default function RootLayout() {
         <Stack.Screen name="student" />
         <Stack.Screen name="parent" />
       </Stack>
-    </NotificationProvider>
+    </NotificationProvider></TutorialProvider></ClientUIProvider></SafeAreaProvider>
   );
 }

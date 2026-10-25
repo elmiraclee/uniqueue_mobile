@@ -21,6 +21,7 @@ import { fetchJsonOrNull } from '@/utils/api';
 WebBrowser.maybeCompleteAuthSession();
 
 export type GoogleProfile = {
+  registration_token: string;
   google_id: string;
   email: string;
   first_name: string;

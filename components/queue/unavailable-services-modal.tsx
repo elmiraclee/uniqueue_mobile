@@ -1,3 +1,4 @@
+import { clientAlert } from '@/components/client/client-ui';
 /**
  * "Request an unavailable service" sheet — mobile version of the web
  * unavailable-services popup (student-queue.php / dashboards):
@@ -86,7 +87,7 @@ export default function UnavailableServicesModal({ visible, onClose, studentId, 
   const toggle = (s: Service) => {
     if (s.requested_today) return;
     if (selectedOffice && selectedOffice !== s.office_id) {
-      Alert.alert('One office at a time', 'Submit requests for one office first, then pick services from another office.');
+      clientAlert('One office at a time', 'Submit requests for one office first, then pick services from another office.');
       return;
     }
     setSelected((prev) => (prev.includes(s.id) ? prev.filter((x) => x !== s.id) : [...prev, s.id]));
@@ -97,7 +98,7 @@ export default function UnavailableServicesModal({ visible, onClose, studentId, 
     for (const sid of selected) {
       const svc = services.find((s) => s.id === sid);
       if (svc && svc.choices.length > 0 && !choices[sid]) {
-        Alert.alert('Choose an option', `Please choose an option for "${svc.name}".`);
+        clientAlert('Choose an option', `Please choose an option for "${svc.name}".`);
         return;
       }
     }
@@ -116,14 +117,14 @@ export default function UnavailableServicesModal({ visible, onClose, studentId, 
         body: JSON.stringify(body),
       });
       if (res?.success) {
-        Alert.alert('Request sent', res.message || 'The office has been notified.');
+        clientAlert('Request sent', res.message || 'The office has been notified.');
         setSelected([]); setChoices({}); setNote('');
         load();
       } else {
-        Alert.alert('Not sent', res?.message || 'Could not record your request.');
+        clientAlert('Not sent', res?.message || 'Could not record your request.');
       }
     } catch {
-      Alert.alert('Error', 'Network error');
+      clientAlert('Error', 'Network error');
     } finally {
       setSubmitting(false);
     }

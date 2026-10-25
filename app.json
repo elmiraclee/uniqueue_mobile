@@ -7,7 +7,6 @@
     "icon": "./assets/images/icon.png",
     "scheme": "uniqueue",
     "userInterfaceStyle": "automatic",
-    
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
@@ -25,7 +24,6 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "android.permission.FOREGROUND_SERVICE",
@@ -37,7 +35,8 @@
         "android.permission.VIBRATE",
         "android.permission.WAKE_LOCK"
       ],
-      "googleServicesFile": "./google-services.json"
+      "googleServicesFile": "./google-services.json",
+      "allowBackup": false
     },
     "web": {
       "output": "static",
@@ -79,7 +78,9 @@
             "usesCleartextTraffic": true
           }
         }
-      ]
+      ],
+      "expo-secure-store",
+      "expo-audio"
     ],
     "experiments": {
       "typedRoutes": true,

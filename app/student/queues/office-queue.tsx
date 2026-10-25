@@ -1,3 +1,5 @@
+import { clientAlert } from '@/components/client/client-ui';
+import { clientFetch } from '@/utils/client-fetch';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -391,7 +393,7 @@ export default function OfficeQueue() {
   useEffect(() => {
     if (!officeSlug) {
       // No office selected — bounce back to the dashboard.
-      Alert.alert('Error', 'No office selected.');
+      clientAlert('Error', 'No office selected.');
       router.replace(homePath as any);
       return;
     }
@@ -454,13 +456,13 @@ export default function OfficeQueue() {
 
   const fetchOffice = async (slug: string) => {
     try {
-      const response = await fetch(
+      const response = await clientFetch(
         `${API_BASE}/queue_process.php?slug=${encodeURIComponent(slug)}`
       );
       const data = await response.json();
 
       if (!data.success || !data.office) {
-        Alert.alert('Error', 'That office is not available.');
+        clientAlert('Error', 'That office is not available.');
         router.replace(homePath as any);
         return;
       }
@@ -485,17 +487,17 @@ export default function OfficeQueue() {
 
       // Today's availability + parent-queue setting (web validate_queue_join_gate).
       if (!o.is_full && actingAsParent && o.parent_queue_enabled === false) {
-        Alert.alert('Not available', 'This office does not accept parent/guardian queueing.', [
+        clientAlert('Not available', 'This office does not accept parent/guardian queueing.', [
           { text: 'OK', onPress: () => router.replace(homePath as any) },
         ]);
       } else if (!o.is_full && o.can_join === false) {
-        Alert.alert('Not accepting queues', o.availability_reason || 'This office is not accepting queues right now.', [
+        clientAlert('Not accepting queues', o.availability_reason || 'This office is not accepting queues right now.', [
           { text: 'OK', onPress: () => router.replace(homePath as any) },
         ]);
       }
 
       if (o.is_full) {
-        Alert.alert(
+        clientAlert(
           'Office Full',
           'This office has reached its full capacity for today. Please try again tomorrow.',
           [{ text: 'OK', onPress: () => router.replace(homePath as any) }]
@@ -511,7 +513,7 @@ export default function OfficeQueue() {
       }
     } catch (error) {
       console.log(error);
-      Alert.alert('Error', 'Unable to load this office right now.');
+      clientAlert('Error', 'Unable to load this office right now.');
       router.replace(homePath as any);
     } finally {
       setLoadingOffice(false);
@@ -605,20 +607,20 @@ export default function OfficeQueue() {
   const submitCashierPayment = async (sourceTicketId: number) => {
     if (!office || !studentId) return;
     if (office.isFull) {
-      Alert.alert('Office Full', 'This office has reached its full capacity for today.');
+      clientAlert('Office Full', 'This office has reached its full capacity for today.');
       return;
     }
 
     // Web parity: smart multi-queue gate instead of a hard one-ticket block.
     const cashierBlock = await runPrequeueCheck([], queueType || 'walkin');
     if (cashierBlock) {
-      Alert.alert('Cannot join yet', cashierBlock);
+      clientAlert('Cannot join yet', cashierBlock);
       return;
     }
 
     setPayingTicketId(sourceTicketId);
     try {
-      const response = await fetch(`${API_BASE}/office-queue.php`, {
+      const response = await clientFetch(`${API_BASE}/office-queue.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -640,10 +642,10 @@ export default function OfficeQueue() {
         );
         setSelectedPayableTicket(null);
       } else {
-        Alert.alert('Unable to join', data.message || 'Please try again.');
+        clientAlert('Unable to join', data.message || 'Please try again.');
       }
     } catch (e) {
-      Alert.alert('Error', 'Could not join payment queue.');
+      clientAlert('Error', 'Could not join payment queue.');
     } finally {
       setPayingTicketId(null);
     }
@@ -689,7 +691,7 @@ export default function OfficeQueue() {
 
       if (!data.success) {
         if (!silent) {
-          Alert.alert('Error', data.message || 'This event is not available.');
+          clientAlert('Error', data.message || 'This event is not available.');
           router.replace(homePath as any);
         }
         return;
@@ -739,7 +741,7 @@ export default function OfficeQueue() {
     } catch (error) {
       console.log(error);
       if (!silent) {
-        Alert.alert('Error', 'Unable to load this event right now.');
+        clientAlert('Error', 'Unable to load this event right now.');
         router.replace(homePath as any);
       }
     } finally {
@@ -865,29 +867,29 @@ export default function OfficeQueue() {
     if (!currentStep) return;
 
     if (isActiveTicketForCurrentStep) {
-      Alert.alert('Error', 'You already have an active queue for this step.');
+      clientAlert('Error', 'You already have an active queue for this step.');
       return;
     }
 
     if (office?.priorityEnabled && priority && !priorityReason.trim()) {
-      Alert.alert('Error', 'Please enter a reason for priority lane.');
+      clientAlert('Error', 'Please enter a reason for priority lane.');
       return;
     }
 
     if (!allEventRequirementsChecked) {
-      Alert.alert('Error', 'Please confirm all requirements are met before joining the queue.');
+      clientAlert('Error', 'Please confirm all requirements are met before joining the queue.');
       return;
     }
 
     if (eventRequiresAcademic && (!eventPeriod || !eventSchoolYear)) {
-      Alert.alert('Error', 'Please choose the academic period and school year for this step.');
+      clientAlert('Error', 'Please choose the academic period and school year for this step.');
       return;
     }
 
     try {
       setSubmitting(true);
 
-      const response = await fetch(`${API_BASE}/office-queue.php`, {
+      const response = await clientFetch(`${API_BASE}/office-queue.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -921,10 +923,10 @@ export default function OfficeQueue() {
 
         setShowSuccessModal(true);
       } else {
-        Alert.alert('Error', data.message);
+        clientAlert('Error', data.message);
       }
     } catch (error) {
-      Alert.alert('Error', 'Unable to join queue');
+      clientAlert('Error', 'Unable to join queue');
     } finally {
       setSubmitting(false);
     }
@@ -957,33 +959,33 @@ export default function OfficeQueue() {
     if (!office) return;
 
     if (queueType === 'walkin' && !office.walkinEnabled) {
-      Alert.alert('Error', 'Walk-in queueing is not available for this office.');
+      clientAlert('Error', 'Walk-in queueing is not available for this office.');
       return;
     }
 
     if (queueType === 'appointment' && !office.appointmentEnabled) {
-      Alert.alert('Error', 'Appointments are not available for this office.');
+      clientAlert('Error', 'Appointments are not available for this office.');
       return;
     }
 
     if (!selectedServiceItems.length) {
-      Alert.alert('Error', 'Please select at least one service item or service.');
+      clientAlert('Error', 'Please select at least one service item or service.');
       return;
     }
 
     if (queueType === 'appointment' && !appointmentSlipConfirmed) {
-      Alert.alert('Error', 'Please confirm you have your Appointment Slip.');
+      clientAlert('Error', 'Please confirm you have your Appointment Slip.');
       return;
     }
 
     if (office.priorityEnabled && priority && !priorityReason.trim()) {
-      Alert.alert('Error', 'Please enter a reason for priority lane.');
+      clientAlert('Error', 'Please enter a reason for priority lane.');
       return;
     }
 
     const gate = await runPrequeueCheck(selectedServiceItems, queueType);
     if (gate) {
-      Alert.alert('Cannot join yet', gate);
+      clientAlert('Cannot join yet', gate);
       return;
     }
 
@@ -1011,7 +1013,7 @@ export default function OfficeQueue() {
         return entry;
       });
 
-      const response = await fetch(`${API_BASE}/office-queue.php`, {
+      const response = await clientFetch(`${API_BASE}/office-queue.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1032,10 +1034,10 @@ export default function OfficeQueue() {
       if (data.success) {
         showJoinSuccess(data);
       } else {
-        Alert.alert('Error', data.message);
+        clientAlert('Error', data.message);
       }
     } catch (error) {
-      Alert.alert('Error', 'Unable to join queue');
+      clientAlert('Error', 'Unable to join queue');
     } finally {
       setSubmitting(false);
     }
@@ -1562,6 +1564,7 @@ export default function OfficeQueue() {
         )}
         {step === 4 && (
           <ReviewStep
+            academic={academicMap} itemChoices={itemChoices}
             queueType={queueType}
             appointmentSlipConfirmed={appointmentSlipConfirmed}
             service_items={serviceItems}

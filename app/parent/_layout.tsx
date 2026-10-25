@@ -1,3 +1,5 @@
+import { getSessionToken } from '@/utils/client-fetch';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -7,6 +9,7 @@ import { Redirect, Tabs } from 'expo-router';
 import { COLORS } from '../../constants/theme';
 
 export default function ParentTabsLayout() {
+  const insets=useSafeAreaInsets();
   const [ready, setReady] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
@@ -16,7 +19,8 @@ export default function ParentTabsLayout() {
       try {
         const role = await AsyncStorage.getItem('role');
         const user = await AsyncStorage.getItem('user');
-        if (!cancelled) setIsLoggedIn(!!user && role === 'parent');
+        const token = await getSessionToken();
+        if (!cancelled) setIsLoggedIn(!!token && !!user && role === 'parent');
       } catch {
         if (!cancelled) setIsLoggedIn(false);
       } finally {
@@ -45,19 +49,19 @@ export default function ParentTabsLayout() {
         tabBarActiveTintColor: COLORS.primary,
         tabBarInactiveTintColor: COLORS.gray,
         tabBarStyle: {
-          height: 65,
-          paddingBottom: 8,
+          height: 60 + Math.max(insets.bottom, 8),
+          paddingBottom: Math.max(insets.bottom, 8),
           paddingTop: 6,
           backgroundColor: '#fff',
           borderTopColor: '#e5e7eb',
         },
-        tabBarLabelStyle: { fontSize: 10, fontWeight: '600' },
+        tabBarLabelStyle: { fontSize: 14, fontWeight: '600' },
       }}
     >
       <Tabs.Screen
         name="home"
         options={{
-          title: 'Children',
+          title: 'Home',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="people-outline" size={size} color={color} />
           ),
@@ -92,7 +96,7 @@ export default function ParentTabsLayout() {
       />
       <Tabs.Screen
         name="queue"
-        options={{ href: null, title: 'Queue' }}
+        options={{ href: null, title: 'Transactions' }}
       />
       <Tabs.Screen
         name="office-queue"

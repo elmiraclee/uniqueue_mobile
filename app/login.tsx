@@ -1,3 +1,6 @@
+import { clientAlert } from '@/components/client/client-ui';
+import { clientFetch } from '@/utils/client-fetch';
+import { getSessionToken } from '@/utils/session-storage';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -52,7 +55,9 @@ export default function Login() {
       try {
         const user = await AsyncStorage.getItem('user');
         const role = await AsyncStorage.getItem('role');
-        if (!cancelled && user) {
+        const token = await getSessionToken();
+        // Match the protected layouts: cached user data alone is not a session.
+        if (!cancelled && user && token) {
           router.replace(role === 'parent' ? '/parent/home' : '/student/home');
           return;
         }
@@ -77,7 +82,7 @@ export default function Login() {
         try {
           const result = await completeGoogleAuth(googleResponse.authentication);
           if (!result.ok) {
-            Alert.alert('Google Sign-In', result.message);
+            clientAlert('Google Sign-In', result.message);
             return;
           }
           if (result.action === 'login') {
@@ -93,13 +98,13 @@ export default function Login() {
           router.push('/signup');
         } catch (e) {
           console.log('Google login error', e);
-          Alert.alert('Google Sign-In', 'Something went wrong. Please try again.');
+          clientAlert('Google Sign-In', 'Something went wrong. Please try again.');
         } finally {
           setGoogleLoading(false);
         }
       })();
     } else if (googleResponse.type === 'error') {
-      Alert.alert(
+      clientAlert(
         'Google Sign-In',
         googleResponse.error?.message || 'Sign-in was cancelled or failed.'
       );
@@ -108,7 +113,7 @@ export default function Login() {
 
   const handleLogin = async () => {
     if (!srCode.trim() || !password.trim()) {
-      Alert.alert('Error', 'Please fill in all fields.');
+      clientAlert('Error', 'Please fill in all fields.');
       return;
     }
 
@@ -121,7 +126,7 @@ export default function Login() {
           ? { email: srCode.trim(), password }
           : { username: srCode.trim(), password };
 
-      const response = await fetch(endpoint, {
+      const response = await clientFetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -132,12 +137,12 @@ export default function Login() {
       try {
         data = JSON.parse(rawText);
       } catch (e) {
-        Alert.alert('Server Error', 'Invalid JSON response from server');
+        clientAlert('Server Error', 'Invalid JSON response from server');
         return;
       }
 
       if (!data.success) {
-        Alert.alert('Login Failed', data.message || 'Invalid credentials');
+        clientAlert('Login Failed', data.message || 'Invalid credentials');
         return;
       }
 
@@ -156,7 +161,7 @@ export default function Login() {
       router.replace(loginRole === 'parent' ? '/parent/home' : '/student/home');
     } catch (error) {
       console.log('LOGIN ERROR:', error);
-      Alert.alert('Connection Error', 'Cannot connect to server');
+      clientAlert('Connection Error', 'Cannot connect to server');
     } finally {
       setLoading(false);
     }
@@ -164,7 +169,7 @@ export default function Login() {
 
   const handleGooglePress = async () => {
     if (!googleReady || !googleRequest) {
-      Alert.alert(
+      clientAlert(
         'Google Sign-In',
         'Set GOOGLE_WEB_CLIENT_ID in constants/backend.ts (Google Cloud Console → Web client ID), then restart Expo.'
       );
@@ -175,7 +180,7 @@ export default function Login() {
       await promptGoogle();
     } catch (e) {
       console.log(e);
-      Alert.alert('Google Sign-In', 'Could not open Google sign-in.');
+      clientAlert('Google Sign-In', 'Could not open Google sign-in.');
     } finally {
       setGoogleLoading(false);
     }

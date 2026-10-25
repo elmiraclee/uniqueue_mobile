@@ -20,6 +20,7 @@ class UniqueueWidgetModule : Module() {
       prefs.edit()
         .putLong("ticketId", (data["ticketId"] as? Number)?.toLong() ?: 0L)
         .putString("endpoint", data["endpoint"]?.toString().orEmpty())
+        .putString("authorization", data["authorization"]?.toString().orEmpty())
         .putString("ticket", data["ticket"]?.toString().orEmpty())
         .putString("office", data["office"]?.toString().orEmpty())
         .putString("window", data["window"]?.toString().orEmpty())

@@ -1,3 +1,8 @@
+import { clientAlert } from '@/components/client/client-ui';
+import LinkedAccounts from '@/components/client/linked-accounts';
+import { logoutClient } from '@/utils/client-fetch';
+import { TourTarget, TutorialScrollView } from '@/components/tutorial/tutorial';
+import CustomInput from '@/components/ui/custom-input';
 /**
  * Parent profile — mobile version of web parent/parent-profile.php:
  * account details, linked children, and a separate change-password form
@@ -99,22 +104,22 @@ export default function ParentProfile() {
         Object.assign(u, res.user || { full_name: fullName, email, contact_number: contact });
         await AsyncStorage.setItem('user', JSON.stringify(u));
         if (res.user?.contact_number) setContact(res.user.contact_number);
-        Alert.alert('Saved', res.message || 'Profile updated.');
+        clientAlert('Saved', res.message || 'Profile updated.');
       } else {
-        Alert.alert('Error', res?.message || 'Update failed');
+        clientAlert('Error', res?.message || 'Update failed');
       }
     } catch {
-      Alert.alert('Error', 'Network error');
+      clientAlert('Error', 'Network error');
     } finally {
       setLoading(false);
     }
   };
 
   const changePassword = async () => {
-    if (!currentPw) return Alert.alert('Password', 'Enter your current password.');
+    if (!currentPw) return clientAlert('Password', 'Enter your current password.');
     const err = passwordError(newPw);
-    if (err) return Alert.alert('Password', err);
-    if (newPw !== confirmPw) return Alert.alert('Password', 'New passwords do not match.');
+    if (err) return clientAlert('Password', err);
+    if (newPw !== confirmPw) return clientAlert('Password', 'New passwords do not match.');
     setPwLoading(true);
     try {
       const res = await fetchJsonOrNull(API.updateParentProfile, {
@@ -130,26 +135,27 @@ export default function ParentProfile() {
       });
       if (res?.success) {
         setCurrentPw(''); setNewPw(''); setConfirmPw('');
-        Alert.alert('Done', res.message || 'Password changed successfully.');
+        clientAlert('Done', res.message || 'Password changed successfully.');
       } else {
-        Alert.alert('Error', res?.message || 'Could not change password');
+        clientAlert('Error', res?.message || 'Could not change password');
       }
     } catch {
-      Alert.alert('Error', 'Network error');
+      clientAlert('Error', 'Network error');
     } finally {
       setPwLoading(false);
     }
   };
 
   const logout = () => {
-    Alert.alert('Sign out', 'Are you sure?', [
+    clientAlert('Sign out', 'Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Sign out',
         style: 'destructive',
         onPress: async () => {
           await clearLiveTicketWidget();
-          await AsyncStorage.multiRemove(['user', 'role']);
+          await logoutClient();
+await AsyncStorage.multiRemove(['user', 'role']);
           router.replace('/login');
         },
       },
@@ -159,10 +165,11 @@ export default function ParentProfile() {
   return (
     <View style={styles.container}>
       <AppHeader title="Parent Profile" />
-      <ScrollView
+      <TutorialScrollView
         contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
       >
+        <TourTarget id="profile"><Text style={{fontSize:16,fontWeight:"700",color:COLORS.primary,marginBottom:12}}>Account profile</Text></TourTarget>
         <View style={styles.panel}>
           <Text style={styles.section}>Account details</Text>
           {!!memberSince && (
@@ -179,48 +186,28 @@ export default function ParentProfile() {
           </AnimatedPressable>
         </View>
 
-        <View style={styles.panel}>
-          <Text style={styles.section}>Linked children ({children.length})</Text>
-          {children.length === 0 ? (
-            <Text style={styles.meta}>No linked children yet.</Text>
-          ) : (
-            children.map((c) => (
-              <View key={c.id} style={styles.childRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.childName}>{c.first_name} {c.last_name}</Text>
-                  <Text style={styles.meta}>
-                    {c.sr_code}{c.school_level ? ` · ${c.school_level}` : ''}{c.relationship ? ` · ${c.relationship}` : ''}
-                  </Text>
-                </View>
-                <Text style={[styles.badge, c.account_status === 'profile_only' ? styles.badgeWarn : styles.badgeOk]}>
-                  {c.account_status === 'profile_only' ? 'Profile only' : 'Student account'}
-                </Text>
-              </View>
-            ))
-          )}
-          <AnimatedPressable onPress={() => router.push('/parent/add-child')} style={{ marginTop: 8 }}>
-            <Text style={{ color: COLORS.primary, fontWeight: '700' }}>+ Add a child</Text>
-          </AnimatedPressable>
-        </View>
+        <TourTarget id="linked-accounts"><LinkedAccounts role="parent"/></TourTarget>
+        <AnimatedPressable accessibilityRole="button" onPress={() => router.push('/parent/add-child')} style={{minHeight:48,justifyContent:'center',marginBottom:16}}><Text style={{color:COLORS.primary,fontWeight:'700',fontSize:16}}>+ Add or link a child</Text></AnimatedPressable>
 
-        <View style={styles.panel}>
+        <TourTarget id="password"><View style={styles.panel}>
           <Text style={styles.section}>Change password</Text>
           <Text style={styles.label}>Current password</Text>
-          <TextInput style={styles.input} value={currentPw} onChangeText={setCurrentPw} secureTextEntry />
+          <CustomInput style={styles.input} value={currentPw} onChangeText={setCurrentPw} secureTextEntry />
           <Text style={styles.label}>New password</Text>
-          <TextInput style={styles.input} value={newPw} onChangeText={setNewPw} secureTextEntry />
+          <CustomInput style={styles.input} value={newPw} onChangeText={setNewPw} secureTextEntry />
           <Text style={styles.label}>Confirm new password</Text>
-          <TextInput style={styles.input} value={confirmPw} onChangeText={setConfirmPw} secureTextEntry />
+          <CustomInput style={styles.input} value={confirmPw} onChangeText={setConfirmPw} secureTextEntry />
           <PasswordChecklist password={newPw} confirm={confirmPw} />
           <AnimatedPressable style={[styles.saveBtn, pwLoading && { opacity: 0.6 }]} onPress={changePassword} disabled={pwLoading}>
             <Text style={styles.saveText}>{pwLoading ? 'Updating…' : 'Update password'}</Text>
           </AnimatedPressable>
-        </View>
+        </View></TourTarget>
 
         <AnimatedPressable style={styles.logoutBtn} onPress={logout}>
           <Text style={styles.logoutText}>Sign out</Text>
         </AnimatedPressable>
-      </ScrollView>
+
+</TutorialScrollView>
     </View>
   );
 }

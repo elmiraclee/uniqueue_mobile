@@ -12,7 +12,7 @@ export const COLORS = {
   accent: '#d6c0b1',
   white: '#FFFFFF',
   text: '#1f1f1f',
-  gray: '#7A7A7A',
+  gray: '#625B5D',
   lightGray: '#f2f2f2',
   border: 'rgba(102,8,16,0.08)',
   overlay: 'rgba(39,7,7,0.55)',
@@ -198,3 +198,5 @@ export const OPACITY = {
   pressed: 0.85,
   subtle: 0.6,
 };
+// Expo template compatibility; app components use the shared COLORS palette.
+export const Colors = {light:{text:COLORS.text,background:COLORS.background,tint:COLORS.primary,icon:COLORS.gray,tabIconDefault:COLORS.gray,tabIconSelected:COLORS.primary},dark:{text:'#fff',background:'#191919',tint:'#e5b9bc',icon:'#bbb',tabIconDefault:'#bbb',tabIconSelected:'#e5b9bc'}};

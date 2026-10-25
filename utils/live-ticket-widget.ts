@@ -1,3 +1,4 @@
+import { getSessionToken } from './session-storage';
 import { Platform } from "react-native";
 import { API } from "../constants/backend";
 import type { UniqueueWidgetNativeModule } from "../modules/uniqueue-widget";
@@ -44,6 +45,7 @@ export async function updateLiveTicketWidget(
     await widget.update({
       ...data,
       endpoint: API.getLiveTicketSnapshot,
+      authorization: (await getSessionToken()) || '',
       peopleAhead: data.peopleAhead ?? -1,
       estimatedWait: data.estimatedWait ?? -1,
     });

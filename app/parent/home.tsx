@@ -1,3 +1,5 @@
+import { clientAlert } from '@/components/client/client-ui';
+import { TourTarget, TutorialScrollView } from '@/components/tutorial/tutorial';
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -216,7 +218,7 @@ export default function ParentHome() {
   );
 
   const cancelTicket = (child: Child, t: LiveTicket) => {
-    Alert.alert(
+    clientAlert(
       "Cancel queue",
       `Cancel ticket #${t.queue_number} at ${t.office_name} for ${child.first_name}?`,
       [
@@ -231,7 +233,7 @@ export default function ParentHome() {
               student_id: child.id,
               queue_id: t.id,
             });
-            if (!res?.success) Alert.alert("Not cancelled", res?.message || "Unable to cancel this ticket.");
+            if (!res?.success) clientAlert("Not cancelled", res?.message || "Unable to cancel this ticket.");
             load();
           },
         },
@@ -282,7 +284,7 @@ export default function ParentHome() {
   return (
     <View style={styles.container}>
       <AppHeader title="Parent Dashboard" />
-      <ScrollView
+      <TutorialScrollView
         contentContainerStyle={styles.scroll}
         refreshControl={
           <RefreshControl
@@ -292,6 +294,7 @@ export default function ParentHome() {
           />
         }
       >
+        <TourTarget id="dashboard"><Text style={{fontSize:16,fontWeight:"700",color:COLORS.primary,marginBottom:12}}>Queue overview</Text></TourTarget>
         <View style={styles.hero}>
           <Text style={styles.greeting}>{greeting}</Text>
           <Text style={styles.name}>{parentName}</Text>
@@ -322,7 +325,7 @@ export default function ParentHome() {
               <Text style={{ fontWeight: "700" }}>
                 {fb.first_name} {fb.last_name}
               </Text>{" "}
-              has pending feedback for Ticket #{fb.queue_number} at{" "}
+              has pending CSM for Ticket #{fb.queue_number} at{" "}
               {fb.office_name}
             </Text>
             <AnimatedPressable
@@ -352,7 +355,7 @@ export default function ParentHome() {
 
         <View style={styles.section}>
           <View style={styles.sectionHead}>
-            <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>Linked children</Text>
+            <TourTarget id="children"><Text style={[styles.sectionTitle, { marginBottom: 0 }]}>Linked children</Text></TourTarget>
             <AnimatedPressable style={styles.refreshBtn} onPress={onRefresh}>
               <Ionicons name="refresh" size={14} color={COLORS.primary} />
               <Text style={styles.refreshText}>Refresh</Text>
@@ -529,10 +532,6 @@ export default function ParentHome() {
                     // Web parent dashboard blocks joining while the child already
                     // has an active queue ("{first} already has an active queue.").
                     <Text style={styles.noTicketText}>{c.first_name || "This child"} already has an active queue.</Text>
-                  ) : feedbackBlockedIds.has(c.id) ? (
-                    <Text style={styles.noTicketText}>
-                      Submit {c.first_name || "this child"}’s pending feedback before joining a new queue.
-                    </Text>
                   ) : (
                     <AnimatedPressable
                       style={styles.outlineBtn}
@@ -551,7 +550,7 @@ export default function ParentHome() {
             ))
           )}
         </View>
-      </ScrollView>
+      </TutorialScrollView>
 
       {feedbackTarget && (
         <FeedbackModal

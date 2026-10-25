@@ -7,6 +7,8 @@ import {
     View,
 } from 'react-native';
 
+import { AcademicMap } from './academic-step';
+import { ChoiceMap } from './choice-step';
 import { COLORS } from '../../constants/theme';
 
 interface ServiceItem {
@@ -33,6 +35,9 @@ interface Props {
   onSubmit: () => void;
   onBack: () => void;
   submitting?: boolean;
+  academic?: AcademicMap;
+  itemChoices?: ChoiceMap;
+  practice?: boolean;
 }
 
 function InfoRow({
@@ -61,9 +66,10 @@ export default function ReviewStep({
   onSubmit,
   onBack,
   submitting,
+  academic = {}, itemChoices = {}, practice = false,
 }: Props) {
   const disabled =
-    submitting ||
+    practice || submitting ||
     (queueType === 'appointment' && !appointmentSlipConfirmed);
 
   return (
@@ -132,11 +138,12 @@ export default function ReviewStep({
             .map((item) => (
               <View
                 key={item.id}
-                style={styles.docRow}
+                style={[styles.docRow,{flexWrap:"wrap",gap:8}]}
               >
-                <Text style={styles.docName}>
+                <Text style={[styles.docName,{width:"100%",flex:undefined,fontSize:16}]}>
                   {item.name}
                 </Text>
+                <View style={{flex:1,gap:4}}>{!!itemChoices[item.id]?.choice_label&&<Text>{itemChoices[item.id].choice_label}</Text>}{(academic[item.id]||[]).slice(0,quantities[item.id]||1).map((a,i)=><Text key={i} style={{fontSize:14,lineHeight:20,color:COLORS.gray}}>Copy {i+1}: {a.period||"Not selected"} / {a.school_year||"Not selected"}</Text>)}</View>
                 <Text style={styles.docQty}>
                   x{quantities[item.id] || 1}
                 </Text>
@@ -145,19 +152,20 @@ export default function ReviewStep({
         </View>
       )}
 
+      {practice&&<Text style={{fontSize:14,lineHeight:20,color:COLORS.primary,marginBottom:12}}>Practice only. This request cannot create a ticket or payment.</Text>}
       <TouchableOpacity
         style={[
           styles.button,
           disabled && styles.disabledButton,
         ]}
-        disabled={disabled}
-        onPress={onSubmit}
+        disabled={disabled || practice}
+        accessibilityRole="button" accessibilityState={{disabled}} onPress={practice ? undefined : onSubmit}
       >
         {submitting ? (
           <ActivityIndicator color={COLORS.white} />
         ) : (
           <Text style={styles.buttonText}>
-            Join queue
+            {practice ? 'Practice — join disabled' : 'Join queue'}
           </Text>
         )}
       </TouchableOpacity>

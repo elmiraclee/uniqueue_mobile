@@ -156,8 +156,15 @@ class UniqueueWidgetProvider : AppWidgetProvider() {
           readTimeout = 8000
           doOutput = true
           setRequestProperty("Content-Type", "application/json")
+      setRequestProperty("Authorization", "Bearer " + p.getString("authorization", "").orEmpty())
         }
         connection.outputStream.use { it.write("{\"ticket_id\":$ticketId,\"queue_id\":$ticketId}".toByteArray()) }
+        if (connection.responseCode == 401 || connection.responseCode == 403) {
+          connection.disconnect()
+          p.edit().clear().apply()
+          renderCached(context)
+          return@Thread
+        }
         val raw = (if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream)
           ?.bufferedReader()?.use { it.readText() }.orEmpty()
         connection.disconnect()

@@ -1,3 +1,4 @@
+import { clientFetch } from '@/utils/client-fetch';
 /*
 |--------------------------------------------------------------------------
 | Push / alarm plumbing (works when the app is backgrounded OR killed)
@@ -176,7 +177,7 @@ export async function registerPushToken(
   const cacheKey = `${owner.role}:${owner.id}:${token}`;
 
   try {
-    const res = await fetch(API.registerPushToken, {
+    const res = await clientFetch(API.registerPushToken, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -217,7 +218,7 @@ export async function unregisterPushToken(owner: PushOwner): Promise<void> {
 
   const token = cached.split(":").slice(2).join(":");
   try {
-    await fetch(API.registerPushToken, {
+    await clientFetch(API.registerPushToken, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

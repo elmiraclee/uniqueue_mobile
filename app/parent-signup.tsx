@@ -1,3 +1,6 @@
+import { clientAlert } from '@/components/client/client-ui';
+import { useClientUI } from '@/components/client/client-ui';
+import CustomInput from '@/components/ui/custom-input';
 import { useState } from 'react';
 import {
   Alert,
@@ -21,6 +24,7 @@ import { passwordError } from '@/utils/password';
 import { COLORS, RADIUS, SPACING } from '../constants/theme';
 
 export default function ParentSignup() {
+  const clientUI=useClientUI();
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [contact, setContact] = useState('');
@@ -31,20 +35,20 @@ export default function ParentSignup() {
 
   const submit = async () => {
     if (!fullName.trim() || !email.trim() || !contact.trim() || !password) {
-      Alert.alert('Required', 'Full name, email, contact number and password are required');
+      clientAlert('Required', 'Full name, email, contact number and password are required');
       return;
     }
     const pwErr = passwordError(password);
     if (pwErr) {
-      Alert.alert('Password', pwErr);
+      clientAlert('Password', pwErr);
       return;
     }
     if (password !== confirm) {
-      Alert.alert('Password', 'Passwords do not match');
+      clientAlert('Password', 'Passwords do not match');
       return;
     }
     if (!consent) {
-      Alert.alert('Terms', 'You must agree to the Terms of Use and Privacy Notice.');
+      clientAlert('Terms', 'You must agree to the Terms of Use and Privacy Notice.');
       return;
     }
     setLoading(true);
@@ -66,14 +70,13 @@ export default function ParentSignup() {
         await AsyncStorage.setItem('role', 'parent');
         const id = Number(res.user?.id ?? res.user?.parent_id ?? 0);
         if (id) await registerPushToken({ role: 'parent', id });
-        Alert.alert('Welcome', 'Account created', [
-          { text: 'OK', onPress: () => router.replace('/parent/home') },
-        ]);
+        await AsyncStorage.setItem('client_tour_new',`parent:${res.user.id}`);
+        clientUI.success({title:'Account created successfully',message:'Your account is ready. Add or link your children and follow their queues.',confirmLabel:'Continue to Dashboard',onConfirm:()=>router.replace('/parent/home')});
       } else {
-        Alert.alert('Failed', res?.message || 'Could not register');
+        clientAlert('Failed', res?.message || 'Could not register');
       }
     } catch {
-      Alert.alert('Error', 'Network error');
+      clientAlert('Error', 'Network error');
     } finally {
       setLoading(false);
     }
@@ -89,10 +92,10 @@ export default function ParentSignup() {
         <Text style={styles.sub}>Create an account to manage your children's queues</Text>
 
         <Text style={styles.label}>Full name *</Text>
-        <TextInput style={styles.input} value={fullName} onChangeText={setFullName} />
+        <CustomInput style={styles.input} value={fullName} onChangeText={setFullName} />
 
         <Text style={styles.label}>Email *</Text>
-        <TextInput
+        <CustomInput
           style={styles.input}
           value={email}
           onChangeText={setEmail}
@@ -101,7 +104,7 @@ export default function ParentSignup() {
         />
 
         <Text style={styles.label}>Contact number *</Text>
-        <TextInput
+        <CustomInput
           style={styles.input}
           value={contact}
           onChangeText={setContact}
@@ -110,10 +113,10 @@ export default function ParentSignup() {
         />
 
         <Text style={styles.label}>Password *</Text>
-        <TextInput style={styles.input} value={password} onChangeText={setPassword} secureTextEntry />
+        <CustomInput style={styles.input} value={password} onChangeText={setPassword} secureTextEntry />
 
         <Text style={styles.label}>Confirm password *</Text>
-        <TextInput style={styles.input} value={confirm} onChangeText={setConfirm} secureTextEntry />
+        <CustomInput style={styles.input} value={confirm} onChangeText={setConfirm} secureTextEntry />
         <PasswordChecklist password={password} confirm={confirm} />
 
         <AnimatedPressable style={styles.consentRow} onPress={() => setConsent((v) => !v)}>
@@ -170,6 +173,6 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', marginTop: 2,
   },
   checkboxOn: { backgroundColor: COLORS.primary },
-  consentText: { flex: 1, color: COLORS.text, fontSize: 13, lineHeight: 18 },
+  consentText: { flex: 1, color: COLORS.text, fontSize: 14, lineHeight: 21 },
   btnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
 });

@@ -177,12 +177,19 @@ class UniqueueRealtimeService : Service() {
       doOutput = true
       useCaches = false
       setRequestProperty("Content-Type", "application/json")
+      setRequestProperty("Authorization", "Bearer " + prefs.getString("authorization", "").orEmpty())
       setRequestProperty("Cache-Control", "no-cache")
     }
     connection.outputStream.use {
       it.write("{\"ticket_id\":$ticketId,\"queue_id\":$ticketId}".toByteArray())
     }
     val code = connection.responseCode
+    if (code == 401 || code == 403) {
+      connection.disconnect()
+      prefs.edit().clear().apply()
+      UniqueueWidgetProvider().renderCached(this)
+      return false
+    }
     val raw = (if (code in 200..299) connection.inputStream else connection.errorStream)
       ?.bufferedReader()?.use { it.readText() }.orEmpty()
     connection.disconnect()

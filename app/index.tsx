@@ -1,3 +1,4 @@
+import { getSessionToken } from '@/utils/client-fetch';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -15,9 +16,10 @@ export default function Index() {
     (async () => {
       try {
         const user = await AsyncStorage.getItem('user');
+        const token = await getSessionToken();
         const r = await AsyncStorage.getItem('role');
         if (!cancelled) {
-          setIsLoggedIn(!!user);
+          setIsLoggedIn(!!token && !!user);
           setRole(r);
         }
       } catch {

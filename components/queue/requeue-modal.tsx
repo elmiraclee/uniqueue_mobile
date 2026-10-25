@@ -1,3 +1,5 @@
+import { clientAlert } from '@/components/client/client-ui';
+import { clientFetch } from '@/utils/client-fetch';
 import React, { useState } from 'react';
 import { Alert, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
@@ -33,7 +35,7 @@ export default function RequeueModal({ visible, studentId, ticketId, queueNumber
     try {
       setSubmitting(action);
 
-      const response = await fetch(API.requeueRespond, {
+      const response = await clientFetch(API.requeueRespond, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(
@@ -48,11 +50,11 @@ export default function RequeueModal({ visible, studentId, ticketId, queueNumber
       if (data.success) {
         onResolved(data.action === 'cancelled' ? 'cancelled' : 'requeued');
       } else {
-        Alert.alert('Error', data.message || 'Something went wrong. Please try again.');
+        clientAlert('Error', data.message || 'Something went wrong. Please try again.');
       }
     } catch (error) {
       console.log('REQUEUE RESPOND ERROR:', error);
-      Alert.alert('Error', 'Something went wrong. Please try again.');
+      clientAlert('Error', 'Something went wrong. Please try again.');
     } finally {
       setSubmitting(null);
     }
