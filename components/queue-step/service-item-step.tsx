@@ -112,7 +112,7 @@ export default function ServiceItemStep({
   const updateQuantity = (id: number, action: 'add' | 'minus') => {
     const current = quantities[id] || 1;
     let newQty = current;
-    if (action === 'add') newQty++;
+    if (action === 'add') newQty = Math.min(20, current + 1);
     if (action === 'minus' && current > 1) newQty--;
     setQuantities({ ...quantities, [id]: newQty });
     if (sameForAll[id]) setAcademic(prev=>{const first=prev[id]?.[0]||{period:'',school_year:''};return {...prev,[id]:Array.from({length:newQty},()=>({...first}))}});

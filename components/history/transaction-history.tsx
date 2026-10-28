@@ -1,3 +1,4 @@
+import { serverDate } from '@/utils/server-time';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
@@ -10,9 +11,9 @@ import { TourTarget, TutorialScrollView } from '@/components/tutorial/tutorial';
 import { API } from '@/constants/backend';
 import { COLORS } from '@/constants/theme';
 import { fetchJsonOrNull } from '@/utils/api';
-const STATUSES=[['all','All'],['waiting','Waiting'],['called','Called'],['in_progress','In progress'],['completed','Completed'],['cancelled','Cancelled']];
+const STATUSES=[['all','All'],['waiting','Waiting'],['reserved','Reserved'],['next','Next'],['expired','Expired'],['called','Called'],['in_progress','In progress'],['completed','Completed'],['cancelled','Cancelled']];
 const TYPES=[['all','All types'],['walkin','Walk-in'],['appointment','Appointment']];
-const fmt=(v?:string|null)=>v?new Date(v.replace(' ','T')).toLocaleString():null;
+const fmt=(v?:string|null)=>v?serverDate(v).toLocaleString():null;
 const canFeedback=(t:any)=>['completed','done'].includes(t.status)&&!t.has_feedback&&t.feedback_rating==null;
 export default function TransactionHistory({role}:{role:'student'|'parent'}){
  const [items,setItems]=useState<any[]>([]),[children,setChildren]=useState<any[]>([]),[stats,setStats]=useState<any>(null),[search,setSearch]=useState(''),[query,setQuery]=useState(''),[status,setStatus]=useState('all'),[type,setType]=useState('all'),[child,setChild]=useState(0),[page,setPage]=useState(1),[pages,setPages]=useState(1),[total,setTotal]=useState(0),[studentId,setStudentId]=useState(0),[loading,setLoading]=useState(true),[refreshing,setRefreshing]=useState(false),[error,setError]=useState(''),[detail,setDetail]=useState<any>(null),[feedback,setFeedback]=useState<any>(null);

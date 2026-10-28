@@ -300,6 +300,8 @@ export default function OfficeQueue() {
 
   const eventId = eventIdParam ? parseInt(eventIdParam, 10) : 0;
   const isEventMode = !!eventId;
+  const [eventOfficePolicy,setEventOfficePolicy]=useState<any>(null);
+  const effectiveEventPriority=eventOfficePolicy?.priority_enabled !== false;
 
   const [office, setOffice] = useState<Office | null>(null);
   // Web: "currently unavailable services" button (with count) next to the
@@ -486,17 +488,17 @@ export default function OfficeQueue() {
       });
 
       // Today's availability + parent-queue setting (web validate_queue_join_gate).
-      if (!o.is_full && actingAsParent && o.parent_queue_enabled === false) {
+      if (!isEventMode && !o.is_full && actingAsParent && o.parent_queue_enabled === false) {
         clientAlert('Not available', 'This office does not accept parent/guardian queueing.', [
           { text: 'OK', onPress: () => router.replace(homePath as any) },
         ]);
-      } else if (!o.is_full && o.can_join === false) {
+      } else if (!isEventMode && !o.is_full && o.can_join === false) {
         clientAlert('Not accepting queues', o.availability_reason || 'This office is not accepting queues right now.', [
           { text: 'OK', onPress: () => router.replace(homePath as any) },
         ]);
       }
 
-      if (o.is_full) {
+      if (!isEventMode && o.is_full) {
         clientAlert(
           'Office Full',
           'This office has reached its full capacity for today. Please try again tomorrow.',
@@ -574,7 +576,7 @@ export default function OfficeQueue() {
     if (!office) return null;
     try {
       const pre = await fetchJsonOrNull(
-        `${API.prequeueCheck}?student_id=${studentId}${actorQuery()}&office_id=${office.id}&type=${type}&svc_ids=${svcIds.join(',')}`,
+        `${API.prequeueCheck}?student_id=${studentId}${actorQuery()}&office_id=${office.id}&purpose=${isPaymentOffice ? 'payment' : 'request'}&type=${type}&svc_ids=${svcIds.join(',')}`,
       );
       if (pre?.success && pre.allowed === false) {
         return (pre.reason || 'You cannot join this queue yet.') + (pre.retry_at ? ` Try again around ${pre.retry_at}.` : '');
@@ -705,6 +707,10 @@ export default function OfficeQueue() {
       setEventInfo(data.event);
       setEventSteps(data.steps || []);
       setCurrentStep(data.current_step);
+      if (data.current_step?.office_id) {
+        const offices=await fetchJsonOrNull(API.getOffice);
+        setEventOfficePolicy(offices?.success ? (offices.offices || []).find((x:any)=>Number(x.id)===Number(data.current_step.office_id)) || null : null);
+      } else setEventOfficePolicy(null);
       setCurrentStepIndex(nextCurrentStepIndex);
       setEventCompleted(!!data.event_completed);
       setEventActiveTicket(data.active_ticket);
@@ -871,7 +877,9 @@ export default function OfficeQueue() {
       return;
     }
 
-    if (office?.priorityEnabled && priority && !priorityReason.trim()) {
+    if (!eventOfficePolicy) return clientAlert('Office settings','Reload the event to load the current step office settings.');
+    if (eventOfficePolicy.can_join === false || eventOfficePolicy.is_full || (actingAsParent && eventOfficePolicy.parent_queue_enabled === false)) return clientAlert('Not available',eventOfficePolicy.availability_reason || 'The current step office is not accepting this queue.');
+    if (effectiveEventPriority && priority && !priorityReason.trim()) {
       clientAlert('Error', 'Please enter a reason for priority lane.');
       return;
     }
@@ -897,8 +905,8 @@ export default function OfficeQueue() {
           student_id: studentId,
           event_id: eventId,
           event_step_id: currentStep.id,
-          priority: office?.priorityEnabled ? priority : false,
-          priority_reason: office?.priorityEnabled ? priorityReason : '',
+          priority: effectiveEventPriority ? priority : false,
+          priority_reason: effectiveEventPriority ? priorityReason : '',
           req_check: checkedEventReqIds,
           ...(eventRequiresAcademic ? { academic_period: eventPeriod, school_year: eventSchoolYear } : {}),
           ...actorFields(),
@@ -1232,7 +1240,7 @@ export default function OfficeQueue() {
                 </View>
               )}
 
-              {isViewingCurrentStep && office.priorityEnabled && (
+              {isViewingCurrentStep && effectiveEventPriority && (
                 <View style={styles.eventPriorityBox}>
                   <TouchableOpacity
                     style={styles.eventReqRow}

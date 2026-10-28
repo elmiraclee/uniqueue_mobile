@@ -41,11 +41,13 @@ export async function updateLiveTicketWidget(
 ): Promise<void> {
   const widget = nativeWidget();
   if (!widget || !data.ticketId) return;
+  const token=await getSessionToken();
+  if(!token)return;
   try {
     await widget.update({
       ...data,
       endpoint: API.getLiveTicketSnapshot,
-      authorization: (await getSessionToken()) || '',
+      authorization: token,
       peopleAhead: data.peopleAhead ?? -1,
       estimatedWait: data.estimatedWait ?? -1,
     });

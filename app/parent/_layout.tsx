@@ -63,7 +63,7 @@ export default function ParentTabsLayout() {
         options={{
           title: 'Home',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="people-outline" size={size} color={color} />
+            <Ionicons name="people-outline" size={size} color={color == null || typeof color === 'number' ? COLORS.gray : color} />
           ),
         }}
       />
@@ -72,7 +72,7 @@ export default function ParentTabsLayout() {
         options={{
           title: 'Add',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person-add-outline" size={size} color={color} />
+            <Ionicons name="person-add-outline" size={size} color={color == null || typeof color === 'number' ? COLORS.gray : color} />
           ),
         }}
       />
@@ -81,7 +81,7 @@ export default function ParentTabsLayout() {
         options={{
           title: 'History',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="time-outline" size={size} color={color} />
+            <Ionicons name="time-outline" size={size} color={color == null || typeof color === 'number' ? COLORS.gray : color} />
           ),
         }}
       />
@@ -90,7 +90,7 @@ export default function ParentTabsLayout() {
         options={{
           title: 'Alerts',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="notifications-outline" size={size} color={color} />
+            <Ionicons name="notifications-outline" size={size} color={color == null || typeof color === 'number' ? COLORS.gray : color} />
           ),
         }}
       />
@@ -119,7 +119,7 @@ export default function ParentTabsLayout() {
         options={{
           title: 'Profile',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person-circle-outline" size={size} color={color} />
+            <Ionicons name="person-circle-outline" size={size} color={color == null || typeof color === 'number' ? COLORS.gray : color} />
           ),
         }}
       />

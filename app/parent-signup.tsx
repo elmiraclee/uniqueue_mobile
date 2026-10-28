@@ -1,3 +1,4 @@
+import { LegalLinks } from '@/components/legal-links';
 import { clientAlert } from '@/components/client/client-ui';
 import { useClientUI } from '@/components/client/client-ui';
 import CustomInput from '@/components/ui/custom-input';
@@ -119,6 +120,7 @@ export default function ParentSignup() {
         <CustomInput style={styles.input} value={confirm} onChangeText={setConfirm} secureTextEntry />
         <PasswordChecklist password={password} confirm={confirm} />
 
+          <LegalLinks />
         <AnimatedPressable style={styles.consentRow} onPress={() => setConsent((v) => !v)}>
           <View style={[styles.checkbox, consent && styles.checkboxOn]}>
             {consent && <Text style={{ color: '#fff', fontWeight: '800' }}>✓</Text>}

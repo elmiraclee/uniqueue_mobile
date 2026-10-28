@@ -1,0 +1,90 @@
+Baseline: 38 errors; exit code 2
+Patched: 0 errors; exit code 0
+Patch check against supplied baseline: PASS
+
+Baseline compiler output:
+app/parent/_layout.tsx(66,57): error TS2322: Type '____ColorValue_Internal' is not assignable to type 'string | NativeColorValue | undefined'.
+  Type 'null' is not assignable to type 'string | NativeColorValue | undefined'.
+app/parent/_layout.tsx(75,61): error TS2322: Type '____ColorValue_Internal' is not assignable to type 'string | NativeColorValue | undefined'.
+  Type 'null' is not assignable to type 'string | NativeColorValue | undefined'.
+app/parent/_layout.tsx(84,55): error TS2322: Type '____ColorValue_Internal' is not assignable to type 'string | NativeColorValue | undefined'.
+  Type 'null' is not assignable to type 'string | NativeColorValue | undefined'.
+app/parent/_layout.tsx(93,64): error TS2322: Type '____ColorValue_Internal' is not assignable to type 'string | NativeColorValue | undefined'.
+  Type 'null' is not assignable to type 'string | NativeColorValue | undefined'.
+app/parent/_layout.tsx(122,64): error TS2322: Type '____ColorValue_Internal' is not assignable to type 'string | NativeColorValue | undefined'.
+  Type 'null' is not assignable to type 'string | NativeColorValue | undefined'.
+app/student/_layout.tsx(84,55): error TS2322: Type '____ColorValue_Internal' is not assignable to type 'string | NativeColorValue | undefined'.
+  Type 'null' is not assignable to type 'string | NativeColorValue | undefined'.
+app/student/_layout.tsx(94,57): error TS2322: Type '____ColorValue_Internal' is not assignable to type 'string | NativeColorValue | undefined'.
+  Type 'null' is not assignable to type 'string | NativeColorValue | undefined'.
+app/student/_layout.tsx(104,57): error TS2322: Type '____ColorValue_Internal' is not assignable to type 'string | NativeColorValue | undefined'.
+  Type 'null' is not assignable to type 'string | NativeColorValue | undefined'.
+components/client/client-ui.tsx(17,307): error TS2322: Type 'Function | ((value?: string | undefined) => any) | undefined' is not assignable to type '(() => void) | undefined'.
+  Type 'Function' is not assignable to type '() => void'.
+    Type 'Function' provides no match for the signature '(): void'.
+components/client/client-ui.tsx(17,393): error TS2322: Type 'Function | ((value?: string | undefined) => any) | undefined' is not assignable to type '(() => void) | undefined'.
+  Type 'Function' is not assignable to type '() => void'.
+    Type 'Function' provides no match for the signature '(): void'.
+components/feedback/csm-modal.tsx(9,56): error TS2322: Type '() => false | void' is not assignable to type 'DirectEventHandler<null>'.
+  Type 'false | void' is not assignable to type 'void | Promise<void>'.
+    Type 'boolean' is not assignable to type 'void | Promise<void>'.
+components/notification/use-notification.tsx(154,46): error TS2769: No overload matches this call.
+  Overload 1 of 3, '(initialValue: AppStateStatus): RefObject<AppStateStatus>', gave the following error.
+    Argument of type 'string | null | undefined' is not assignable to parameter of type 'AppStateStatus'.
+      Type 'undefined' is not assignable to type 'AppStateStatus'.
+  Overload 2 of 3, '(initialValue: AppStateStatus | null): RefObject<AppStateStatus | null>', gave the following error.
+    Argument of type 'string | null | undefined' is not assignable to parameter of type 'AppStateStatus | null'.
+      Type 'undefined' is not assignable to type 'AppStateStatus | null'.
+  Overload 3 of 3, '(initialValue: AppStateStatus | undefined): RefObject<AppStateStatus | undefined>', gave the following error.
+    Argument of type 'string | null | undefined' is not assignable to parameter of type 'AppStateStatus | undefined'.
+      Type 'null' is not assignable to type 'AppStateStatus | undefined'.
+components/notification/use-notification.tsx(449,11): error TS2345: Argument of type 'string | null | undefined' is not assignable to parameter of type 'AppStateStatus'.
+  Type 'undefined' is not assignable to type 'AppStateStatus'.
+components/tutorial/tutorial.tsx(27,49): error TS2322: Type '{ ref: (node: ScrollViewInstance | null) => void; innerViewRef?: RefObject<(props: Omit<ViewProps, "ref"> & { ref?: Ref<ReactNativeElement> | undefined; }) => ReactNode> | Ref<...> | undefined; ... 176 more ...; scrollViewRef?: Ref<...> | undefined; }' is not assignable to type 'Omit<ScrollViewProps, "ref">'.
+  Types of property 'innerViewRef' are incompatible.
+    Type 'RefObject<(props: Omit<ViewProps, "ref"> & { ref?: Ref<ReactNativeElement> | undefined; }) => ReactNode> | Ref<...> | undefined' is not assignable to type 'Ref<ReactNativeElement> | undefined'.
+      Type 'RefObject<(props: Omit<ViewProps, "ref"> & { ref?: Ref<ReactNativeElement> | undefined; }) => ReactNode>' is not assignable to type 'Ref<ReactNativeElement> | undefined'.
+        Type 'RefObject<(props: Omit<ViewProps, "ref"> & { ref?: Ref<ReactNativeElement> | undefined; }) => ReactNode>' is not assignable to type 'RefObject<ReactNativeElement | null>'.
+          Type '(props: Omit<ViewProps, "ref"> & { ref?: Ref<ReactNativeElement> | undefined; }) => ReactNode' is not assignable to type 'ReactNativeElement'.
+components/tutorial/tutorial.tsx(27,134): error TS2322: Type 'ScrollViewInstance | null' is not assignable to type '(((props: Omit<ScrollViewProps, "ref"> & { ref?: Ref<ScrollViewInstance> | undefined; }) => ReactNode) & Readonly<{ ...; }>) | null'.
+  Type 'ScrollViewInstance' is not assignable to type '((props: Omit<ScrollViewProps, "ref"> & { ref?: Ref<ScrollViewInstance> | undefined; }) => ReactNode) & Readonly<{ Context: Context<...>; }>'.
+    Type 'ScrollViewInstance' is not assignable to type '(props: Omit<ScrollViewProps, "ref"> & { ref?: Ref<ScrollViewInstance> | undefined; }) => ReactNode'.
+      Type 'ScrollViewInstance' provides no match for the signature '(props: Omit<ScrollViewProps, "ref"> & { ref?: Ref<ScrollViewInstance> | undefined; }): ReactNode'.
+components/tutorial/tutorial.tsx(27,192): error TS2345: Argument of type 'ScrollViewInstance | null' is not assignable to parameter of type '(((props: Omit<ScrollViewProps, "ref"> & { ref?: Ref<ScrollViewInstance> | undefined; }) => ReactNode) & Readonly<{ ...; }>) | null'.
+  Type 'ScrollViewInstance' is not assignable to type '((props: Omit<ScrollViewProps, "ref"> & { ref?: Ref<ScrollViewInstance> | undefined; }) => ReactNode) & Readonly<{ Context: Context<...>; }>'.
+    Type 'ScrollViewInstance' is not assignable to type '(props: Omit<ScrollViewProps, "ref"> & { ref?: Ref<ScrollViewInstance> | undefined; }) => ReactNode'.
+      Type 'ScrollViewInstance' provides no match for the signature '(props: Omit<ScrollViewProps, "ref"> & { ref?: Ref<ScrollViewInstance> | undefined; }): ReactNode'.
+components/tutorial/tutorial.tsx(27,215): error TS2322: Type 'ScrollViewInstance | null' is not assignable to type '(((props: Omit<ScrollViewProps, "ref"> & { ref?: Ref<ScrollViewInstance> | undefined; }) => ReactNode) & Readonly<{ ...; }>) | null'.
+  Type 'ScrollViewInstance' is not assignable to type '((props: Omit<ScrollViewProps, "ref"> & { ref?: Ref<ScrollViewInstance> | undefined; }) => ReactNode) & Readonly<{ Context: Context<...>; }>'.
+    Type 'ScrollViewInstance' is not assignable to type '(props: Omit<ScrollViewProps, "ref"> & { ref?: Ref<ScrollViewInstance> | undefined; }) => ReactNode'.
+      Type 'ScrollViewInstance' provides no match for the signature '(props: Omit<ScrollViewProps, "ref"> & { ref?: Ref<ScrollViewInstance> | undefined; }): ReactNode'.
+components/tutorial/tutorial.tsx(34,15): error TS2322: Type 'RefObject<((props: Omit<ViewProps, "ref"> & { ref?: Ref<ReactNativeElement> | undefined; }) => ReactNode) | null>' is not assignable to type 'Ref<ReactNativeElement> | undefined'.
+  Type 'RefObject<((props: Omit<ViewProps, "ref"> & { ref?: Ref<ReactNativeElement> | undefined; }) => ReactNode) | null>' is not assignable to type 'RefObject<ReactNativeElement | null>'.
+    Type '((props: Omit<ViewProps, "ref"> & { ref?: Ref<ReactNativeElement> | undefined; }) => ReactNode) | null' is not assignable to type 'ReactNativeElement | null'.
+      Type '(props: Omit<ViewProps, "ref"> & { ref?: Ref<ReactNativeElement> | undefined; }) => ReactNode' is not assignable to type 'ReactNativeElement'.
+components/tutorial/tutorial.tsx(40,80): error TS2339: Property 'measureInWindow' does not exist on type '(props: Omit<ViewProps, "ref"> & { ref?: Ref<ReactNativeElement> | undefined; }) => ReactNode'.
+components/tutorial/tutorial.tsx(40,97): error TS7006: Parameter 'x' implicitly has an 'any' type.
+components/tutorial/tutorial.tsx(40,99): error TS7006: Parameter 'y' implicitly has an 'any' type.
+components/tutorial/tutorial.tsx(40,101): error TS7006: Parameter 'width' implicitly has an 'any' type.
+components/tutorial/tutorial.tsx(40,107): error TS7006: Parameter 'height' implicitly has an 'any' type.
+components/tutorial/tutorial.tsx(47,70): error TS2322: Type 'RefObject<((props: Omit<ViewProps, "ref"> & { ref?: Ref<ReactNativeElement> | undefined; }) => ReactNode) | null>' is not assignable to type 'Ref<ReactNativeElement> | undefined'.
+  Type 'RefObject<((props: Omit<ViewProps, "ref"> & { ref?: Ref<ReactNativeElement> | undefined; }) => ReactNode) | null>' is not assignable to type 'RefObject<ReactNativeElement | null>'.
+    Type '((props: Omit<ViewProps, "ref"> & { ref?: Ref<ReactNativeElement> | undefined; }) => ReactNode) | null' is not assignable to type 'ReactNativeElement | null'.
+      Type '(props: Omit<ViewProps, "ref"> & { ref?: Ref<ReactNativeElement> | undefined; }) => ReactNode' is not assignable to type 'ReactNativeElement'.
+components/tutorial/tutorial.tsx(92,100): error TS2339: Property 'measureInWindow' does not exist on type '(props: Omit<ViewProps, "ref"> & { ref?: Ref<ReactNativeElement> | undefined; }) => ReactNode'.
+components/tutorial/tutorial.tsx(92,117): error TS7006: Parameter 'x' implicitly has an 'any' type.
+components/tutorial/tutorial.tsx(92,119): error TS7006: Parameter 'y' implicitly has an 'any' type.
+components/tutorial/tutorial.tsx(92,121): error TS7006: Parameter 'width' implicitly has an 'any' type.
+components/tutorial/tutorial.tsx(92,127): error TS7006: Parameter 'height' implicitly has an 'any' type.
+components/tutorial/tutorial.tsx(95,31): error TS2339: Property 'measureLayout' does not exist on type '(props: Omit<ViewProps, "ref"> & { ref?: Ref<ReactNativeElement> | undefined; }) => ReactNode'.
+components/tutorial/tutorial.tsx(95,54): error TS7006: Parameter '_x' implicitly has an 'any' type.
+components/tutorial/tutorial.tsx(95,57): error TS7006: Parameter 'y' implicitly has an 'any' type.
+components/tutorial/tutorial.tsx(95,89): error TS2339: Property 'scrollTo' does not exist on type '((props: Omit<ScrollViewProps, "ref"> & { ref?: Ref<ScrollViewInstance> | undefined; }) => ReactNode) & Readonly<{ Context: Context<...>; }>'.
+components/ui/otp-input.tsx(6,3): error TS2724: '"react-native"' has no exported member named 'TextInputKeyPressEventData'. Did you mean 'TextInputKeyPressEvent'?
+components/ui/otp-input.tsx(49,32): error TS2339: Property 'focus' does not exist on type 'TextInputType'.
+components/ui/otp-input.tsx(58,34): error TS2339: Property 'focus' does not exist on type 'TextInputType'.
+components/ui/otp-input.tsx(77,34): error TS2339: Property 'focus' does not exist on type 'TextInputType'.
+components/ui/otp-input.tsx(89,15): error TS2322: Type '_TextInputInstance | null' is not assignable to type 'TextInputType | null'.
+  Type '_TextInputInstance' is not assignable to type 'TextInputType'.
+    Type '_TextInputInstance' is not assignable to type 'InternalTextInput'.
+      Type '_TextInputInstance' provides no match for the signature '(props: Omit<TextInputProps, "ref"> & { ref?: Ref<_TextInputInstance> | undefined; }): ReactNode'.

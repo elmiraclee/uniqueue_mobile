@@ -9,6 +9,7 @@
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { useEffect } from 'react';
+import { Platform } from 'react-native';
 
 import {
   API,
@@ -35,8 +36,8 @@ export type GoogleAuthResult =
   | { ok: false; message: string; cancelled?: boolean };
 
 function clientIdsConfigured(): boolean {
-  const web = GOOGLE_WEB_CLIENT_ID || '';
-  return !!web && !web.startsWith('YOUR_GOOGLE');
+  const id = Platform.OS === 'ios' ? GOOGLE_IOS_CLIENT_ID : Platform.OS === 'android' ? GOOGLE_ANDROID_CLIENT_ID : GOOGLE_WEB_CLIENT_ID;
+  return !!id && !id.startsWith('YOUR_GOOGLE');
 }
 
 /**

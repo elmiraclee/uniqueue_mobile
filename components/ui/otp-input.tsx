@@ -1,9 +1,8 @@
 import React, { useRef } from 'react';
 import {
-  NativeSyntheticEvent,
   StyleSheet,
   TextInput,
-  TextInputKeyPressEventData,
+  TextInputKeyPressEvent,
   View,
 } from 'react-native';
 
@@ -29,7 +28,7 @@ export default function OtpInput({
   autoFocus = true,
   onComplete,
 }: Props) {
-  const inputs = useRef<(TextInput | null)[]>([]);
+  const inputs = useRef<(React.ComponentRef<typeof TextInput> | null)[]>([]);
   const digits = value.padEnd(length, ' ').slice(0, length).split('');
 
   const commit = (next: string) => {
@@ -60,7 +59,7 @@ export default function OtpInput({
   };
 
   const handleKeyPress = (
-    e: NativeSyntheticEvent<TextInputKeyPressEventData>,
+    e: TextInputKeyPressEvent,
     index: number
   ) => {
     if (e.nativeEvent.key !== 'Backspace') return;

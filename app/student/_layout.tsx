@@ -81,7 +81,7 @@ export default function StudentTabsLayout() {
         options={{
           title: 'Home',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="home-outline" size={size} color={color} />
+            <Ionicons name="home-outline" size={size} color={color == null || typeof color === 'number' ? COLORS.gray : color} />
           ),
         }}
       />
@@ -91,7 +91,7 @@ export default function StudentTabsLayout() {
         options={{
           title: 'Transactions',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="people-outline" size={size} color={color} />
+            <Ionicons name="people-outline" size={size} color={color == null || typeof color === 'number' ? COLORS.gray : color} />
           ),
         }}
       />
@@ -101,7 +101,7 @@ export default function StudentTabsLayout() {
         options={{
           title: 'Profile',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person-outline" size={size} color={color} />
+            <Ionicons name="person-outline" size={size} color={color == null || typeof color === 'number' ? COLORS.gray : color} />
           ),
         }}
       />

@@ -13,6 +13,8 @@
 | task is defined before the JS bundle finishes loading in a headless start.
 */
 import { Platform } from "react-native";
+import { getSessionToken } from "../../utils/session-storage";
+import { API } from "../../constants/backend";
 
 import {
   CHANNEL_ALARM,
@@ -52,6 +54,15 @@ TaskManager.defineTask(
         {};
       const content = data?.notification?.request?.content ?? {};
       const extra = payload?.data ?? content?.data ?? payload ?? {};
+      const token=await getSessionToken();
+      if(!token || Number(extra?.ticket_id)<=0)return;
+      const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),15000);
+      try {
+        const response=await fetch(API.getLiveTicketSnapshot,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({ticket_id:Number(extra.ticket_id)}),signal:controller.signal});
+        const verified=await response.json();
+        if(!response.ok || !verified?.success || await getSessionToken()!==token)return;
+      } finally {clearTimeout(timer);}
+
 
       // Keep the home-screen ticket current even when the app UI is asleep.
       // The native widget performs its own API refresh after this cache update.

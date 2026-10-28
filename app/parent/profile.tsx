@@ -1,3 +1,4 @@
+import { LegalLinks } from '@/components/legal-links';
 import { clientAlert } from '@/components/client/client-ui';
 import LinkedAccounts from '@/components/client/linked-accounts';
 import { logoutClient } from '@/utils/client-fetch';
@@ -207,7 +208,7 @@ await AsyncStorage.multiRemove(['user', 'role']);
           <Text style={styles.logoutText}>Sign out</Text>
         </AnimatedPressable>
 
-</TutorialScrollView>
+<LegalLinks /></TutorialScrollView>
     </View>
   );
 }

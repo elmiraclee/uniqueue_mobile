@@ -1,3 +1,4 @@
+import { LegalLinks } from '@/components/legal-links';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Modal, Pressable, RefreshControl, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
@@ -46,7 +47,7 @@ export default function Profile(){
  }catch(e){clientAlert('Unable to save',e instanceof Error?e.message:'Please retry.')}finally{setSaving(false)}};
  const pickPhoto=async()=>{setPhotoVisible(false);const permission=await ImagePicker.requestMediaLibraryPermissionsAsync();if(!permission.granted)return clientAlert('Gallery permission','Allow gallery access to choose a photo.');
  const result=await ImagePicker.launchImageLibraryAsync({mediaTypes:['images'],allowsEditing:true,aspect:[1,1],quality:.8});if(result.canceled)return;
- setUploading(true);try{const body=new FormData();body.append('student_id',String(student.id));body.append('picture',{uri:result.assets[0].uri,type:'image/jpeg',name:'profile.jpg'} as any);const data=await fetchJsonOrNull(API.uploadProfilePicture,{method:'POST',body});if(!data?.success)throw new Error(data?.message||'Photo could not upload.');await load();clientAlert('Saved','Profile photo updated.');}catch(e){clientAlert('Photo',e instanceof Error?e.message:'Please retry.')}finally{setUploading(false)}};
+ setUploading(true);try{const body=new FormData();body.append('student_id',String(student.id));body.append('picture',{uri:result.assets[0].uri,type:result.assets[0].mimeType||'image/jpeg',name:result.assets[0].fileName||('profile.'+(result.assets[0].mimeType==='image/png'?'png':result.assets[0].mimeType==='image/webp'?'webp':'jpg'))} as any);const data=await fetchJsonOrNull(API.uploadProfilePicture,{method:'POST',body});if(!data?.success)throw new Error(data?.message||'Photo could not upload.');await load();clientAlert('Saved','Profile photo updated.');}catch(e){clientAlert('Photo',e instanceof Error?e.message:'Please retry.')}finally{setUploading(false)}};
  const picture=student?.picture||student?.google_picture||'';const photo=picture?(picture.startsWith('http')?picture:`${ASSET_BASE_URL}/${picture}`):'';
  if(loading)return <View style={s.root}><AppHeader title="Student Profile"/><ActivityIndicator style={{margin:32}} color={COLORS.primary}/></View>;
  return <View style={s.root}><AppHeader title="Student Profile"/><TutorialScrollView contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={()=>{setRefreshing(true);void load();void catalog.reload()}}/>}>
@@ -63,7 +64,7 @@ export default function Profile(){
  <TourTarget id="password"><CustomButton title="Change password" outlined onPress={()=>setPasswordVisible(true)}/></TourTarget>
  <TourTarget id="linked-accounts"><LinkedAccounts role="student"/></TourTarget>
  <CustomButton title="Sign out" outlined onPress={()=>clientAlert('Sign out','Sign out of this device?',[{text:'Cancel',style:'cancel'},{text:'Sign out',style:'destructive',onPress:()=>void logoutClient()}])}/>
- </TutorialScrollView>
+ <LegalLinks /></TutorialScrollView>
  <ChangePasswordModal studentId={Number(student?.id||0)} visible={passwordVisible} onClose={()=>setPasswordVisible(false)}/>
  <Modal visible={photoVisible} transparent animationType="fade" onRequestClose={()=>setPhotoVisible(false)}><View style={s.photoBackdrop}><View style={s.photoCard}><Text style={s.section}>Profile photo</Text>{photo&&!photoFailed?<Image accessibilityLabel="Current profile photo" source={{uri:photo}} onError={()=>setPhotoFailed(true)} style={[s.photoPreview,{height:Math.min(260,size.height*.25)}]} resizeMode="contain"/>:<Text style={s.meta}>{photoFailed?'Photo could not load. You can choose a new one.':'No profile photo yet.'}</Text>}<CustomButton title="Change photo" onPress={()=>void pickPhoto()}/><CustomButton title="Close" outlined onPress={()=>setPhotoVisible(false)}/></View></View></Modal>
  </View>;

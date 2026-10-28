@@ -1,3 +1,4 @@
+import { serverDate } from '@/utils/server-time';
 import { TourTarget, TutorialStage, TutorialCoach, useTutorial } from '@/components/tutorial/tutorial';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -41,7 +42,7 @@ const TYPE_META: Record<
 };
 
 function timeAgo(dateString: string) {
-  const diffMs = Date.now() - new Date(dateString.replace(' ', 'T')).getTime();
+  const diffMs = Date.now() - serverDate(dateString).getTime();
   const mins = Math.floor(diffMs / 60000);
   if (mins < 1) return 'Just now';
   if (mins < 60) return `${mins}m ago`;

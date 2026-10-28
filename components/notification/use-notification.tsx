@@ -11,6 +11,17 @@ import React, {
 } from 'react';
 import { AppState, AppStateStatus, Platform } from 'react-native';
 
+// Native currentState may be absent during startup; do not assume foreground.
+function currentAppState(): AppStateStatus {
+  const state = AppState.currentState;
+  switch (state) {
+    case 'active': case 'background': case 'inactive': case 'extension':
+      return state;
+    default:
+      return 'unknown';
+  }
+}
+
 import { API } from '../../constants/backend';
 import {
   CHANNEL_ALARM,
@@ -151,7 +162,7 @@ export function NotificationProvider({
   const isPollingRef = useRef(false);
   const lastPollWarningRef = useRef<string | null>(null);
   const pushRegisteredRef = useRef(false);
-  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  const appStateRef = useRef<AppStateStatus>(currentAppState());
 
   // Foreground presentation: still show the banner and play the device's
   // notification sound instead of silently swallowing it.
@@ -293,9 +304,9 @@ export function NotificationProvider({
 
     try {
       const session = await getSession();
-      if (!session) {setNotifications([]);setUnreadCount(0);accountKeyRef.current=null;seenIdsRef.current.clear();presentedKeysRef.current.clear();isFirstLoadRef.current=true;return;}
+      if (!session) {pushRegisteredRef.current=false;setNotifications([]);setUnreadCount(0);accountKeyRef.current=null;seenIdsRef.current.clear();presentedKeysRef.current.clear();isFirstLoadRef.current=true;return;}
       const accountKey=session.role+':'+session.id;
-      if(accountKeyRef.current!==accountKey){accountKeyRef.current=accountKey;seenIdsRef.current.clear();presentedKeysRef.current.clear();isFirstLoadRef.current=true;setNotifications([]);setUnreadCount(0)}
+      if(accountKeyRef.current!==accountKey){pushRegisteredRef.current=false;accountKeyRef.current=accountKey;seenIdsRef.current.clear();presentedKeysRef.current.clear();isFirstLoadRef.current=true;setNotifications([]);setUnreadCount(0)}
 
       // Parents watch their linked children's queues through their own
       // endpoint; students generate + read their own notifications.
@@ -446,7 +457,7 @@ export function NotificationProvider({
     };
 
     poll();
-    start(AppState.currentState);
+    start(currentAppState());
 
     const sub = AppState.addEventListener('change', (next) => {
       const prev = appStateRef.current;

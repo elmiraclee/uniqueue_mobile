@@ -1,4 +1,5 @@
 import { gradeChoices, useGradeOptions } from '@/hooks/use-grade-options';
+import { LegalLinks } from '@/components/legal-links';
 import { clientAlert } from '@/components/client/client-ui';
 import { clientFetch } from '@/utils/client-fetch';
 import { useClientUI } from '@/components/client/client-ui';
@@ -252,6 +253,7 @@ export default function Signup() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          consent_privacy: consent ? 1 : 0,
           sr_code: srCode.trim(),
           email: email.trim(),
           first_name: firstName.trim(),
@@ -531,6 +533,7 @@ export default function Signup() {
             )}
           </View>
 
+          <LegalLinks />
           {/* Terms / Privacy consent — required on the web too */}
           <Pressable
             style={styles.consentRow}

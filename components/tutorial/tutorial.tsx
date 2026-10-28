@@ -7,8 +7,11 @@ import { clientFetch, getSessionToken } from '@/utils/client-fetch';
 import { API_URL } from '@/constants/backend';
 import { COLORS } from '@/constants/theme';
 import { clientTourSteps, TourStep } from './steps';
+// Refs hold native instances, not component functions.
+type NativeView = React.ComponentRef<typeof View>;
+type NativeScrollView = React.ComponentRef<typeof ScrollView>;
 type Rect = { x: number; y: number; width: number; height: number };
-type Target = { view: View; scroll: {outer:React.RefObject<ScrollView|null>;inner:React.RefObject<View|null>} | null };
+type Target = { view: NativeView; scroll: {outer:React.RefObject<NativeScrollView|null>;inner:React.RefObject<NativeView|null>} | null };
 type Progress = { step: number; status: 'active' | 'skipped' | 'completed' };
 type Guide = {
  register: (key: string, target: Target | null) => void;
@@ -19,23 +22,23 @@ type Guide = {
 };
 const noop=()=>{};
 const Context=createContext<Guide>({register:noop,start:async()=>{},show:noop,pause:noop,active:false,visible:false,step:null,notificationStep:false,index:0,count:1,role:'student',rect:null,bounds:{x:0,y:0,width:0,height:0},setBounds:noop,next:noop,back:noop,skip:noop});
-const ScrollContext=createContext<{outer:React.RefObject<ScrollView|null>;inner:React.RefObject<View|null>}|null>(null);
+const ScrollContext=createContext<{outer:React.RefObject<NativeScrollView|null>;inner:React.RefObject<NativeView|null>}|null>(null);
 export const useTutorial=()=>useContext(Context);
-export const TutorialScrollView=forwardRef<ScrollView,ScrollViewProps>(function TutorialScrollView(props,external){
- const ref=useRef<ScrollView>(null),inner=useRef<View>(null!);
+export const TutorialScrollView=forwardRef<NativeScrollView,ScrollViewProps>(function TutorialScrollView(props,external){
+ const ref=useRef<NativeScrollView>(null),inner=useRef<NativeView>(null!);
  const scroll=React.useMemo(()=>({outer:ref,inner}),[]);
  return <ScrollContext.Provider value={scroll}><ScrollView {...props} {...(Platform.OS==='web'?{}:{innerViewRef:inner})} ref={node=>{ref.current=node;if(typeof external==='function')external(node);else if(external)external.current=node}}/></ScrollContext.Provider>;
 });
 export function TourTarget({id,children}:{id:string;children:React.ReactNode}){
  const focused=useIsFocused();
- const ref=useRef<View>(null),scroll=useContext(ScrollContext),{register}=useTutorial(),path=usePathname();
+ const ref=useRef<NativeView>(null),scroll=useContext(ScrollContext),{register}=useTutorial(),path=usePathname();
  const update=useCallback(()=>{if(focused&&ref.current)register(path+':'+id,{view:ref.current,scroll})},[id,path,register,scroll,focused]);
  useEffect(()=>{if(focused)update();return()=>{if(focused)register(path+':'+id,null)}},[update,id,path,register,focused]);
  return <View ref={ref} onLayout={update} collapsable={false}>{children}</View>;
 }
 /** The navigator/sheet and coach are FLEX SIBLINGS. The coach never covers content. */
 export function TutorialStage({children,modal=false}:{children:React.ReactNode;modal?:boolean}){
- const guide=useTutorial(),ref=useRef<View>(null);
+ const guide=useTutorial(),ref=useRef<NativeView>(null);
  const active=guide.visible&&guide.notificationStep===modal;
  const layout=useCallback((_event?:LayoutChangeEvent)=>{if(active)ref.current?.measureInWindow((x,y,width,height)=>guide.setBounds({x,y,width,height}))},[active,guide.setBounds]);
  useEffect(()=>{const timers=[50,350,650].map(delay=>setTimeout(layout,delay));return()=>timers.forEach(clearTimeout)},[layout]);
@@ -91,7 +94,7 @@ export function TutorialProvider({children}:{children:React.ReactNode}){
  useEffect(()=>{if(!visible)return;setRect(null);let cancelled=false;const timers:ReturnType<typeof setTimeout>[]=[];const targetKey=path+':'+step.target;
  const measure=()=>{if(cancelled)return;const t=targets.current.get(targetKey);if(!t)return;t.view.measureInWindow((x,y,width,height)=>{if(cancelled||targets.current.get(targetKey)!==t)return;
  const top=Math.max(y,bounds.y),bottom=Math.min(y+height,bounds.y+bounds.height);if(width>0&&bottom>top)setRect({x:Math.max(x,bounds.x),y:top,width:Math.min(width,bounds.width),height:bottom-top});})};
- timers.push(setTimeout(()=>{if(cancelled)return;const t=targets.current.get(targetKey),scroll=t?.scroll?.outer.current,content=t?.scroll?.inner.current||(Platform.OS==='web'?(scroll as (ScrollView & {getInnerViewRef?:()=>View|null})|undefined)?.getInnerViewRef?.():null);
+ timers.push(setTimeout(()=>{if(cancelled)return;const t=targets.current.get(targetKey),scroll=t?.scroll?.outer.current,content=t?.scroll?.inner.current||(Platform.OS==='web'?scroll?.getInnerViewRef():null);
  if(t&&scroll&&content)t.view.measureLayout(content,(_x,y)=>{if(cancelled)return;scroll.scrollTo({y:Math.max(0,y-12),animated:false});timers.push(setTimeout(measure,80))},measure);
  measure();timers.push(setTimeout(measure,350));},100));
  return()=>{cancelled=true;timers.forEach(clearTimeout)};

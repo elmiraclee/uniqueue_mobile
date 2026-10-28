@@ -1,0 +1,11 @@
+PASS Official Expo Go detector, legacy fields absent
+PASS Legacy Expo Go ownership fallback
+PASS Store-client fallback
+PASS Web skips native package
+PASS Stale Android build lacks topic module
+PASS Stale native build lacks scheduler
+PASS Complete Android native build loads once
+PASS Complete iOS build does not require Android topic module
+PASS Native capability probe failure degrades once
+PASS Unexpected import failure is not retried each poll
+Scenarios: 10; failures: 0

@@ -1,0 +1,80 @@
+--- a/components/notification/push.ts
++++ b/components/notification/push.ts
+@@ -18,6 +18,7 @@
+ */
+ import AsyncStorage from "@react-native-async-storage/async-storage";
+ import Constants from "expo-constants";
++import { isRunningInExpoGo, requireOptionalNativeModule } from "expo";
+ import { Platform } from "react-native";
+ 
+ import { API } from "../../constants/backend";
+@@ -56,22 +57,58 @@
+ export type PushOwner = { role: "student" | "parent"; id: number };
+ 
+ export function isExpoGo(): boolean {
+-  const ownership = (Constants as any).appOwnership;
+-  const env = (Constants as any).executionEnvironment;
+-  return ownership === "expo" || env === "storeClient";
+-}
++  // SDK 58's official detector does not depend on deprecated ownership fields.
++  return isRunningInExpoGo()
++    || Constants.appOwnership === "expo"
++    || Constants.executionEnvironment === "storeClient";
++}
++
++let notificationsModule: typeof import("expo-notifications") | null | undefined;
+ 
+ /**
+- * Lazily require expo-notifications. Returns null in Expo Go so the module
+- * is never even loaded there (no console error, no crash).
++ * Do not evaluate expo-notifications in Expo Go or a stale native build.
++ * SDK 58 eagerly requires these native modules when its JS index loads.
++ * Returning null disables system notifications, NOT the API/in-app feed.
+  */
+ export function getNotifications(): typeof import("expo-notifications") | null {
+-  if (isExpoGo()) return null;
+-  try {
++  if (notificationsModule !== undefined) return notificationsModule;
++  if (isExpoGo() || Platform.OS === "web") {
++    notificationsModule = null;
++    return null;
++  }
++  const requiredModules = [
++    "NotificationsServerRegistrationModule",
++    "ExpoPushTokenManager",
++    "ExpoNotificationsHandlerModule",
++    "ExpoNotificationsEmitter",
++    "ExpoNotificationScheduler",
++    "ExpoNotificationPresenter",
++    "ExpoNotificationPermissionsModule",
++    "ExpoNotificationChannelManager",
++    "ExpoNotificationChannelGroupManager",
++    "ExpoNotificationCategoriesModule",
++    "ExpoBadgeModule",
++    "ExpoBackgroundNotificationTasksModule",
++    ...(Platform.OS === "android" ? ["ExpoTopicSubscriptionModule"] : []),
++  ];
++  try {
++    const missing = requiredModules.filter(name => !requireOptionalNativeModule(name));
++    if (missing.length) {
++      console.warn(
++        "[UniQueue] System notifications are disabled in this native build. "
++        + "Rebuild/install the SDK 58 development app. Missing modules: "
++        + missing.join(", "),
++      );
++      notificationsModule = null;
++      return null;
++    }
++    // Only evaluate the package after confirming native support.
+     // eslint-disable-next-line @typescript-eslint/no-require-imports
+-    return require("expo-notifications");
+-  } catch (err) {
+-    console.warn("expo-notifications unavailable:", err);
++    notificationsModule = require("expo-notifications");
++    return notificationsModule ?? null;
++  } catch (error) {
++    console.warn("[UniQueue] System notifications could not load; rebuild the native app.", error);
++    notificationsModule = null;
+     return null;
+   }
+ }

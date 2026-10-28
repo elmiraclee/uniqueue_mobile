@@ -1,50 +1,16 @@
-// ============================================================
-// BACKEND CONFIGURATION
-// ============================================================
-// LOCAL DEVELOPMENT:
-//   Set IP_ADDRESS to your computer's LAN IP (find it with
-//   `ipconfig` on Windows or `ifconfig`/`ip a` on Mac/Linux),
-//   and make sure USE_PRODUCTION is false.
-//
-// PRODUCTION (Hostinger):
-//   Set PRODUCTION_URL to your live domain's API folder and
-//   set USE_PRODUCTION to true before building the APK.
-// ============================================================
+import deployment from '../deployment.generated.json';
 
-const USE_PRODUCTION = true;
-
-const IP_ADDRESS = "10.175.114.120"; // only used when USE_PRODUCTION is false
-const LOCAL_URL = `http://${IP_ADDRESS}/uniqueue_api`;
-
-const PRODUCTION_URL = "https://uni-queue.site/uniqueue_api"; // <-- update this to your real domain
-
-export const API_URL = (process.env.EXPO_PUBLIC_API_URL || (USE_PRODUCTION ? PRODUCTION_URL : LOCAL_URL)).replace(/\/$/, '');
-
-// Some screens build endpoint URLs directly instead of going through
-// the API object below; they import API_BASE for that.
+// Generated together with the PHP profile by tools/select-deployment.py.
+// No database, SMTP or other server secrets belong in this application.
+export const DEPLOYMENT_PROFILE = deployment.profile;
+export const API_URL = deployment.api_url.replace(/\/$/, '');
 export const API_BASE = API_URL;
-
-// ============================================================
-// SITE ROOT (for files, not API endpoints)
-// ============================================================
-// The web app and this API live on the same server, but the web app's
-// document root is one level ABOVE the "uniqueue_api" folder (e.g. the
-// web app serves /student/..., /uploads/profile/..., etc. from the site
-// root, while this API answers at /uniqueue_api/...). Uploaded profile
-// pictures are saved under <site-root>/uploads/profile/ so the web app
-// can see them too, so image URLs must be built against the site root,
-// NOT against API_URL — using API_URL here previously pointed at
-// /uniqueue_api/uploads/profile/..., a folder the web app never reads
-// from, which is why a picture uploaded on mobile didn't show up on web.
-const API_FOLDER_NAME = "uniqueue_api";
-export const SITE_URL = API_URL.replace(
-  new RegExp(`/${API_FOLDER_NAME}/?$`),
-  ""
-);
-
-// Use this (not API_URL) whenever building a URL for an uploaded file
-// (e.g. `${ASSET_BASE_URL}/${picture}`).
+export const SITE_URL = deployment.web_url.replace(/\/$/, '');
 export const ASSET_BASE_URL = SITE_URL;
+export const LEGAL_URLS = {
+  terms: `${SITE_URL}/legal/terms.php`,
+  privacy: `${SITE_URL}/legal/privacy.php`,
+};
 
 export const API = {
   // LOGIN.TSX

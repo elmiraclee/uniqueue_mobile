@@ -1,6 +1,7 @@
 import { clientAlert } from '@/components/client/client-ui';
 import { useCallback, useEffect, useState } from 'react';
 import {
+  AppState,
   ActivityIndicator,
   Alert,
   RefreshControl,
@@ -10,7 +11,7 @@ import {
   View,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 import AppHeader from '../../components/layout/app-header';
@@ -135,11 +136,11 @@ export default function TicketDetailScreen() {
     }
   }, [ticketId, childId, parentIdParam, asParent]);
 
-  useEffect(() => {
-    load();
-    const t = setInterval(load, 4000);
+  useFocusEffect(useCallback(() => {
+    void load();
+    const t = setInterval(() => { if (AppState.currentState === 'active') void load(); }, 4000);
     return () => clearInterval(t);
-  }, [load]);
+  }, [load]));
 
   const cancel = () => {
     if (!ticket?.can_cancel) return;

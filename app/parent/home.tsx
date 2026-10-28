@@ -116,7 +116,11 @@ export default function ParentHome() {
   const [officesOpen, setOfficesOpen] = useState<number | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string>("");
 
+  const loadingRef=useRef(false);
+  const generationRef=useRef(0);
   const load = useCallback(async () => {
+    if(loadingRef.current)return;
+    loadingRef.current=true; const generation=generationRef.current;
     try {
       const raw = await AsyncStorage.getItem("user");
       if (!raw) return;
@@ -143,6 +147,7 @@ export default function ParentHome() {
         }),
         fetchJsonOrNull(API.getOffice),
       ]);
+      if(generation!==generationRef.current || await AsyncStorage.getItem('user')!==raw)return;
       if (officeRes?.success) {
         const list: any[] = officeRes.offices || [];
         setOfficesOpen(
@@ -171,6 +176,7 @@ export default function ParentHome() {
             return [child.id, detailed] as const;
           }),
         );
+        if(generation!==generationRef.current || await AsyncStorage.getItem('user')!==raw)return;
         setLiveByChild(Object.fromEntries(liveEntries));
         const activeChild = loadedChildren.find((child) =>
           hasActiveTicket(child),
@@ -203,6 +209,7 @@ export default function ParentHome() {
       console.warn(e);
       setLoadError("Network error. Pull to refresh.");
     } finally {
+      loadingRef.current=false;
       setLoading(false);
       setRefreshing(false);
     }
@@ -213,7 +220,7 @@ export default function ParentHome() {
     useCallback(() => {
       load();
       const t = setInterval(load, 3000);
-      return () => clearInterval(t);
+      return () => { clearInterval(t); generationRef.current++; };
     }, [load]),
   );
 
