@@ -1,0 +1,28 @@
+{
+  "passed": 22,
+  "tests": [
+    "Native multipart, bearer, fixed endpoint, 60s timeout and no content-type override",
+    "Absolute native path normalized",
+    "Android content URI accepted",
+    "iOS ph URI rejected before network",
+    "Missing token rejected",
+    "Unreadable session rejected",
+    "Missing URI rejected",
+    "Oversize rejected",
+    "HEIC rejected",
+    "image/jpg normalized",
+    "Server error code and message preserved",
+    "Non-JSON response detected",
+    "Invalid saved path detected",
+    "PHOTO_NETWORK_ERROR and no automatic retry",
+    "PHOTO_UPLOAD_TIMEOUT and no automatic retry",
+    "PHOTO_UPLOAD_ABORTED and no automatic retry",
+    "Synchronous send failure distinguished",
+    "401 clears matching session",
+    "401 preserves newer session",
+    "Browser uses selected Blob",
+    "Browser reads local photo if Blob missing",
+    "Browser oversized Blob rejected"
+  ],
+  "scope": "Mocked JavaScript transport only; no physical device, native multipart, live server or Expo build verification."
+}

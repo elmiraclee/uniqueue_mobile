@@ -1,6 +1,6 @@
 import { LegalLinks } from '@/components/legal-links';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Image, Modal, Pressable, RefreshControl, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Image, Modal, Platform, Pressable, RefreshControl, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { useFocusEffect } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
@@ -16,6 +16,7 @@ import { COLORS } from '@/constants/theme';
 import { gradeChoices, SCHOOL_LEVELS, SchoolLevel, useGradeOptions } from '@/hooks/use-grade-options';
 import { logoutClient } from '@/utils/client-fetch';
 import { fetchJsonOrNull } from '@/utils/api';
+import { uploadProfilePhoto, ProfilePhotoUploadError } from '@/utils/profile-photo-upload';
 type Form={first_name:string;last_name:string;email:string;school_level:SchoolLevel;grade_year:string;college_id:string;program_id:string};
 const empty:Form={first_name:'',last_name:'',email:'',school_level:'College',grade_year:'',college_id:'',program_id:''};
 export default function Profile(){
@@ -45,9 +46,19 @@ export default function Profile(){
  setSaving(true);try{const data=await fetchJsonOrNull(API.updateProfile,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...form,student_id:student.id,college_id:form.school_level==='College'?Number(form.college_id):null,program_id:form.school_level==='College'?Number(form.program_id):null,grade_version:student.grade_version})});
  if(!data?.success)throw new Error(data?.message||'Could not save profile.');setStudent(data.student);fill(data.student);const raw=await AsyncStorage.getItem('user');await AsyncStorage.setItem('user',JSON.stringify({...JSON.parse(raw||'{}'),...data.student}));setEditing(false);clientAlert('Saved','Your profile was updated.');
  }catch(e){clientAlert('Unable to save',e instanceof Error?e.message:'Please retry.')}finally{setSaving(false)}};
- const pickPhoto=async()=>{setPhotoVisible(false);const permission=await ImagePicker.requestMediaLibraryPermissionsAsync();if(!permission.granted)return clientAlert('Gallery permission','Allow gallery access to choose a photo.');
- const result=await ImagePicker.launchImageLibraryAsync({mediaTypes:['images'],allowsEditing:true,aspect:[1,1],quality:.8});if(result.canceled)return;
- setUploading(true);try{const body=new FormData();body.append('student_id',String(student.id));body.append('picture',{uri:result.assets[0].uri,type:result.assets[0].mimeType||'image/jpeg',name:result.assets[0].fileName||('profile.'+(result.assets[0].mimeType==='image/png'?'png':result.assets[0].mimeType==='image/webp'?'webp':'jpg'))} as any);const data=await fetchJsonOrNull(API.uploadProfilePicture,{method:'POST',body});if(!data?.success)throw new Error(data?.message||'Photo could not upload.');await load();clientAlert('Saved','Profile photo updated.');}catch(e){clientAlert('Photo',e instanceof Error?e.message:'Please retry.')}finally{setUploading(false)}};
+ const pickPhoto=async()=>{
+  if(!student||uploading)return;
+  try{
+   setPhotoVisible(false);
+   if(Platform.OS!=='web'){const permission=await ImagePicker.requestMediaLibraryPermissionsAsync();if(!permission.granted)return clientAlert('Gallery permission','Allow gallery access to choose a photo.');}
+   const result=await ImagePicker.launchImageLibraryAsync({mediaTypes:['images'],allowsEditing:true,aspect:[1,1],quality:.8});if(result.canceled||!result.assets?.[0])return;
+   setUploading(true);
+   const data=await uploadProfilePhoto(result.assets[0]);
+   const raw=await AsyncStorage.getItem('user');await AsyncStorage.setItem('user',JSON.stringify({...JSON.parse(raw||'{}'),picture:data.picture}));
+   await load();clientAlert('Saved','Profile photo updated.');
+  }catch(e){const message=e instanceof ProfilePhotoUploadError?'['+e.code+'] '+e.message:e instanceof Error?e.message:'Photo upload could not finish.';clientAlert('Photo upload',message);}
+  finally{setUploading(false);}
+ };
  const picture=student?.picture||student?.google_picture||'';const photo=picture?(picture.startsWith('http')?picture:`${ASSET_BASE_URL}/${picture}`):'';
  if(loading)return <View style={s.root}><AppHeader title="Student Profile"/><ActivityIndicator style={{margin:32}} color={COLORS.primary}/></View>;
  return <View style={s.root}><AppHeader title="Student Profile"/><TutorialScrollView contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={()=>{setRefreshing(true);void load();void catalog.reload()}}/>}>

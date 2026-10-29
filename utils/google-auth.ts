@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 /**
  * Google Sign-In for Expo (AuthSession + WebBrowser).
  * Uses the same Google account flow as the web app:
@@ -105,6 +106,7 @@ export async function completeGoogleAuth(
   }
 
   if (!data.success) {
+    if(data.next_action==='activate')router.push('/activate-account');
     return {
       ok: false,
       message: data.message || 'Google sign-in failed.',

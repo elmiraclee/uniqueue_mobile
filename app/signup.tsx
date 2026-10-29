@@ -293,7 +293,7 @@ export default function Signup() {
           ]);
         }
       } else {
-        clientAlert('Signup Failed', data.message);
+        if(data.next_action==='activate'||data.next_action==='login'){clientAlert('Student account',data.message,[{text:'Cancel',style:'cancel'},{text:data.next_action==='activate'?'Activate account':'Student Login',onPress:()=>router.replace(data.next_action==='activate'?'/activate-account':'/login')}]);}else clientAlert('Signup Failed', data.message);
       }
     } catch (error) {
       console.log(error);

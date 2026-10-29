@@ -294,7 +294,9 @@ export default function OfficeQueue() {
       parentId?: string;
       childName?: string;
     }>();
+  const [parentProofConfirmed,setParentProofConfirmed]=useState(false);
   const actingAsParent = asParentParam === '1' || asParentParam === 'true';
+  useEffect(()=>setParentProofConfirmed(false),[forStudentIdParam,eventIdParam,officeSlug]);
   const homePath = actingAsParent ? '/parent/home' : '/student/home';
   const [parentActorId, setParentActorId] = useState(0);
 
@@ -567,7 +569,7 @@ export default function OfficeQueue() {
   // Body fields that tell the API a parent is acting for a linked child.
   const actorFields = () =>
     parentActorId > 0
-      ? { created_by_role: 'parent', created_by_parent_id: parentActorId, parent_id: parentActorId, child_id: studentId }
+      ? { parent_proof_confirmed: parentProofConfirmed, created_by_role: 'parent', created_by_parent_id: parentActorId, parent_id: parentActorId, child_id: studentId }
       : {};
   const actorQuery = () => (parentActorId > 0 ? `&parent_id=${parentActorId}&child_id=${studentId}` : '');
 
@@ -607,6 +609,7 @@ export default function OfficeQueue() {
   };
 
   const submitCashierPayment = async (sourceTicketId: number) => {
+    if(actingAsParent&&!parentProofConfirmed)return clientAlert('Parent requirement','Confirm that you will present physical proof of ID or authorization at the counter.');
     if (!office || !studentId) return;
     if (office.isFull) {
       clientAlert('Office Full', 'This office has reached its full capacity for today.');
@@ -870,6 +873,7 @@ export default function OfficeQueue() {
     !submitting;
 
   const joinEventQueue = async () => {
+    if(actingAsParent&&!parentProofConfirmed)return clientAlert('Parent requirement','Confirm that you will present physical proof of ID or authorization at the counter.');
     if (!currentStep) return;
 
     if (isActiveTicketForCurrentStep) {
@@ -964,6 +968,7 @@ export default function OfficeQueue() {
   );
 
   const joinQueue = async () => {
+    if(actingAsParent&&!parentProofConfirmed)return clientAlert('Parent requirement','Confirm that you will present physical proof of ID or authorization at the counter.');
     if (!office) return;
 
     if (queueType === 'walkin' && !office.walkinEnabled) {
@@ -1091,6 +1096,8 @@ export default function OfficeQueue() {
           </Text>
         </View>
       )}
+
+      {actingAsParent&&<TouchableOpacity accessibilityRole="checkbox" accessibilityState={{checked:parentProofConfirmed}} onPress={()=>setParentProofConfirmed(v=>!v)} style={{padding:16,backgroundColor:'#fff3e0'}}><Text style={{fontWeight:'700',color:'#650610'}}>{parentProofConfirmed?'☑':'☐'} Parent / Guardian physical requirement</Text><Text>I will present physical proof of ID or authorization at the counter for this transaction. Staff will check it in person. No upload is required.</Text></TouchableOpacity>}
 
       {unavailableCount > 0 && (
         <TouchableOpacity style={styles.uvBtn} onPress={() => setShowUnavailable(true)}>
