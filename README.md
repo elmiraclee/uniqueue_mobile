@@ -1,63 +1,47 @@
-# Where these files go
+# UniQueue Mobile — original design + web parity v2.1.0
 
-This zip contains only new/changed files — copy each into the matching
-path in your project (overwriting the existing file where one exists).
+Complete Expo / React Native source project using the original design from `uniqueue-mobile-fixed-v3-queue-form.zip`, while retaining the rebuilt student and parent/guardian workflows matched to `uniqueue-web-fixed.zip`. This supersedes the earlier redesigned v2.0.0 delivery. It is a replacement project, not a patch to overlay onto an old mobile folder. Extract into a new folder.
 
-## Mobile app (Expo project)
+## Run
 
-| File in this zip | Goes to |
-|---|---|
-| `screens-app-student/home.tsx` | `app/student/home.tsx` |
-| `screens-app-student/profile.tsx` | `app/student/profile.tsx` |
-| `screens-app-student/queue.tsx` | `app/student/queue.tsx` |
-| `components/queue/requeue-modal.tsx` | `components/queue/requeue-modal.tsx` (new file) |
-| `components/queue/change-password-modal.tsx` | `components/queue/change-password-modal.tsx` (new file) |
-| `constants-backend.ts` | `constants/backend.ts` |
+Use Node 24 and npm. From this project's root:
 
-`@react-native-picker/picker` is already in your `package.json`, so no new
-dependency install is needed.
+```sh
+npm ci
+npm run typecheck
+npm test
+npm run test:navigation
+npm run web
+```
 
-## Backend (`uniqueue_api/`)
+For Android/iOS, use a development build with the project's native dependencies (`npx expo run:android` or `npx expo run:ios`, on an appropriately configured workstation), or your existing EAS development/preview build workflow. `npm run android` / `npm run ios` start Expo and open an available installed client; they do not create a signed release. Native Google sign-in, notifications, and the custom Android widget require native builds; Expo Go/web are not substitutes for device validation.
 
-| File in this zip | Goes to |
-|---|---|
-| `uniqueue_api/update_profile.php` | new file |
-| `uniqueue_api/change_password.php` | new file |
-| `uniqueue_api/requeue_respond.php` | new file |
-| `uniqueue_api/get_current_queue.php` | overwrite (adds `is_requeued`/`requeue_confirmed` to the response) |
-| `uniqueue_api/get_student_transaction.php` | overwrite (adds optional `q`, `page`, `per_page` params; old callers with just `student_id` are unaffected) |
-| `uniqueue_api/get_student_profile.php` | overwrite (adds `email` to the response) |
+## Backend and configuration
 
-## One thing to check before deploying
+The app targets the PHP endpoints already supplied in the web archive under `uniqueue_api`. Deploy that matching backend, database, and server configuration separately. No web/backend source or server secrets are included in this ZIP. The rebuild does not bypass server-side role, relationship, office, capacity, event, or payment rules.
 
-`requeue_respond.php` and `get_current_queue.php` read/write the
-`queue_tickets.is_requeued` and `queue_tickets.requeue_confirmed`
-columns — the same ones the web app's staff dashboard and
-`requeue-respond.php` already use. I didn't have access to run this
-against your actual database, so please confirm those columns exist on
-`queue_tickets` in your schema (they should, since web already relies on
-them) before shipping.
+`deployment.generated.json` is the authoritative API/public-web URL configuration consumed by `constants/backend.ts` and `app.config.js`. Changing only `EXPO_PUBLIC_API_URL` does **not** change that imported API URL. If using the web project's deployment selector, regenerate/copy its matching mobile deployment profile; otherwise carefully update this JSON to match the actual deployed PHP profile. Rebuild native clients after transport/profile changes.
 
-## What changed, function by function
+The supplied development profile is preserved and uses HTTP. **Do not send real account credentials or student data through it. Production release is blocked until both URLs use HTTPS and `allow_insecure_http` is false.** Run:
 
-- **Profile screen**: "Save Changes" now calls `update_profile.php`
-  instead of only writing to `AsyncStorage`. College/Program are now
-  cascading pickers (same UX as the signup screen) instead of free text,
-  so they save the correct `college_id`/`program_id` instead of
-  arbitrary strings. Email field was added (previously missing from the
-  mobile profile entirely). A "Change Password" button opens a new modal
-  that calls `change_password.php`.
-- **Home screen**: the existing 3-second polling loop now also checks
-  `is_requeued` on the student's current ticket. If a staff member skips
-  the student, a `RequeueModal` pops up automatically with "Stay in
-  Queue" / "Cancel My Queue", matching the web dashboard's behavior.
-- **Transactions screen (`queue.tsx`)**: added a search box above the
-  existing type/status filters, debounced 400ms, calling the new `q`
-  param on `get_student_transaction.php`. The existing client-side
-  type/status filtering is untouched.
-- Server-side pagination (`page`/`per_page`) is built into
-  `get_student_transaction.php` and returns `total`/`has_more`, but I
-  did not wire a "load more" UI into `queue.tsx` — the screen still
-  pulls the student's full (now search-filtered) history in one request.
-  Worth revisiting if a student's history grows large enough that this
-  becomes slow; the backend is ready for it whenever you want that added.
+```sh
+npm run check:release
+# Also check iOS OAuth configuration when targeting iOS:
+npm run check:release -- --ios
+```
+
+The check is expected to fail against the included HTTP profile. Do not silence it. Optional web/mobile profile comparison: `npm run check:release -- --web-dir /path/to/uniqueue`.
+
+`.env.development.example` documents inherited public development settings. Local `.env` is deliberately excluded. Configure Google OAuth client IDs for your application/signatures; iOS client ID is not supplied. `google-services.json` is the supplied Firebase client configuration, not a server service-account credential. Verify Firebase ownership, EAS project identifiers, Android package, iOS bundle identifier, signing, OAuth redirects, and push credentials before building for your deployment. Never embed database/SMTP/service-account secrets in the app.
+
+## New architecture
+
+- `features/portal`: role-scoped session/context, focused cancellable resources, dashboard, offices, ticket, monitor, history, alerts, shared UI, proper detail stacks and the original role-specific tab navigation.
+- `features/queue`: validated request model and full regular/appointment/cashier/event wizard.
+- `features/account`: profile, password, student/parent relationships, add/link child.
+- `app/student` and `app/parent`: thin role route adapters; detail screens live outside the tab navigator. Legacy student queue deep link redirects to the canonical detail screen.
+- Existing secure session/authentication, official CSM form, tutorial practice, push integration, and native widget support are integrated rather than replaced with mock implementations.
+
+The UI restores the original mobile logo/header, maroon greeting panels, warm background, elevated office/current-ticket cards, and round profile avatars. Student tabs are Home / Transactions / Profile; parent tabs are Home / Add / History / Alerts / Profile. New web-parity controls use this original mobile visual system rather than the earlier web-style redesign. Parent selection is explicit before queueing, and parent physical-ID/authorization confirmation is required. Expired child access is invalidated instead of silently reusing an old child ID.
+
+See `ORIGINAL-DESIGN.md` for restored layout/navigation details, `FEATURE-PARITY.md` for workflow coverage and `VALIDATION.md` for exact tested scope and remaining release gates.

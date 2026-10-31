@@ -1,4 +1,5 @@
 import React from 'react';
+import { feeSummary } from '@/utils/queue-domain';
 import {
     ActivityIndicator,
     StyleSheet,
@@ -15,6 +16,9 @@ interface ServiceItem {
   id: number;
   name: string;
   requirements: string[];
+  amount?: number | null;
+  price?: number | null;
+  pay_at_cashier?: boolean;
 }
 
 interface Props {
@@ -68,6 +72,8 @@ export default function ReviewStep({
   submitting,
   academic = {}, itemChoices = {}, practice = false,
 }: Props) {
+  const fees = feeSummary(service_items, selectedServiceItems, quantities);
+  const money = (amount: number) => `₱${amount.toFixed(2)}`;
   const disabled =
     practice || submitting ||
     (queueType === 'appointment' && !appointmentSlipConfirmed);
@@ -147,8 +153,14 @@ export default function ReviewStep({
                 <Text style={styles.docQty}>
                   x{quantities[item.id] || 1}
                 </Text>
+                <Text style={{ width: '100%', color: COLORS.gray, marginTop: 6 }}>
+                  {(item.amount ?? item.price) == null ? 'Amount: to be confirmed by the office' : `Unit amount: ${money(Number(item.amount ?? item.price))} · Subtotal: ${money(Number(item.amount ?? item.price) * (quantities[item.id] || 1))}`}
+                  {item.pay_at_cashier ? ' · Pay at cashier' : ''}
+                </Text>
               </View>
             ))}
+          <InfoRow label={fees.complete ? 'Total amount' : 'Known amounts only'} value={money(fees.total)} />
+          {!fees.complete && <Text style={styles.helperText}>Some amounts must be confirmed by the office. This is not the final total.</Text>}
         </View>
       )}
 

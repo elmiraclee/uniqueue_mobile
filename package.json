@@ -1,6 +1,6 @@
 {
   "name": "uniqueue",
-  "version": "1.2.0",
+  "version": "2.1.0",
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
     "@react-native-async-storage/async-storage": "2.2.0",
@@ -10,6 +10,7 @@
     "@react-navigation/elements": "^2.6.3",
     "@react-navigation/native": "^7.1.8",
     "expo": "^58.0.20",
+    "expo-application": "~58.1.2",
     "expo-asset": "~58.0.18",
     "expo-audio": "~58.0.10",
     "expo-auth-session": "~58.0.15",
@@ -44,8 +45,11 @@
   },
   "devDependencies": {
     "@types/react": "~19.3.0",
+    "esbuild": "^0.28.2",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~58.0.4",
+    "playwright": "^1.64.1",
+    "react-test-renderer": "^19.3.0",
     "typescript": "~6.0.3"
   },
   "main": "expo-router/entry",
@@ -56,7 +60,14 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "eslint app components constants features hooks utils",
+    "typecheck": "tsc --noEmit",
+    "test:queue": "node tests/rebuild-domain.cjs",
+    "check:release": "node scripts/check-release.cjs",
+    "test:auth": "node tests/google-runtime.cjs",
+    "test:navigation": "node tests/route-coverage.cjs",
+    "test": "node tests/rebuild-domain.cjs && node tests/resource-lifecycle.cjs && node tests/csm-validation.cjs && node tests/google-runtime.cjs",
+    "test:ui": "node tests/rebuild-ui.cjs"
   },
   "expo": {
     "autolinking": {

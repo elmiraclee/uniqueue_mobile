@@ -2,11 +2,11 @@
   "expo": {
     "name": "Uniqueue",
     "slug": "Uniqueue",
-    "version": "1.2.0",
+    "version": "2.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "uniqueue",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
@@ -39,7 +39,7 @@
       "allowBackup": false
     },
     "web": {
-      "output": "static",
+      "output": "single",
       "favicon": "./assets/images/logo.png"
     },
     "plugins": [

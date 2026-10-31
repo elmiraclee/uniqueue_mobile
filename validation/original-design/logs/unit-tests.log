@@ -1,0 +1,60 @@
+
+> uniqueue@2.1.0 test
+> node tests/rebuild-domain.cjs && node tests/resource-lifecycle.cjs && node tests/csm-validation.cjs && node tests/google-runtime.cjs
+
+PASS Student scope never trusts another student ID
+PASS Parent needs an explicitly selected child
+PASS Parent and child identity fields are separate
+PASS Student payload cannot contain parent identity
+PASS Reject invalid ID 0
+PASS Reject invalid ID -1
+PASS Reject invalid ID NaN
+PASS Reject invalid ID Infinity
+PASS Reject invalid ID abc
+PASS Reject invalid ID 1.5
+PASS String and array route IDs normalize safely
+PASS Disabled parent queue is enforced
+PASS Parent queue restriction does not block students
+PASS Full office cannot be joined
+PASS Closed office preserves server reason
+PASS Both queue types disabled blocks joining
+PASS Zero fee is known, not unknown
+PASS Unknown fee never becomes a complete total
+PASS Fee includes quantities
+PASS Per-copy academic selection is serialized
+PASS Lowered quantity trims old academic rows
+PASS Missing choice blocks final submission
+PASS Unavailable selection blocks submission
+PASS Empty services blocked
+PASS Base requirements are enforced at submission
+PASS Choice requirements are enforced at submission
+PASS Disabled appointment type cannot be submitted
+PASS Appointment needs a physical slip
+PASS Appointment slip replaces walk-in checklist
+PASS Parent proof is mandatory for submission
+PASS Parent proof serializes explicitly
+PASS Priority needs a reason
+PASS Disabled priority never leaks into payload
+PASS Every academic copy is required
+PASS Unconfigured academic period rejected
+PASS Quantity bounds enforce 99 copy maximum
+PASS Choice requirements deduplicate safely
+PASS Missing estimate is not interpreted as zero people
+PASS Reserved ticket never claims next-in-line
+PASS Closed/terminal tickets never treated as active
+PASS Numeric/string configuration flags normalize
+
+41 domain checks passed.
+react-test-renderer is deprecated. See https://react.dev/warnings/react-test-renderer
+10 resource lifecycle checks passed (scope changes, cancellation, no overlaps, foreground, stale data, recovery, cleanup).
+10 official CSM validation checks passed.
+PASS ExpoApplication absent: auth helper imports safely and explains rebuild
+PASS ExpoCrypto absent: auth helper imports safely and explains rebuild
+PASS ExpoWebBrowser absent: auth helper imports safely and explains rebuild
+PASS Native modules available: real provider boundary selected once
+PASS Unexpected native import failure does not abort auth helper
+PASS Web auth does not require Android/iOS native modules
+PASS Unconfigured iOS Google does not evaluate a native Google provider
+PASS Login and Signup still export default route components
+
+8 tests passed.

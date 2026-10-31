@@ -103,7 +103,7 @@ export default function QueueTypeStep({
       {noTypesAvailable && (
         <View style={styles.card}>
           <Text style={styles.cardSub}>
-            This office isn't accepting queues right now.
+            This office isn’t accepting queues right now.
           </Text>
         </View>
       )}

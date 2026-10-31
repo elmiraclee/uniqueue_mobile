@@ -1,1 +1,1 @@
-export { default } from '../student/ticket';
+export { default } from "@/features/portal/ticket";

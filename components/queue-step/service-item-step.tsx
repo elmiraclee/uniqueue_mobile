@@ -54,6 +54,9 @@ interface Props {
   periods: { id: number; label: string }[];
   schoolYears: { id: number; school_year: string }[];
 
+  academicLoading?: boolean;
+  academicError?: string;
+  onRetryAcademic?: () => void;
   onNext: () => void;
   onBack: () => void;
 }
@@ -75,6 +78,9 @@ export default function ServiceItemStep({
   setAcademic,
   periods,
   schoolYears,
+  academicLoading = false,
+  academicError = '',
+  onRetryAcademic,
   onNext,
   onBack,
 }: Props) {
@@ -123,7 +129,7 @@ export default function ServiceItemStep({
     !!item.has_choices || (item.choices?.length ?? 0) > 0;
 
   const itemNeedsAcademic = (item: ServiceItem) =>
-    !!item.use_academic_period && periods.length > 0 && schoolYears.length > 0;
+    !!item.use_academic_period;
 
   // School years are newest-first so the current year is one tap away,
   // while periods keep the office's configured display order.
@@ -205,6 +211,11 @@ export default function ServiceItemStep({
       return;
     }
 
+    if (selected.some(itemNeedsAcademic) && (academicLoading || academicError || !periods.length || !schoolYears.length)) {
+      clientAlert('Academic details unavailable', academicLoading ? 'Academic options are loading.' : academicError || 'No valid periods and school years are configured. Ask the office to update them.');
+      return;
+    }
+
     const missingAcademic = selected.find((i) => {
       if (!itemNeedsAcademic(i)) return false;
       const qty = quantities[i.id] || 1;
@@ -226,6 +237,10 @@ export default function ServiceItemStep({
   return (
     <View>
       <Text style={styles.title}>Select service items</Text>
+      {(academicLoading || !!academicError) && <View style={{ padding: 12, gap: 8, backgroundColor: '#fff3e0' }}>
+        <Text accessibilityRole="alert">{academicLoading ? 'Loading academic options…' : academicError}</Text>
+        {!academicLoading && !!onRetryAcademic && <TouchableOpacity accessibilityRole="button" onPress={onRetryAcademic}><Text style={{ color: COLORS.primary, fontWeight: '700', paddingVertical: 12 }}>Retry academic options</Text></TouchableOpacity>}
+      </View>}
       <Text style={styles.subtitle}>
         Choose the service item or service you need from this office.
       </Text>

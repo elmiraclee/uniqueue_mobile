@@ -90,7 +90,7 @@ export default function ParentSignup() {
     >
       <ScrollView contentContainerStyle={styles.scroll}>
         <Text style={styles.title}>Parent / Guardian Sign up</Text>
-        <Text style={styles.sub}>Create an account to manage your children's queues</Text>
+        <Text style={styles.sub}>Create an account to manage your children’s queues</Text>
 
         <Text style={styles.label}>Full name *</Text>
         <CustomInput style={styles.input} value={fullName} onChangeText={setFullName} />
@@ -127,7 +127,7 @@ export default function ParentSignup() {
           </View>
           <Text style={styles.consentText}>
             I agree to the UniQueue Terms of Use and Privacy Notice, and consent to the processing of my and my
-            child's personal data for queue management.
+            child’s personal data for queue management.
           </Text>
         </AnimatedPressable>
 

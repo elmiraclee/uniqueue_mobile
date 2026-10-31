@@ -1,3 +1,4 @@
+import { clientAlert } from '@/components/client/client-ui';
 import { clientFetch, getSessionToken } from '@/utils/client-fetch';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
@@ -153,6 +154,10 @@ export function NotificationProvider({
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
 
+  const notificationRowsRef = useRef<QueueNotification[]>(notifications);
+  notificationRowsRef.current = notifications;
+  const readRevision = useRef(0);
+  const readBusy = useRef(false);
   const accountKeyRef = useRef<string | null>(null);
   const seenIdsRef = useRef<Set<number>>(new Set());
   // `${ticket_id}:${type}` keys already shown as a system notification,
@@ -299,6 +304,7 @@ export function NotificationProvider({
   );
 
   const poll = useCallback(async () => {
+    const revision = readRevision.current;
     if (isPollingRef.current) return;
     isPollingRef.current = true;
 
@@ -386,6 +392,7 @@ export function NotificationProvider({
       }
       isFirstLoadRef.current = false;
 
+      if (revision !== readRevision.current) return;
       setNotifications(incoming);
       setUnreadCount(
         data.unread_count ?? incoming.filter((n) => !n.is_read).length
@@ -403,45 +410,30 @@ export function NotificationProvider({
     setLoading(false);
   }, [poll]);
 
-  const markAsRead = useCallback(async (notification_id: number) => {
-    const session = await getSession();
-    if (!session) return;
-    const owner = session.role === 'parent' ? { parent_id: session.id } : { student_id: session.id };
-
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === notification_id ? { ...n, is_read: true } : n))
-    );
-    setUnreadCount((prev) => Math.max(0, prev - 1));
-
+  const commitRead = useCallback(async (notificationId?: number) => {
+    if (readBusy.current) return;
+    readBusy.current = true;
     try {
-      await clientFetch(API.markNotificationsRead, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...owner, notification_id }),
+      const session = await getSession(); if (!session) return;
+      const owner = session.role === 'parent' ? { parent_id: session.id } : { student_id: session.id };
+      const response = await clientFetch(API.markNotificationsRead, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...owner, ...(notificationId == null ? {} : { notification_id: notificationId }) }),
       });
-    } catch (err) {
-      console.warn('Failed to mark notification read:', err);
-    }
+      const data = await response.json();
+      if (!response.ok || !data?.success) throw new Error(data?.message || 'Could not mark notifications read. Please retry.');
+      const current = await getSession();
+      if (!current || current.role !== session.role || current.id !== session.id) return;
+      readRevision.current++;
+      const rows = notificationRowsRef.current.map(n => notificationId == null || n.id === notificationId ? { ...n, is_read: true } : n);
+      notificationRowsRef.current = rows;
+      setNotifications(rows); setUnreadCount(rows.filter(n => !n.is_read).length);
+    } catch (error) {
+      clientAlert('Notification not updated', error instanceof Error ? error.message : 'Check your connection and retry.');
+    } finally { readBusy.current = false; }
   }, []);
-
-  const markAllAsRead = useCallback(async () => {
-    const session = await getSession();
-    if (!session) return;
-    const owner = session.role === 'parent' ? { parent_id: session.id } : { student_id: session.id };
-
-    setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
-    setUnreadCount(0);
-
-    try {
-      await clientFetch(API.markNotificationsRead, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(owner),
-      });
-    } catch (err) {
-      console.warn('Failed to mark all notifications read:', err);
-    }
-  }, []);
+  const markAsRead = useCallback((id: number) => commitRead(id), [commitRead]);
+  const markAllAsRead = useCallback(() => commitRead(), [commitRead]);
 
   // Poll on a cadence that follows the app state: fast while the student
   // is looking at the app, slow while it's backgrounded, and an immediate

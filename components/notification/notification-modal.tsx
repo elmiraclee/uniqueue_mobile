@@ -1,25 +1,31 @@
-import { serverDate } from '@/utils/server-time';
-import { TourTarget, TutorialStage, TutorialCoach, useTutorial } from '@/components/tutorial/tutorial';
-import { Ionicons } from '@expo/vector-icons';
+import { router, usePathname } from "expo-router";
+import { serverDate } from "@/utils/server-time";
 import {
-    FlatList,
-    Modal,
-    Pressable,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
-} from 'react-native';
+  TourTarget,
+  TutorialStage,
+  TutorialCoach,
+  useTutorial,
+} from "@/components/tutorial/tutorial";
+import { Ionicons } from "@expo/vector-icons";
+import {
+  FlatList,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
 import {
-    COLORS,
-    RADIUS,
-    SPACING,
-    STATUS_BG,
-    STATUS_COLORS,
-    TYPOGRAPHY,
-} from '../../constants/theme';
-import { QueueNotification, useNotifications } from './use-notification';
+  COLORS,
+  RADIUS,
+  SPACING,
+  STATUS_BG,
+  STATUS_COLORS,
+  TYPOGRAPHY,
+} from "../../constants/theme";
+import { QueueNotification, useNotifications } from "./use-notification";
 
 interface NotificationModalProps {
   visible: boolean;
@@ -29,40 +35,53 @@ interface NotificationModalProps {
 // Maps a notification `type` to an icon + the status-color pair it
 // should borrow from theme.ts (STATUS_COLORS / STATUS_BG).
 const TYPE_META: Record<
-  QueueNotification['type'],
-  { icon: keyof typeof Ionicons.glyphMap; statusKey: keyof typeof STATUS_COLORS }
+  QueueNotification["type"],
+  {
+    icon: keyof typeof Ionicons.glyphMap;
+    statusKey: keyof typeof STATUS_COLORS;
+  }
 > = {
-  relationship_unlinked: { icon: 'unlink-outline', statusKey: 'cancelled' },
-  position_update: { icon: 'people-outline', statusKey: 'waiting' },
-  next_in_line: { icon: 'walk-outline', statusKey: 'waiting' },
-  called: { icon: 'megaphone-outline', statusKey: 'called' },
-  in_progress: { icon: 'sync-outline', statusKey: 'in_progress' },
-  completed: { icon: 'checkmark-circle-outline', statusKey: 'completed' },
-  cancelled: { icon: 'close-circle-outline', statusKey: 'cancelled' },
+  relationship_unlinked: { icon: "unlink-outline", statusKey: "cancelled" },
+  position_update: { icon: "people-outline", statusKey: "waiting" },
+  next_in_line: { icon: "walk-outline", statusKey: "waiting" },
+  called: { icon: "megaphone-outline", statusKey: "called" },
+  in_progress: { icon: "sync-outline", statusKey: "in_progress" },
+  completed: { icon: "checkmark-circle-outline", statusKey: "completed" },
+  cancelled: { icon: "close-circle-outline", statusKey: "cancelled" },
 };
 
 function timeAgo(dateString: string) {
   const diffMs = Date.now() - serverDate(dateString).getTime();
   const mins = Math.floor(diffMs / 60000);
-  if (mins < 1) return 'Just now';
+  if (mins < 1) return "Just now";
   if (mins < 60) return `${mins}m ago`;
   const hrs = Math.floor(mins / 60);
   if (hrs < 24) return `${hrs}h ago`;
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-export default function NotificationModal({ visible, onClose }: NotificationModalProps) {
-  const guide=useTutorial();
-  const { notifications, unreadCount, loading, refresh, markAsRead, markAllAsRead } =
-    useNotifications();
+export default function NotificationModal({
+  visible,
+  onClose,
+}: NotificationModalProps) {
+  const guide = useTutorial(),
+    pathname = usePathname();
+  const {
+    notifications,
+    unreadCount,
+    loading,
+    refresh,
+    markAsRead,
+    markAllAsRead,
+  } = useNotifications();
 
   const renderItem = ({ item }: { item: QueueNotification }) => {
     // Fallback keeps this from crashing if the backend ever sends a
     // `type` value that isn't in TYPE_META (old rows, new type added
     // server-side before the app is updated, etc).
     const meta = TYPE_META[item.type] ?? {
-      icon: 'notifications-outline' as const,
-      statusKey: 'waiting' as const,
+      icon: "notifications-outline" as const,
+      statusKey: "waiting" as const,
     };
     const color = STATUS_COLORS[meta.statusKey] ?? COLORS.primary;
     const bg = STATUS_BG[meta.statusKey] ?? COLORS.primarySoft;
@@ -87,8 +106,8 @@ export default function NotificationModal({ visible, onClose }: NotificationModa
 
           <Text style={styles.itemMeta}>
             {item.queue_number}
-            {item.office_name ? ` · ${item.office_name}` : ''}
-            {item.window_name ? ` · ${item.window_name}` : ''}
+            {item.office_name ? ` · ${item.office_name}` : ""}
+            {item.window_name ? ` · ${item.window_name}` : ""}
           </Text>
 
           <Text style={styles.itemTime}>{timeAgo(item.created_at)}</Text>
@@ -106,45 +125,113 @@ export default function NotificationModal({ visible, onClose }: NotificationModa
       transparent
       onRequestClose={onClose}
     >
-      <View style={{flex:1}}><TutorialStage modal><Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable style={[styles.sheet,guide.notificationStep&&{maxHeight:"100%"}]} onPress={(e) => e.stopPropagation()}>
-          <View style={styles.header}>
-            <Text style={styles.headerTitle}>
-              Notifications
-              {unreadCount > 0 ? ` (${unreadCount})` : ''}
-            </Text>
+      <View style={{ flex: 1 }}>
+        <TutorialStage modal>
+          <Pressable style={styles.backdrop} onPress={onClose}>
+            <Pressable
+              style={[
+                styles.sheet,
+                guide.notificationStep && { maxHeight: "100%" },
+              ]}
+              onPress={(e) => e.stopPropagation()}
+            >
+              <View style={styles.header}>
+                <Text style={styles.headerTitle}>
+                  Notifications
+                  {unreadCount > 0 ? ` (${unreadCount})` : ""}
+                </Text>
 
-            <View style={styles.headerActions}>
-              {unreadCount > 0 && (
-                <TouchableOpacity onPress={markAllAsRead} style={styles.markAllBtn}>
-                  <Text style={styles.markAllText}>Mark all read</Text>
-                </TouchableOpacity>
+                <View style={styles.headerActions}>
+                  {unreadCount > 0 && (
+                    <TouchableOpacity
+                      onPress={markAllAsRead}
+                      style={styles.markAllBtn}
+                    >
+                      <Text style={styles.markAllText}>Mark all read</Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel="Close notifications"
+                    onPress={onClose}
+                    style={[
+                      styles.closeBtn,
+                      {
+                        minWidth: 44,
+                        minHeight: 44,
+                        alignItems: "center",
+                        justifyContent: "center",
+                      },
+                    ]}
+                  >
+                    <Ionicons name="close" size={22} color={COLORS.gray} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <TourTarget id="notice-list">
+                <Text
+                  style={{
+                    fontSize: 14,
+                    lineHeight: 20,
+                    color: COLORS.gray,
+                    padding: 16,
+                  }}
+                >
+                  Queue updates and account notices. Tap an unread notice to
+                  mark it read, or use Mark all read.
+                </Text>
+              </TourTarget>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="View all notifications"
+                onPress={() => {
+                  onClose();
+                  router.push(
+                    `${pathname.startsWith("/parent") ? "/parent" : "/student"}/notifications` as any,
+                  );
+                }}
+                style={{
+                  minHeight: 44,
+                  paddingHorizontal: 20,
+                  paddingVertical: 12,
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 14,
+                    color: COLORS.primary,
+                    fontWeight: "700",
+                  }}
+                >
+                  View all notifications →
+                </Text>
+              </Pressable>
+              {notifications.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Ionicons
+                    name="notifications-off-outline"
+                    size={36}
+                    color={COLORS.gray}
+                  />
+                  <Text style={styles.emptyText}>No notifications yet</Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={notifications}
+                  keyExtractor={(item) => String(item.id)}
+                  renderItem={renderItem}
+                  onRefresh={refresh}
+                  refreshing={loading}
+                  contentContainerStyle={styles.list}
+                  showsVerticalScrollIndicator={false}
+                />
               )}
-              <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-                <Ionicons name="close" size={22} color={COLORS.gray} />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          <TourTarget id="notice-list"><Text style={{fontSize:14,lineHeight:20,color:COLORS.gray,padding:16}}>Queue updates and account notices. Tap an unread notice to mark it read, or use Mark all read.</Text></TourTarget>
-          {notifications.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Ionicons name="notifications-off-outline" size={36} color={COLORS.gray} />
-              <Text style={styles.emptyText}>No notifications yet</Text>
-            </View>
-          ) : (
-            <FlatList
-              data={notifications}
-              keyExtractor={(item) => String(item.id)}
-              renderItem={renderItem}
-              onRefresh={refresh}
-              refreshing={loading}
-              contentContainerStyle={styles.list}
-              showsVerticalScrollIndicator={false}
-            />
-          )}
-        </Pressable>
-      </Pressable></TutorialStage><TutorialCoach modal/></View>
+            </Pressable>
+          </Pressable>
+        </TutorialStage>
+        <TutorialCoach modal />
+      </View>
     </Modal>
   );
 }
@@ -153,21 +240,21 @@ const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
     backgroundColor: COLORS.overlay,
-    justifyContent: 'flex-end',
+    justifyContent: "flex-end",
   },
 
   sheet: {
     backgroundColor: COLORS.white,
     borderTopLeftRadius: RADIUS.xl,
     borderTopRightRadius: RADIUS.xl,
-    maxHeight: '75%',
+    maxHeight: "75%",
     paddingBottom: SPACING.xl,
   },
 
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: SPACING.xl,
     paddingTop: SPACING.lg,
     paddingBottom: SPACING.md,
@@ -181,8 +268,8 @@ const styles = StyleSheet.create({
   },
 
   headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
   },
 
   markAllBtn: {
@@ -204,7 +291,7 @@ const styles = StyleSheet.create({
   },
 
   item: {
-    flexDirection: 'row',
+    flexDirection: "row",
     paddingVertical: SPACING.md,
     paddingHorizontal: SPACING.md,
     borderRadius: RADIUS.lg,
@@ -219,8 +306,8 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: RADIUS.full,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     marginRight: SPACING.md,
   },
 
@@ -229,8 +316,8 @@ const styles = StyleSheet.create({
   },
 
   itemHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
   },
 
   itemTitle: {
@@ -257,19 +344,19 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.caption,
     color: COLORS.gray,
     marginTop: 4,
-    textTransform: 'none',
+    textTransform: "none",
   },
 
   itemTime: {
     ...TYPOGRAPHY.caption,
     color: COLORS.gray,
     marginTop: 2,
-    textTransform: 'none',
+    textTransform: "none",
   },
 
   emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     paddingVertical: SPACING.xxxl * 2,
   },
 

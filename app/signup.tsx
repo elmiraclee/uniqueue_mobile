@@ -95,7 +95,29 @@ export default function Signup() {
     response: googleResponse,
     promptAsync: promptGoogle,
     ready: googleReady,
+    unavailableReason: googleUnavailableReason,
   } = useGoogleAuthRequest();
+
+
+  async function fetchColleges() {
+    try {
+      const response = await clientFetch(API.getColleges);
+      const data = await response.json();
+      setColleges(data);
+    } catch (error) {
+      console.log('COLLEGES ERROR:', error);
+    }
+  };
+
+  async function fetchPrograms(id: string) {
+    try {
+      const response = await clientFetch(`${API.getPrograms}?college_id=${id}`);
+      const data = await response.json();
+      setPrograms(data);
+    } catch (error) {
+      console.log('PROGRAMS ERROR:', error);
+    }
+  };
 
 
   useEffect(() => {
@@ -155,26 +177,6 @@ export default function Signup() {
       fetchPrograms(collegeId);
     }
   }, [collegeId]);
-
-  const fetchColleges = async () => {
-    try {
-      const response = await clientFetch(API.getColleges);
-      const data = await response.json();
-      setColleges(data);
-    } catch (error) {
-      console.log('COLLEGES ERROR:', error);
-    }
-  };
-
-  const fetchPrograms = async (id: string) => {
-    try {
-      const response = await clientFetch(`${API.getPrograms}?college_id=${id}`);
-      const data = await response.json();
-      setPrograms(data);
-    } catch (error) {
-      console.log('PROGRAMS ERROR:', error);
-    }
-  };
 
   // Reset the grade / year pick whenever the school level changes so an
   // Elementary child can't keep a "3rd Year" selection.
@@ -400,7 +402,7 @@ export default function Signup() {
                 if (!googleReady || !googleRequest) {
                   clientAlert(
                     'Google Sign-Up',
-                    'Set GOOGLE_WEB_CLIENT_ID in constants/backend.ts, then restart Expo.'
+                    googleUnavailableReason
                   );
                   return;
                 }

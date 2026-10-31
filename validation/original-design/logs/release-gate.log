@@ -1,0 +1,8 @@
+
+> uniqueue@2.1.0 check:release
+> node scripts/check-release.cjs
+
+RELEASE BLOCKED (configuration):
+- web_url must be a credential-free HTTPS URL
+- api_url must be a credential-free HTTPS URL
+- Production profile must set allow_insecure_http=false

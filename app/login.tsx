@@ -38,6 +38,7 @@ export default function Login() {
     response: googleResponse,
     promptAsync: promptGoogle,
     ready: googleReady,
+    unavailableReason: googleUnavailableReason,
   } = useGoogleAuthRequest();
 
   const [srCode, setSrCode] = useState('');
@@ -171,7 +172,7 @@ export default function Login() {
     if (!googleReady || !googleRequest) {
       clientAlert(
         'Google Sign-In',
-        'Set GOOGLE_WEB_CLIENT_ID in constants/backend.ts (Google Cloud Console → Web client ID), then restart Expo.'
+        googleUnavailableReason
       );
       return;
     }
@@ -318,7 +319,7 @@ export default function Login() {
 
             <Pressable onPress={() => router.push('/signup')}>
               <Text style={styles.linkText}>
-                Don't have an account?{' '}
+                Don’t have an account?{' '}
                 <Text style={styles.linkTextStrong}>Sign Up</Text>
               </Text>
             </Pressable>

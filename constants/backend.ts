@@ -113,10 +113,10 @@ export const API = {
 // ============================================================
 
 export const GOOGLE_WEB_CLIENT_ID =
-  "599687695657-rs4heefc9pm8cq63ic7mpclv0vm0pjna.apps.googleusercontent.com";
+  process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || "599687695657-rs4heefc9pm8cq63ic7mpclv0vm0pjna.apps.googleusercontent.com";
 export const GOOGLE_ANDROID_CLIENT_ID =
-  "636391132357-gocgc0q2i7mbg3iibtopmgfbh83lpfk4.apps.googleusercontent.com";
+  process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || "636391132357-gocgc0q2i7mbg3iibtopmgfbh83lpfk4.apps.googleusercontent.com";
 export const GOOGLE_IOS_CLIENT_ID =
-  "YOUR_GOOGLE_IOS_CLIENT_ID.apps.googleusercontent.com";
+  process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || "";
 
 // Add to API map

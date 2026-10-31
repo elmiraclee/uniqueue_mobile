@@ -7,9 +7,8 @@ import { router } from 'expo-router';
  * 3) API returns login user OR signup_required + Google profile
  */
 
-import * as Google from 'expo-auth-session/providers/google';
-import * as WebBrowser from 'expo-web-browser';
-import { useEffect } from 'react';
+import type * as GoogleProvider from 'expo-auth-session/providers/google';
+import { requireOptionalNativeModule } from 'expo';
 import { Platform } from 'react-native';
 
 import {
@@ -20,7 +19,6 @@ import {
 } from '@/constants/backend';
 import { fetchJsonOrNull } from '@/utils/api';
 
-WebBrowser.maybeCompleteAuthSession();
 
 export type GoogleProfile = {
   registration_token: string;
@@ -41,24 +39,60 @@ function clientIdsConfigured(): boolean {
   return !!id && !id.startsWith('YOUR_GOOGLE');
 }
 
+type GoogleRequestTuple = ReturnType<typeof GoogleProvider.useAuthRequest>;
+type GoogleRequestConfig = Parameters<typeof GoogleProvider.useAuthRequest>[0];
+
 /**
- * Hook wrapper around expo-auth-session Google provider.
- * Use in login / signup screens.
+ * A stale development binary may lack a native module even though Metro can
+ * bundle its JS. Do not evaluate Google's eager ExpoApplication import then:
+ * Login/Signup must still load for email/password authentication.
+ * Runtime availability is fixed for this JS runtime; rebuilding/reloading is
+ * required to change it. Never switch between hook implementations on render.
  */
+function loadGoogleRuntime(): { useRequest: typeof GoogleProvider.useAuthRequest | null; reason: string } {
+  if (!clientIdsConfigured()) {
+    return { useRequest: null, reason: `Google sign-in is not configured for ${Platform.OS}. Set the matching EXPO_PUBLIC_GOOGLE_${Platform.OS === 'ios' ? 'IOS' : Platform.OS === 'android' ? 'ANDROID' : 'WEB'}_CLIENT_ID before building.` };
+  }
+  if (Platform.OS !== 'web') {
+    const required = ['ExpoApplication', 'ExpoCrypto', 'ExpoWebBrowser'];
+    const missing = required.filter(name => !requireOptionalNativeModule(name));
+    if (missing.length) return {
+      useRequest: null,
+      reason: `This installed app is missing native modules: ${missing.join(', ')}. Rebuild and reinstall the development/production app, then reconnect Metro. A refresh cannot add native modules. Email/password login is still available.`,
+    };
+  }
+  try {
+    // Metro requires literal paths. These imports are deliberately guarded;
+    // static value imports would crash route evaluation before the guard runs.
+    const google = require('expo-auth-session/providers/google') as typeof GoogleProvider;
+    const browser = require('expo-web-browser') as typeof import('expo-web-browser');
+    browser.maybeCompleteAuthSession();
+    return { useRequest: google.useAuthRequest, reason: '' };
+  } catch {
+    return { useRequest: null, reason: 'Google sign-in could not initialize in this installed app. Install matching native dependencies, rebuild/reinstall the app and reconnect Metro. Email/password login is still available.' };
+  }
+}
+
+const googleRuntime = loadGoogleRuntime();
+function useUnavailableGoogleRequest(_config?: GoogleRequestConfig): GoogleRequestTuple {
+  return [null, null, async () => { throw new Error(googleRuntime.reason); }];
+}
+// Selected once at module initialization, not conditionally during a render.
+const useRuntimeGoogleRequest = googleRuntime.useRequest ?? useUnavailableGoogleRequest;
+
+/** Google is optional at route startup; password login must remain usable. */
 export function useGoogleAuthRequest() {
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    // Web client ID is required for id_token on most Expo flows
+  const [request, response, promptAsync] = useRuntimeGoogleRequest({
     webClientId: GOOGLE_WEB_CLIENT_ID,
-    androidClientId: GOOGLE_ANDROID_CLIENT_ID?.startsWith('YOUR_GOOGLE')
-      ? undefined
-      : GOOGLE_ANDROID_CLIENT_ID,
-    iosClientId: GOOGLE_IOS_CLIENT_ID?.startsWith('YOUR_GOOGLE')
-      ? undefined
-      : GOOGLE_IOS_CLIENT_ID,
+    androidClientId: GOOGLE_ANDROID_CLIENT_ID || undefined,
+    iosClientId: GOOGLE_IOS_CLIENT_ID || undefined,
     scopes: ['openid', 'profile', 'email'],
   });
-
-  return { request, response, promptAsync, ready: !!request && clientIdsConfigured() };
+  return {
+    request, response, promptAsync,
+    ready: !!request && !!googleRuntime.useRequest && clientIdsConfigured(),
+    unavailableReason: googleRuntime.reason || 'Google sign-in is still preparing. Please try again shortly.',
+  };
 }
 
 /**

@@ -1,0 +1,5 @@
+
+> uniqueue@2.1.0 test:navigation
+> node tests/route-coverage.cjs
+
+20 role route adapters, original role-specific navigation and all queue modes verified.

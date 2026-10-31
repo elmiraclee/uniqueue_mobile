@@ -6,7 +6,7 @@ import { clientAlert } from '@/components/client/client-ui';
  * options, an optional note, one request per service per day.
  * Works for students and for parents requesting on behalf of a child.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -43,6 +43,8 @@ interface Props {
 }
 
 export default function UnavailableServicesModal({ visible, onClose, studentId, parentId, officeId, childName }: Props) {
+  const [loadError, setLoadError] = useState('');
+  const requestSequence = useRef(0);
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<number[]>([]);
@@ -51,6 +53,7 @@ export default function UnavailableServicesModal({ visible, onClose, studentId, 
   const [submitting, setSubmitting] = useState(false);
 
   const load = async () => {
+    const request = ++requestSequence.current;
     setLoading(true);
     try {
       const res = await fetchJsonOrNull(API.getUnavailableServices, {
@@ -58,9 +61,13 @@ export default function UnavailableServicesModal({ visible, onClose, studentId, 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ student_id: studentId, office_id: officeId || undefined }),
       });
-      setServices(res?.success ? res.services || [] : []);
+      if (!res?.success) throw new Error(res?.message || 'Unavailable services could not load. Check your connection and retry.');
+      if (request !== requestSequence.current) return;
+      setServices(res.services || []); setLoadError('');
+    } catch (error) {
+      if (request === requestSequence.current) setLoadError(error instanceof Error ? error.message : 'Services unavailable. Retry.');
     } finally {
-      setLoading(false);
+      if (request === requestSequence.current) setLoading(false);
     }
   };
 
@@ -69,6 +76,7 @@ export default function UnavailableServicesModal({ visible, onClose, studentId, 
       setSelected([]); setChoices({}); setNote('');
       load();
     }
+    return () => { requestSequence.current++; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, studentId, officeId]);
 
@@ -94,7 +102,7 @@ export default function UnavailableServicesModal({ visible, onClose, studentId, 
   };
 
   const submit = async () => {
-    if (!selected.length || !selectedOffice) return;
+    if (submitting || loading || loadError || !selected.length || !selectedOffice) return;
     for (const sid of selected) {
       const svc = services.find((s) => s.id === sid);
       if (svc && svc.choices.length > 0 && !choices[sid]) {
@@ -141,6 +149,8 @@ export default function UnavailableServicesModal({ visible, onClose, studentId, 
           </Text>
           {loading ? (
             <ActivityIndicator color={COLORS.primary} style={{ marginVertical: 24 }} />
+          ) : loadError ? (
+            <View style={{ padding: 16, gap: 12 }}><Text accessibilityRole="alert">{loadError}</Text><Pressable accessibilityRole="button" onPress={() => void load()} style={{ padding: 12 }}><Text style={{ color: COLORS.primary, fontWeight: '700' }}>Retry loading services</Text></Pressable></View>
           ) : services.length === 0 ? (
             <Text style={styles.empty}>All services are currently available.</Text>
           ) : (
@@ -198,8 +208,8 @@ export default function UnavailableServicesModal({ visible, onClose, studentId, 
             </Pressable>
             <Pressable
               onPress={submit}
-              disabled={!selected.length || submitting}
-              style={[styles.send, (!selected.length || submitting) && { opacity: 0.5 }]}
+              disabled={!selected.length || submitting || loading || !!loadError}
+              style={[styles.send, (!selected.length || submitting || loading || !!loadError) && { opacity: 0.5 }]}
             >
               <Text style={{ color: '#fff', fontWeight: '700' }}>
                 {submitting ? 'Sending…' : `Request${selected.length ? ` (${selected.length})` : ''}`}
