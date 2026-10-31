@@ -1,11 +1,23 @@
-import React from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React from "react";
+import {
+  ActivityIndicator,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
-import AnimatedPressable from '@/components/ui/animated-pressable';
-import { Ionicons } from '@expo/vector-icons';
-import { COLORS, ICON_SIZES, RADIUS, SPACING, TYPOGRAPHY } from '../../constants/theme';
-import QueueDetailsCard from './queue-details-card';
-import QueueServiceItemsList from './queue-service-items-list';
+import AnimatedPressable from "@/components/ui/animated-pressable";
+import { Ionicons } from "@expo/vector-icons";
+import {
+  COLORS,
+  ICON_SIZES,
+  RADIUS,
+  SPACING,
+  TYPOGRAPHY,
+} from "../../constants/theme";
+import QueueDetailsCard from "./queue-details-card";
+import QueueServiceItemsList from "./queue-service-items-list";
 
 interface QueueDetails {
   id: number;
@@ -33,7 +45,13 @@ interface Props {
   onViewLiveQueue: () => void;
 }
 
-export default function QueueModalContent({ loading, queue, onCancel, onClose, onViewLiveQueue}: Props) {
+export default function QueueModalContent({
+  loading,
+  queue,
+  onCancel,
+  onClose,
+  onViewLiveQueue,
+}: Props) {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -47,23 +65,29 @@ export default function QueueModalContent({ loading, queue, onCancel, onClose, o
     return (
       <View style={styles.emptyContainer}>
         <View style={styles.emptyIconBox}>
-          <Ionicons name="time-outline" size={ICON_SIZES.xl} color={COLORS.primaryLight} />
+          <Ionicons
+            name="time-outline"
+            size={ICON_SIZES.xl}
+            color={COLORS.primaryLight}
+          />
         </View>
         <Text style={styles.emptyTitle}>No Active Queue</Text>
-        <Text style={styles.emptySubtitle}>You don't have a queue in progress right now.</Text>
+        <Text style={styles.emptySubtitle}>
+          You don’t have a queue in progress right now.
+        </Text>
       </View>
     );
   }
 
-  const status = (queue.status || '').toLowerCase();
-  const isCalled = status === 'called' || status === 'in_progress';
-  const isNext = status === 'next';
+  const status = (queue.status || "").toLowerCase();
+  const isCalled = status === "called" || status === "in_progress";
+  const isNext = status === "next";
   // Web rule (student-queue-ticket.php / api_ticket_can_cancel): waiting,
   // reserved or next, and never once the ticket has been called.
   const canCancel =
-    typeof queue.can_cancel === 'boolean'
+    typeof queue.can_cancel === "boolean"
       ? queue.can_cancel
-      : ['waiting', 'reserved', 'next'].includes(status) && !queue.called_at;
+      : ["waiting", "reserved", "next"].includes(status) && !queue.called_at;
 
   return (
     <View style={styles.content}>
@@ -78,16 +102,18 @@ export default function QueueModalContent({ loading, queue, onCancel, onClose, o
           <Text style={styles.proceedTitle}>Please Proceed Now</Text>
           <Text style={styles.proceedSubtitle}>
             Your number has been called
-            {queue.window_name ? ` — go to ${queue.window_name}` : ''}.
+            {queue.window_name ? ` — go to ${queue.window_name}` : ""}.
           </Text>
         </View>
       )}
 
-      {/* "You're next" highlight — web keeps waiting view + is-next class */}
+      {/* "You’re next" highlight — web keeps waiting view + is-next class */}
       {isNext && !isCalled && (
         <View style={styles.nextBanner}>
           <Ionicons name="alert-circle-outline" size={22} color={COLORS.info} />
-          <Text style={styles.nextText}>You're next in queue — please stay nearby.</Text>
+          <Text style={styles.nextText}>
+            You’re next in queue — please stay nearby.
+          </Text>
         </View>
       )}
 
@@ -109,24 +135,21 @@ export default function QueueModalContent({ loading, queue, onCancel, onClose, o
         style={styles.liveQueueButton}
         onPress={onViewLiveQueue}
       >
-        <Ionicons
-          name="pulse-outline"
-          size={18}
-          color={COLORS.white}
-        />
+        <Ionicons name="pulse-outline" size={18} color={COLORS.white} />
 
-        <Text style={styles.liveQueueText}>
-          View Live Queue
-        </Text>
+        <Text style={styles.liveQueueText}>View Live Queue</Text>
       </AnimatedPressable>
 
       {canCancel && (
         <AnimatedPressable style={styles.cancelButton} onPress={onCancel}>
-          <Ionicons name="close-circle-outline" size={18} color={COLORS.dangerDark} />
+          <Ionicons
+            name="close-circle-outline"
+            size={18}
+            color={COLORS.dangerDark}
+          />
           <Text style={styles.cancelText}>Cancel Queue</Text>
         </AnimatedPressable>
       )}
-
     </View>
   );
 }
@@ -145,26 +168,26 @@ const styles = StyleSheet.create({
   },
   loadingContainer: {
     paddingVertical: 60,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     gap: SPACING.sm,
   },
   loadingText: {
     color: COLORS.gray,
     fontSize: 13,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   emptyContainer: {
     padding: SPACING.xxl,
-    alignItems: 'center',
+    alignItems: "center",
   },
   emptyIconBox: {
     width: 56,
     height: 56,
     borderRadius: RADIUS.lg,
     backgroundColor: COLORS.primarySoft,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     marginBottom: SPACING.sm,
   },
   emptyTitle: {
@@ -176,19 +199,19 @@ const styles = StyleSheet.create({
     color: COLORS.gray,
     marginTop: 4,
     marginBottom: SPACING.lg,
-    textAlign: 'center',
+    textAlign: "center",
   },
   title: {
     ...TYPOGRAPHY.h2,
     marginBottom: SPACING.md,
     color: COLORS.secondary,
-    textAlign: 'center',
+    textAlign: "center",
   },
   proceedBanner: {
     backgroundColor: COLORS.primary,
     borderRadius: RADIUS.lg,
     padding: SPACING.lg,
-    alignItems: 'center',
+    alignItems: "center",
     marginBottom: SPACING.md,
     gap: 6,
   },
@@ -196,26 +219,26 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "rgba(255,255,255,0.2)",
+    alignItems: "center",
+    justifyContent: "center",
     marginBottom: 4,
   },
   proceedTitle: {
     color: COLORS.white,
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: "800",
     letterSpacing: 0.2,
   },
   proceedSubtitle: {
-    color: 'rgba(255,255,255,0.9)',
+    color: "rgba(255,255,255,0.9)",
     fontSize: 13,
-    textAlign: 'center',
+    textAlign: "center",
     lineHeight: 18,
   },
   nextBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
     backgroundColor: COLORS.infoLight,
     borderRadius: RADIUS.md,
@@ -227,12 +250,12 @@ const styles = StyleSheet.create({
     flex: 1,
     color: COLORS.info,
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   cancelButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     gap: 8,
     marginTop: SPACING.sm,
     backgroundColor: COLORS.dangerLight,
@@ -241,7 +264,7 @@ const styles = StyleSheet.create({
   },
   cancelText: {
     color: COLORS.dangerDark,
-    fontWeight: '700',
+    fontWeight: "700",
     fontSize: 14,
   },
   liveQueueButton: {

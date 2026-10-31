@@ -204,7 +204,7 @@ export default function ConfigDrawer({
             </View>
 
             <Text style={styles.signOutText}>
-              Sign out
+              Logout
             </Text>
           </Pressable>
         </View>
@@ -344,7 +344,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // Divider before sign out
+  // Divider before logout
   divider: {
     height: StyleSheet.hairlineWidth,
     backgroundColor: 'rgba(0,0,0,0.08)',
@@ -352,7 +352,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
 
-  // Sign out pinned at bottom
+  // Logout pinned at bottom
   signOutArea: {
     paddingHorizontal: 10,
     paddingBottom: 8,

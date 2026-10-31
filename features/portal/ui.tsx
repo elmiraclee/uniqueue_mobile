@@ -1,6 +1,7 @@
+import CustomButton from "@/components/ui/custom-button";
 import React, { useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
-import { TourTarget } from "@/components/tutorial/tutorial";
+
 import {
   ActivityIndicator,
   Pressable,
@@ -19,7 +20,7 @@ import {
   STATUS_BG,
   STATUS_COLORS,
 } from "@/constants/theme";
-import { TutorialScrollView } from "@/components/tutorial/tutorial";
+import { TutorialScrollView, TourTarget } from "@/components/tutorial/tutorial";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, usePathname } from "expo-router";
 import { usePortal } from "./context";
@@ -29,7 +30,7 @@ export const palette = {
   muted: COLORS.gray,
   brand: COLORS.primary,
   canvas: COLORS.background,
-  line: "#e6dfe0",
+  line: COLORS.border,
   white: "#FFFFFF",
 };
 export function Button({
@@ -46,26 +47,82 @@ export function Button({
   loading?: boolean;
 }) {
   return (
+    <CustomButton
+      title={title}
+      onPress={onPress}
+      outlined={secondary}
+      disabled={disabled}
+      loading={loading}
+    />
+  );
+}
+
+/** Compact selection control; presentation only, existing handlers stay with callers. */
+export function FilterChip({
+  title,
+  selected,
+  onPress,
+}: {
+  title: string;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  return (
     <Pressable
       accessibilityRole="button"
-      accessibilityState={{ disabled: disabled || loading, busy: loading }}
-      disabled={disabled || loading}
+      accessibilityLabel={title}
+      accessibilityState={{ selected }}
       onPress={onPress}
-      style={({ pressed }) => [
-        s.button,
-        secondary && s.secondary,
-        (disabled || loading) && { opacity: 0.45 },
-        pressed && { opacity: 0.8 },
-      ]}
+      style={({ pressed }) => ({
+        minHeight: 44,
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 10,
+        justifyContent: "center",
+        borderWidth: 1,
+        borderColor: selected ? COLORS.primary : COLORS.border,
+        backgroundColor: selected ? COLORS.primarySoft : COLORS.white,
+        opacity: pressed ? 0.75 : 1,
+      })}
     >
-      {loading ? (
-        <ActivityIndicator color={secondary ? palette.brand : "#fff"} />
-      ) : (
-        <Text style={[s.buttonText, secondary && { color: palette.brand }]}>
-          {title}
-        </Text>
-      )}
+      <Text
+        style={{
+          fontSize: 14,
+          lineHeight: 20,
+          fontWeight: "600",
+          color: selected ? COLORS.primary : COLORS.gray,
+        }}
+      >
+        {title}
+      </Text>
     </Pressable>
+  );
+}
+export function Metric({
+  label,
+  value,
+}: {
+  label: string;
+  value: React.ReactNode;
+}) {
+  return (
+    <View style={{ flexBasis: "46%", flexGrow: 1, minWidth: 0, gap: 6 }}>
+      <Text style={{ fontSize: 14, lineHeight: 20, color: COLORS.gray }}>
+        {label}
+      </Text>
+      <Text
+        style={{
+          fontSize: 20,
+          lineHeight: 28,
+          fontWeight: "700",
+          letterSpacing: -0.35,
+          color: COLORS.text,
+          fontVariant: ["tabular-nums"],
+        }}
+      >
+        {value}
+      </Text>
+    </View>
   );
 }
 export function Card({
@@ -80,9 +137,11 @@ export function Card({
       style={[
         s.card,
         accent && {
-          backgroundColor: COLORS.cream,
+          backgroundColor: "#FBF4F4",
           borderColor: COLORS.border,
-          borderRadius: RADIUS.xl,
+          borderLeftWidth: 3,
+          borderLeftColor: COLORS.primary,
+          borderRadius: RADIUS.md,
           ...SHADOWS.sm,
         },
       ]}
@@ -115,15 +174,15 @@ export function Status({ status }: { status: string }) {
     >
       <Text
         style={{
-          fontSize: 12,
-          lineHeight: 18,
+          fontSize: 14,
+          lineHeight: 20,
           fontWeight: "700",
           color,
-          textTransform: "uppercase",
+          textTransform: "none",
           letterSpacing: 0.2,
         }}
       >
-        {statusLabel(status)}
+        {statusLabel(status).replace(/^./, (letter) => letter.toUpperCase())}
       </Text>
     </View>
   );
@@ -177,12 +236,26 @@ export function Field({
   editable?: boolean;
 }) {
   const [show, setShow] = useState(false);
+  const [focused, setFocused] = useState(false);
   return (
     <View style={{ gap: 6 }}>
       <Text style={s.label}>{label}</Text>
       <TextInput
         accessibilityLabel={label}
-        style={[s.input, !editable && { backgroundColor: "#F2EEEE" }]}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        style={[
+          s.input,
+          focused && { borderColor: COLORS.primary, borderWidth: 2 },
+          !editable && {
+            backgroundColor: "transparent",
+            borderColor: "transparent",
+            paddingHorizontal: 0,
+            paddingVertical: 0,
+            minHeight: 28,
+            color: COLORS.text,
+          },
+        ]}
         value={value}
         onChangeText={onChangeText}
         editable={editable}
@@ -275,17 +348,17 @@ export function ChildPicker({ required = false }: { required?: boolean }) {
             contentContainerStyle={{ gap: 8 }}
           >
             {!required && (
-              <Button
+              <FilterChip
                 title="All children"
-                secondary={!!p.child}
+                selected={!p.child}
                 onPress={() => p.chooseChild(0)}
               />
             )}
             {p.children.map((c) => (
-              <Button
+              <FilterChip
                 key={c.id}
                 title={`${c.first_name} ${c.last_name}`}
-                secondary={p.child?.id !== c.id}
+                selected={p.child?.id === c.id}
                 onPress={() => p.chooseChild(Number(c.id))}
               />
             ))}
@@ -415,7 +488,8 @@ export const s = StyleSheet.create({
     fontSize: 18,
     lineHeight: 25,
     fontWeight: "700",
-    color: COLORS.primary,
+    letterSpacing: -0.35,
+    color: COLORS.text,
   },
   body: { fontSize: 16, lineHeight: 24, color: palette.ink },
   meta: { fontSize: 14, lineHeight: 21, color: palette.muted },
@@ -426,45 +500,27 @@ export const s = StyleSheet.create({
     color: palette.ink,
   },
   content: {
-    padding: 16,
+    paddingHorizontal: 20,
+    paddingTop: 24,
     paddingBottom: 40,
-    gap: 16,
+    gap: 20,
     width: "100%",
     maxWidth: 900,
     alignSelf: "center",
   },
   card: {
-    backgroundColor: "#fff",
+    backgroundColor: COLORS.white,
     borderWidth: 1,
     borderColor: palette.line,
     borderRadius: RADIUS.md,
-    padding: 16,
-    gap: 12,
+    padding: 20,
+    gap: 14,
   },
   row: {
     flexDirection: "row",
     gap: 12,
     flexWrap: "wrap",
     alignItems: "center",
-  },
-  button: {
-    minHeight: 48,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: RADIUS.md,
-    backgroundColor: palette.brand,
-    borderWidth: 1,
-    borderColor: palette.brand,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  secondary: { backgroundColor: "#fff" },
-  buttonText: {
-    fontSize: 16,
-    lineHeight: 22,
-    fontWeight: "700",
-    textAlign: "center",
-    color: "#fff",
   },
   notice: {
     gap: 12,
@@ -480,18 +536,18 @@ export const s = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: RADIUS.full,
-    backgroundColor: "#fff",
+    backgroundColor: COLORS.white,
   },
   input: {
-    minHeight: 48,
+    minHeight: 52,
     borderWidth: 1,
-    borderColor: "#9C8D93",
-    borderRadius: 8,
-    padding: 12,
+    borderColor: "#8793A4",
+    borderRadius: 10,
+    padding: 14,
     fontSize: 16,
     lineHeight: 24,
     color: palette.ink,
-    backgroundColor: "#fff",
+    backgroundColor: COLORS.white,
   },
   check: {
     flexDirection: "row",
@@ -511,9 +567,11 @@ export const s = StyleSheet.create({
     color: palette.brand,
   },
   number: {
-    fontSize: 40,
-    lineHeight: 48,
-    fontWeight: "800",
+    fontSize: 44,
+    lineHeight: 54,
+    letterSpacing: -1.5,
+    fontWeight: "700",
     color: palette.brand,
+    fontVariant: ["tabular-nums"],
   },
 });

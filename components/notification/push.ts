@@ -4,7 +4,7 @@ import { clientFetch } from '@/utils/client-fetch';
 | Push / alarm plumbing (works when the app is backgrounded OR killed)
 |--------------------------------------------------------------------------
 | Everything that must survive the app being closed lives here:
-|   - Android notification channels (MAX importance, DND bypass)
+|   - Android notification channels (high importance, respects DND)
 |   - permission request + Expo push token retrieval
 |   - token registration for BOTH students and parents
 |
@@ -26,14 +26,15 @@ import { API } from "../../constants/backend";
 /*
 | IMPORTANT: an Android channel's sound is LOCKED the moment the channel is
 | first created. Changing the sound therefore needs a NEW channel id -
-| that is why these end in _v5. Bump the id again whenever channel behavior
+| that is why these end in _v6. Bump the id again whenever channel behavior
 | or the audio file changes, and add the old id to LEGACY_CHANNELS below.
 */
-export const CHANNEL_ALARM = "proceed_alert_v5";
-export const CHANNEL_DEFAULT = "queue_updates_v5";
+export const CHANNEL_ALARM = "proceed_alert_v6";
+export const CHANNEL_DEFAULT = "queue_updates_v6";
 
 /** Old channels to delete so the user doesn't see duplicates in Settings. */
 const LEGACY_CHANNELS = [
+  "proceed_alert_v5", "queue_updates_v5",
   "proceed_alert_v4",
   "queue_updates_v4",
   "proceed_alert_v3",
@@ -148,13 +149,14 @@ export async function ensureAndroidChannels(): Promise<void> {
     enableVibrate: true,
     enableLights: true,
     lightColor: "#660810",
-    bypassDnd: true,
-    lockscreenVisibility: N.AndroidNotificationVisibility.PUBLIC,
+    bypassDnd: false,
+    lockscreenVisibility: N.AndroidNotificationVisibility.PRIVATE,
     showBadge: true,
   });
 
   await N.setNotificationChannelAsync(CHANNEL_DEFAULT, {
     name: "Queue Updates",
+    lockscreenVisibility: N.AndroidNotificationVisibility.PRIVATE,
     importance: N.AndroidImportance.HIGH,
     vibrationPattern: [0, 400, 200, 400],
     sound: NOTIFY_SOUND,

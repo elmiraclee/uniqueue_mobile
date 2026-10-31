@@ -1,8 +1,8 @@
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React from "react";
+import { StyleSheet, Text, View } from "react-native";
 
-import { COLORS, RADIUS, SPACING, TYPOGRAPHY } from '../../constants/theme';
-import StatusBadge from '../ui/status-badge';
+import { COLORS, RADIUS, SPACING, TYPOGRAPHY } from "../../constants/theme";
+import StatusBadge from "../ui/status-badge";
 
 interface Props {
   queue: {
@@ -18,7 +18,15 @@ interface Props {
   };
 }
 
-const Row = ({ label, value, index }: { label: string; value: string; index: number }) => (
+const Row = ({
+  label,
+  value,
+  index,
+}: {
+  label: string;
+  value: string;
+  index: number;
+}) => (
   <View style={[styles.row, index % 2 === 1 && styles.rowAlt]}>
     <Text style={styles.label}>{label}</Text>
     <Text style={styles.value}>{value}</Text>
@@ -31,11 +39,22 @@ export default function QueueDetailsCard({ queue }: Props) {
   const isPriority = !!queue.priority;
 
   const rows = [
-    { label: 'Office', value: queue.office_name },
-    { label: 'Queue Type', value: queue.type.toUpperCase() },
-    { label: 'Window', value: queue.window_name || 'Not Assigned' },
-    { label: 'People Ahead', value: queue.people_ahead == null ? '—' : String(queue.people_ahead) },
-    { label: 'Joined', value: formatDate(queue.joined_at) },
+    { label: "Office", value: queue.office_name },
+    {
+      label: "Queue Type",
+      value:
+        queue.type === "walkin"
+          ? "Walk-in"
+          : queue.type === "appointment"
+            ? "Appointment"
+            : queue.type,
+    },
+    { label: "Window", value: queue.window_name || "Not Assigned" },
+    {
+      label: "People Ahead",
+      value: queue.people_ahead == null ? "—" : String(queue.people_ahead),
+    },
+    { label: "Joined", value: formatDate(queue.joined_at) },
   ];
 
   return (
@@ -68,21 +87,23 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     borderRadius: RADIUS.lg,
     padding: SPACING.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
   header: {
-    alignItems: 'center',
+    alignItems: "center",
     gap: SPACING.xs + 2,
     marginBottom: SPACING.sm,
   },
   badgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     gap: SPACING.xs,
   },
   badgeWrapper: {
-    alignSelf: 'center',
-    alignItems: 'center',
+    alignSelf: "center",
+    alignItems: "center",
   },
   priorityBadge: {
     backgroundColor: COLORS.primarySoft,
@@ -92,25 +113,25 @@ const styles = StyleSheet.create({
   },
   priorityBadgeText: {
     ...TYPOGRAPHY.caption,
-    textTransform: 'none',
+    textTransform: "none",
     letterSpacing: 0.2,
-    fontWeight: '800',
+    fontWeight: "800",
     color: COLORS.primaryDark,
   },
   queueNumber: {
     fontSize: 30,
-    fontWeight: '800',
+    fontWeight: "800",
     color: COLORS.primary,
     letterSpacing: -0.5,
   },
   rowsContainer: {
     borderRadius: RADIUS.md,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingVertical: SPACING.sm,
     paddingHorizontal: SPACING.sm,
   },
@@ -119,15 +140,19 @@ const styles = StyleSheet.create({
   },
   label: {
     ...TYPOGRAPHY.caption,
+    fontSize: 14,
+    lineHeight: 21,
+    flexShrink: 1,
     color: COLORS.gray,
-    textTransform: 'none',
+    textTransform: "none",
     letterSpacing: 0,
   },
   value: {
     flex: 1,
-    textAlign: 'right',
-    fontSize: 13,
-    fontWeight: '700',
+    textAlign: "right",
+    fontSize: 14,
+    lineHeight: 21,
+    fontWeight: "700",
     color: COLORS.text,
     marginLeft: SPACING.sm,
   },

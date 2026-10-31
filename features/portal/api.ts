@@ -35,6 +35,20 @@ export async function request(
       `The server returned an unreadable response (HTTP ${res.status}). Please retry later.`,
     );
   }
+  // Older API releases represented a valid empty current queue as success:false.
+  // Normalize ONLY that exact endpoint/shape on a successful HTTP response.
+  // Never turn auth/server failures or explicit application errors into emptiness.
+  const legacyEmptyQueue =
+    res.ok &&
+    endpoint.split("?")[0] === "get_current_queue.php" &&
+    data?.success === false &&
+    data.queue == null &&
+    Array.isArray(data.queues) && data.queues.length === 0 &&
+    Array.isArray(data.reserved) && data.reserved.length === 0 &&
+    !data.message && !data.code && !data.error;
+  if (legacyEmptyQueue) {
+    return { ...data, success: true, queue: null, queues: [], reserved: [], count: 0 };
+  }
   if (!res.ok || data?.success === false)
     throw new Error(data?.message || `Request failed (HTTP ${res.status}).`);
   return data;

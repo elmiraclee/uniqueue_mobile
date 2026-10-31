@@ -1,0 +1,4 @@
+
+> uniqueue@2.1.0 typecheck
+> tsc --noEmit
+

@@ -1,174 +1,186 @@
-import { useEffect, useRef } from 'react';
+import CustomButton from "@/components/ui/custom-button";
+import { useReducedMotion } from "@/hooks/use-reduced-motion";
 import {
+  stopQueueAlarm,
+  holdQueueVibration,
+  releaseQueueVibration,
+} from "@/utils/queue-alerts";
+import { useEffect } from "react";
+import {
+  AppState,
   Modal,
   StyleSheet,
   Text,
-  TouchableOpacity,
+  ScrollView,
   View,
-  Vibration,
-  Platform,
-} from 'react-native';
-import * as Haptics from 'expo-haptics';
-import { Ionicons } from '@expo/vector-icons';
+} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 
-import {
-  COLORS,
-  RADIUS,
-  SHADOWS,
-  SPACING,
-  TYPOGRAPHY,
-} from '../../constants/theme';
+import { COLORS, SHADOWS, SPACING, TYPOGRAPHY } from "../../constants/theme";
 
 /*
-| The audible part of this alert is the DEVICE'S notification sound,
-| played by the system notification that use-notification.tsx posts (or
-| that arrives as a server push). This modal only owns the on-screen
-| blocking prompt and the vibration — it never plays a bundled mp3 on the
-| media stream, so the alert follows the phone's notification volume and
-| still fires when the app is closed.
+| The event-ID based queue-alert owner handles foreground audio/vibration.
+| Background local notifications use OS channels, subject to OS permissions,
+| DND, battery restrictions and background delivery. The visible modal owns
+| repeating foreground vibration; OK/unmount stops the shared alarm.
 */
 export interface ProceedInfo {
   queueNumber?: string | null;
   officeName?: string | null;
   windowName?: string | null;
   status?: string | null;
+  peopleAhead?: number | null;
 }
 
 /**
  * 'next'    -> the student is next in line (get ready)
  * 'proceed' -> the student is being called / served (go now)
  */
-export type ProceedKind = 'next' | 'proceed';
+export type ProceedKind = "countdown" | "next" | "proceed";
 
 interface Props {
   visible: boolean;
   info?: ProceedInfo | null;
   kind?: ProceedKind;
   onAcknowledge: () => void;
+  vibrationKey?: string;
 }
 
 /**
  * Blocking alert modal.
- * - Vibrates repeatedly while open (sound comes from the system notification)
+ * - Owns repeating foreground vibration; audio uses the shared cue helper
  * - Does NOT dismiss until the user presses OK
  */
 export default function ProceedModal({
   visible,
   info,
-  kind = 'proceed',
+  kind = "proceed",
   onAcknowledge,
+  vibrationKey,
 }: Props) {
-  const vibrateTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
+  const reducedMotion = useReducedMotion();
+  useEffect(() => () => stopQueueAlarm(), []);
   useEffect(() => {
-    const startAlarm = () => {
-      // Vibration pattern: short pulses every ~1.2s while the modal is open.
-      const pulse = () => {
-        try {
-          if (Platform.OS === 'android') {
-            Vibration.vibrate([0, 400, 200, 400]);
-          } else {
-            Vibration.vibrate(400);
-            Haptics.notificationAsync(
-              Haptics.NotificationFeedbackType.Error
-            ).catch(() => {});
-          }
-        } catch {
-          // ignore
-        }
-      };
-
-      pulse();
-      vibrateTimerRef.current = setInterval(pulse, 1200);
+    if (!visible) return;
+    const owner = vibrationKey || "visible-queue-prompt";
+    const sync = (state: string | null | undefined) =>
+      state === "active"
+        ? holdQueueVibration(owner)
+        : releaseQueueVibration(owner);
+    sync(AppState.currentState);
+    const sub = AppState.addEventListener("change", sync);
+    return () => {
+      sub.remove();
+      releaseQueueVibration(owner);
     };
-
-    const stopAlarm = () => {
-      if (vibrateTimerRef.current) {
-        clearInterval(vibrateTimerRef.current);
-        vibrateTimerRef.current = null;
-      }
-      try {
-        Vibration.cancel();
-      } catch {
-        // ignore
-      }
-    };
-
-    if (visible) {
-      startAlarm();
-    } else {
-      stopAlarm();
-    }
-
-    return stopAlarm;
-  }, [visible]);
+  }, [visible, vibrationKey]);
 
   const handleOk = () => {
     onAcknowledge();
   };
 
-  const status = (info?.status || '').toLowerCase();
-  const isNext = kind === 'next';
-  const title = isNext ? "You're Next in Line" : 'Please Proceed Now';
-  const subtitle = isNext
-    ? 'Get ready and stay near the window — you will be called next.'
-    : status === 'in_progress'
-      ? 'You are being served — please go to the window.'
-      : 'Please proceed to the window now.';
+  const status = (info?.status || "").toLowerCase();
+  const isNext = kind === "next",
+    isCountdown = kind === "countdown";
+  const ahead = Number(info?.peopleAhead);
+  const title = isCountdown
+    ? `${ahead} ${ahead === 1 ? "person" : "people"} ahead`
+    : isNext
+      ? "You're Next in Line"
+      : "Please Proceed Now";
+  const subtitle = isCountdown
+    ? "Your turn is getting closer. Stay nearby and keep an eye on your ticket."
+    : isNext
+      ? "Get ready and stay near the window — you will be called next."
+      : status === "in_progress"
+        ? "You are being served — please go to the window."
+        : "Please proceed to the window now.";
 
   return (
     <Modal
       visible={visible}
-      animationType="fade"
+      animationType={reducedMotion ? "none" : "fade"}
       transparent
       // Block Android back button — only OK dismisses
       onRequestClose={() => {}}
     >
       <View style={styles.overlay}>
-        <View style={styles.modal}>
-          <View style={styles.iconWrap}>
-            <Ionicons
-              name={isNext ? 'alert-circle' : 'notifications'}
-              size={36}
-              color="#fff"
-            />
-          </View>
-
-          <Text style={styles.title}>{title}</Text>
-          <Text style={styles.subtitle}>{subtitle}</Text>
-
-          {(info?.queueNumber || info?.officeName || info?.windowName) && (
-            <View style={styles.details}>
-              {!!info?.queueNumber && (
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Ticket</Text>
-                  <Text style={styles.detailValue}>{info.queueNumber}</Text>
-                </View>
-              )}
-              {!!info?.officeName && (
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Office</Text>
-                  <Text style={styles.detailValue}>{info.officeName}</Text>
-                </View>
-              )}
-              {!!info?.windowName && (
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Window</Text>
-                  <Text style={styles.detailValue}>{info.windowName}</Text>
-                </View>
+        <View style={styles.modal} accessibilityViewIsModal>
+          <ScrollView
+            contentContainerStyle={{ alignItems: "center" }}
+            style={{ width: "100%" }}
+          >
+            <View style={styles.iconWrap}>
+              {isCountdown ? (
+                <Text
+                  style={{
+                    fontSize: 32,
+                    lineHeight: 40,
+                    fontWeight: "700",
+                    color: "#fff",
+                  }}
+                >
+                  {ahead}
+                </Text>
+              ) : (
+                <Ionicons
+                  name={isNext ? "alert-circle" : "notifications"}
+                  size={36}
+                  color="#fff"
+                />
               )}
             </View>
-          )}
 
-          <TouchableOpacity
-            style={styles.okButton}
-            onPress={handleOk}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.okText}>
-              {isNext ? "OK — I'm Ready" : "OK — I'm Going"}
+            <Text style={styles.title}>{title}</Text>
+            <Text style={styles.subtitle}>{subtitle}</Text>
+
+            {(info?.queueNumber || info?.officeName || info?.windowName) && (
+              <View style={styles.details}>
+                {!!info?.queueNumber && (
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Ticket</Text>
+                    <Text style={styles.detailValue}>{info.queueNumber}</Text>
+                  </View>
+                )}
+                {!!info?.officeName && (
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Office</Text>
+                    <Text style={styles.detailValue}>{info.officeName}</Text>
+                  </View>
+                )}
+                {!!info?.windowName && (
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Window</Text>
+                    <Text style={styles.detailValue}>{info.windowName}</Text>
+                  </View>
+                )}
+              </View>
+            )}
+
+            <Text
+              style={{
+                fontSize: 14,
+                lineHeight: 20,
+                color: COLORS.gray,
+                textAlign: "center",
+                marginBottom: 16,
+              }}
+            >
+              Tap OK to acknowledge this alert.
             </Text>
-          </TouchableOpacity>
+            <View style={{ width: "100%" }}>
+              <CustomButton
+                title={
+                  isCountdown
+                    ? "OK — Got It"
+                    : isNext
+                      ? "OK — I'm Ready"
+                      : "OK — I'm Going"
+                }
+                onPress={handleOk}
+              />
+            </View>
+          </ScrollView>
         </View>
       </View>
     </Modal>
@@ -178,56 +190,59 @@ export default function ProceedModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     backgroundColor: COLORS.overlay,
     padding: SPACING.lg,
   },
   modal: {
-    width: '100%',
-    maxWidth: 380,
-    backgroundColor: COLORS.cream,
-    borderRadius: RADIUS.xxl,
-    padding: SPACING.xl,
-    alignItems: 'center',
-    ...SHADOWS.lg,
+    width: "100%",
+    maxWidth: 420,
+    maxHeight: "85%",
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
+    padding: 24,
+    alignItems: "center",
+    ...SHADOWS.md,
   },
   iconWrap: {
-    width: 64,
-    height: 64,
-    borderRadius: RADIUS.full,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: COLORS.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: SPACING.md,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 20,
   },
   title: {
-    ...TYPOGRAPHY.title,
-    fontSize: 20,
-    color: COLORS.primary,
-    marginBottom: SPACING.xs,
-    textAlign: 'center',
+    fontSize: 22,
+    lineHeight: 29,
+    letterSpacing: -0.5,
+    fontWeight: "700",
+    color: COLORS.text,
+    marginBottom: 8,
+    textAlign: "center",
   },
   subtitle: {
     ...TYPOGRAPHY.body,
-    fontSize: 14,
+    fontSize: 16,
     color: COLORS.gray,
-    textAlign: 'center',
+    textAlign: "center",
     marginBottom: SPACING.lg,
-    lineHeight: 20,
+    lineHeight: 24,
   },
   details: {
-    width: '100%',
-    backgroundColor: COLORS.primarySoft,
-    borderRadius: RADIUS.lg,
-    padding: SPACING.md,
-    marginBottom: SPACING.lg,
+    width: "100%",
+    backgroundColor: COLORS.background,
+    borderRadius: 10,
+    padding: 16,
+    marginBottom: 24,
   },
   detailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 4,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 6,
   },
   detailLabel: {
     ...TYPOGRAPHY.caption,
@@ -237,22 +252,7 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.bodyStrong,
     color: COLORS.text,
     flexShrink: 1,
-    textAlign: 'right',
+    textAlign: "right",
     marginLeft: SPACING.sm,
-  },
-  okButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.primary,
-    paddingVertical: SPACING.md,
-    borderRadius: RADIUS.lg,
-    width: '100%',
-    ...SHADOWS.glow,
-  },
-  okText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 16,
   },
 });

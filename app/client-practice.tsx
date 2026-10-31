@@ -1,40 +1,414 @@
-/** Isolated native practice. No API imports or persistence of fixture changes. */
-import { useEffect,useState } from 'react';
-import { View,Text,StyleSheet,Pressable } from 'react-native';
-import { router,useLocalSearchParams } from 'expo-router';
-import { TourTarget,TutorialScrollView,useTutorial } from '@/components/tutorial/tutorial';
-import QueueTypeStep from '@/components/queue-step/queue-type-step';
-import ServiceItemStep from '@/components/queue-step/service-item-step';
-import RequirementStep from '@/components/queue-step/requirement-step';
-import ReviewStep from '@/components/queue-step/review-step';
-import QueueDetailsCard from '@/components/queue/queue-details-card';
-import QueueServiceItemsList from '@/components/queue/queue-service-items-list';
-import CSMForm from '@/components/feedback/csm-form';
-import { AcademicMap } from '@/components/queue-step/academic-step';
-import { ChoiceMap } from '@/components/queue-step/choice-step';
-import CustomButton from '@/components/ui/custom-button';
-import { COLORS } from '@/constants/theme';
-const items=[{id:1,name:'Document Request (example)',category:'Documents',requirements:['School ID (example)','Completed request form (example)'],use_academic_period:true,has_choices:true,choices:[{id:1,label:'Regular copy'},{id:2,label:'Certified copy'}]}];
-export default function ClientPractice(){
- const params=useLocalSearchParams<{phase?:string}>(),guide=useTutorial();
- const [phase,setPhase]=useState('type');useEffect(()=>setPhase(params.phase||'type'),[params.phase]);
- const [queueType,setQueueType]=useState<'walkin'|'appointment'>('walkin'),[ids,setIds]=useState([1]),[quantities,setQuantities]=useState<Record<number,number>>({1:2});
- const [academic,setAcademic]=useState<AcademicMap>({1:[{period:'First Semester',school_year:'2025-2026'},{period:'First Semester',school_year:'2025-2026'}]});
- const [choices,setChoices]=useState<ChoiceMap>({1:{choice_id:1,choice_label:'Regular copy'}}),[checked,setChecked]=useState<string[]>([]),[slip,setSlip]=useState(false),[priority,setPriority]=useState(false),[reason,setReason]=useState('');
- const [expanded,setExpanded]=useState(false),[tab,setTab]=useState('Serving');
- // Restore the sample service when the next teaching target needs it.
- useEffect(()=>{if(guide.visible&&['quantity-1','academic-1','requirements','review'].includes(guide.step?.target||''))setIds(current=>current.length?current:[1]);},[guide.index,guide.visible,guide.step?.target]);
- const ticket={queue_number:'R-EXAMPLE',office_name:'Registrar (example)',status:'waiting',type:'walkin',people_ahead:3,joined_at:'2026-10-01T09:00:00+08:00',window_name:'Window 1 (example)'};
- return <View style={{flex:1,backgroundColor:COLORS.background}}><View style={s.header}><Text style={s.title}>Queue practice</Text><Pressable accessibilityRole="button" accessibilityLabel="Return to guide" onPress={guide.show} style={{minHeight:44,justifyContent:'center'}}><Text style={{fontWeight:'700',fontSize:14,color:'#fff'}}>Guide ?</Text></Pressable></View>
- <TutorialScrollView contentContainerStyle={{padding:16,paddingBottom:180}} keyboardShouldPersistTaps="handled"><Text style={s.banner}>Example data · Nothing on this screen can create a ticket, payment, CSM response or profile change.</Text>
- <TourTarget id="practice">
- {phase==='type'&&<TourTarget id="queue-type"><QueueTypeStep queueType={queueType} setQueueType={setQueueType} walkinEnabled appointmentEnabled onNext={guide.show}/></TourTarget>}
- {['services','academic'].includes(phase)&&<ServiceItemStep service_items={items} selectedServiceItems={ids} setSelectedServiceItems={setIds} quantities={quantities} setQuantities={setQuantities} priority={priority} setPriority={setPriority} priorityReason={reason} setPriorityReason={setReason} priorityEnabled itemChoices={choices} setItemChoices={setChoices} academic={academic} setAcademic={setAcademic} periods={[{id:1,label:'First Semester'},{id:2,label:'Second Semester'}]} schoolYears={[{id:1,school_year:'2025-2026'},{id:2,school_year:'2026-2027'}]} onNext={guide.show} onBack={guide.show}/>}
- {phase==='requirements'&&<TourTarget id="requirements"><RequirementStep service_items={items} selectedServiceItems={ids} checkedRequirements={checked} setCheckedRequirements={setChecked} queueType={queueType} appointmentSlipConfirmed={slip} setAppointmentSlipConfirmed={setSlip} itemChoices={choices} onNext={guide.show} onBack={guide.show}/></TourTarget>}
- {phase==='review'&&<TourTarget id="review"><ReviewStep queueType={queueType} appointmentSlipConfirmed={slip} service_items={items} selectedServiceItems={ids} quantities={quantities} priority={priority} priorityReason={reason} academic={academic} itemChoices={choices} practice onSubmit={()=>{}} onBack={guide.show}/></TourTarget>}
- {phase==='ticket'&&<><TourTarget id="ticket"><QueueDetailsCard queue={ticket}/></TourTarget><TourTarget id="ticket-services"><QueueServiceItemsList service_items={[{name:'Document Request (example) · Regular copy',quantity:2}]}/></TourTarget><TourTarget id="ticket-eta"><Text style={s.banner}>Copy 1: First Semester / 2025-2026{ '\n'}Copy 2: First Semester / 2025-2026{ '\n'}Example ETA: about 15 minutes. Real times can change.</Text></TourTarget></>}
- {phase==='monitor'&&<><Text style={s.subtitle}>Office live monitor (example)</Text><View style={{flexDirection:'row',flexWrap:'wrap',gap:8,marginVertical:12}}>{['Serving','Waiting','Completed'].map(t=><CustomButton key={t} title={t} outlined={tab!==t} onPress={()=>setTab(t)}/>)}</View><QueueDetailsCard queue={{...ticket,status:tab==='Serving'?'in_progress':tab==='Waiting'?'waiting':'completed'}}/><CustomButton title={expanded?'Hide details':'Expand details'} outlined onPress={()=>setExpanded(v=>!v)}/>{expanded&&<QueueServiceItemsList service_items={[{name:'Document Request (example)',quantity:2}]}/>}<Text style={s.banner}>Practice is silent. No notification permission or sound is triggered.</Text></>}
- {phase==='csm'&&<CSMForm office="Registrar (example)" service="Document Request (example)" practice onSubmit={()=>{}}/>}
- </TourTarget><View style={{marginTop:20,gap:12}}><CustomButton title="Back to guide" onPress={guide.show}/><CustomButton title="Exit practice" outlined onPress={async()=>{const storage=(await import('@react-native-async-storage/async-storage')).default;const role=await storage.getItem('role');router.replace(role==='parent'?'/parent/home':'/student/home')}}/></View></TutorialScrollView></View>;
+/** Isolated practice: shared form presentation, never a queue or feedback API write. */
+import { useEffect, useState } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  useWindowDimensions,
+} from "react-native";
+import { router, useLocalSearchParams } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
+import {
+  TourTarget,
+  TutorialScrollView,
+  useTutorial,
+} from "@/components/tutorial/tutorial";
+import {
+  QueueTypeCards,
+  ServiceRequestCard,
+  FormProgress,
+  AcademicCopy,
+  f,
+} from "@/components/queue-step/form-ui";
+import QueueDetailsCard from "@/components/queue/queue-details-card";
+import QueueServiceItemsList from "@/components/queue/queue-service-items-list";
+import CSMForm from "@/components/feedback/csm-form";
+import CustomButton from "@/components/ui/custom-button";
+import { COLORS } from "@/constants/theme";
+const item = {
+  id: 1,
+  name: "Document Request (example)",
+  category: "Documents",
+  amount: 100,
+  pay_at_cashier: true,
+  use_academic_period: true,
+  choices: [],
+};
+const requirements = [
+  "School ID (example)",
+  "Completed request form (example)",
+];
+const periods = ["First Semester", "Second Semester"].map((value) => ({
+  value,
+  label: value,
+}));
+const years = ["2026-2027", "2025-2026"].map((value) => ({
+  value,
+  label: value,
+}));
+export default function ClientPractice() {
+  const params = useLocalSearchParams<{ phase?: string }>(),
+    guide = useTutorial(),
+    insets = useSafeAreaInsets(),
+    windowSize = useWindowDimensions();
+  const phase = params.phase || "type";
+  const [queueType, setQueueType] = useState<"walkin" | "appointment">(
+    "walkin",
+  );
+  const [selected, setSelected] = useState(false),
+    [quantity, setQuantity] = useState(1),
+    [rows, setRows] = useState<AcademicCopy[]>([]),
+    [same, setSame] = useState(true),
+    [checked, setChecked] = useState<string[]>([]),
+    [created, setCreated] = useState(false);
+  useEffect(() => {
+    setQueueType("walkin");
+    setSelected(false);
+    setQuantity(1);
+    setRows([]);
+    setSame(true);
+    setChecked([]);
+    setCreated(false);
+  }, [guide.runId]);
+  // Resuming at a later lesson restores prerequisites, not completion of its action.
+  useEffect(() => {
+    const action = guide.step?.action;
+    if (phase === "academic" || action === "quantity")
+      setSelected(true);
+    if (phase === "academic") {
+      setQuantity((q) => Math.max(2, q));
+    }
+    if (["requirements", "review", "ticket"].includes(phase)) {
+      setSelected(true);
+      setQuantity((q) => Math.max(2, q));
+      setRows((old) =>
+        Array.from({ length: Math.max(2, old.length) }, (_, i) => ({
+          period: old[i]?.period || "First Semester",
+          school_year: old[i]?.school_year || "2026-2027",
+        })),
+      );
+    }
+  }, [phase, guide.step?.action, guide.runId]);
+  const exit = () => {
+    guide.pause();
+    router.replace(guide.role === "parent" ? "/parent/home" : "/student/home");
+  };
+  const ticket = {
+    queue_number: "R-EXAMPLE",
+    office_name: "Registrar (example)",
+    status: "waiting",
+    type: queueType,
+    people_ahead: 3,
+    joined_at: "2026-10-31T09:00:00+08:00",
+    window_name: "Window 1 (example)",
+  };
+  const step =
+    phase === "type"
+      ? 0
+      : ["services", "academic"].includes(phase)
+        ? 1
+        : phase === "requirements"
+          ? 2
+          : 3;
+  return (
+    <View style={{ flex: 1, backgroundColor: COLORS.background }}>
+      <View style={[s.header, { paddingTop: Math.max(insets.top, 12) }]}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Exit queue practice"
+          onPress={exit}
+          style={s.icon}
+        >
+          <Ionicons name="arrow-back" size={22} color={COLORS.primary} />
+        </Pressable>
+        <View style={{ flex: 1 }}>
+          <Text style={f.heading}>Queue practice</Text>
+          <Text style={f.meta}>Safe demo · no real transactions</Text>
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Resume tutorial"
+          onPress={guide.show}
+          style={s.icon}
+        >
+          <Ionicons
+            name="help-circle-outline"
+            size={24}
+            color={COLORS.primary}
+          />
+        </Pressable>
+      </View>
+      <TutorialScrollView
+        contentContainerStyle={{
+          padding: 16,
+          paddingBottom: guide.visible
+            ? windowSize.height
+            : Math.max(32, insets.bottom + 24),
+          gap: 16,
+          width: "100%",
+          maxWidth: 760,
+          alignSelf: "center",
+        }}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={s.banner}>
+          <Ionicons
+            name="shield-checkmark-outline"
+            size={22}
+            color={COLORS.primary}
+          />
+          <Text style={[f.meta, { flex: 1, color: COLORS.primary }]}>
+            Try the real form controls with sample data. Nothing here creates a
+            ticket, payment or feedback response.
+          </Text>
+        </View>
+        {["type", "services", "academic", "requirements", "review"].includes(
+          phase,
+        ) && (
+          <FormProgress
+            practice
+            labels={[
+              "Queue type",
+              "Service details",
+              "Requirements",
+              "Review & confirm",
+            ]}
+            current={step}
+          />
+        )}
+        {phase === "type" && (
+          <TourTarget id="queue-type">
+            <QueueTypeCards
+              value={queueType}
+              onChange={(value) => {
+                setQueueType(value);
+                guide.completeAction("queue-type");
+              }}
+            />
+          </TourTarget>
+        )}
+        {["services", "academic"].includes(phase) && (
+          <ServiceRequestCard
+            item={item}
+            selected={selected}
+            onToggle={() => {
+              setSelected((v) => !v);
+              if (!selected) guide.completeAction("service");
+            }}
+            quantity={quantity}
+            onQuantity={(value) => {
+              setQuantity(value);
+              setRows((old) =>
+                Array.from(
+                  { length: value },
+                  (_, i) =>
+                    old[same ? 0 : i] || { period: "", school_year: "" },
+                ),
+              );
+              if (value >= 2) guide.completeAction("quantity");
+            }}
+            optionId={0}
+            onOption={() => {}}
+            rows={rows}
+            onAcademic={(next) => {
+              setRows(next);
+              if (next.every((r) => !!r.period)) guide.completeAction("period");
+              if (next.every((r) => !!r.school_year))
+                guide.completeAction("year");
+            }}
+            periods={periods}
+            years={years}
+            sameForAll={same}
+            onSameForAll={setSame}
+          />
+        )}
+        {phase === "requirements" && (
+          <View style={s.card}>
+            <Text style={f.heading}>Prepare your requirements</Text>
+            <Text style={f.copy}>
+              Bring these sample documents to the counter.
+            </Text>
+            <TourTarget id="requirements">
+              <View style={{ gap: 12 }}>
+                {requirements.map((label) => (
+                  <Pressable
+                    key={label}
+                    accessibilityRole="checkbox"
+                    accessibilityLabel={label}
+                    accessibilityState={{ checked: checked.includes(label) }}
+                    onPress={() => {
+                      const next = checked.includes(label)
+                        ? checked.filter((x) => x !== label)
+                        : [...checked, label];
+                      setChecked(next);
+                      if (next.length === requirements.length)
+                        guide.completeAction("requirements");
+                    }}
+                    style={[s.check, checked.includes(label) && s.selected]}
+                  >
+                    <Ionicons
+                      name={
+                        checked.includes(label) ? "checkbox" : "square-outline"
+                      }
+                      size={24}
+                      color={COLORS.primary}
+                    />
+                    <Text style={[f.label, { flex: 1 }]}>{label}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </TourTarget>
+          </View>
+        )}
+        {phase === "review" && (
+          <>
+            <TourTarget id="review-summary">
+              <View style={s.card}>
+                <Text style={f.heading}>Review your practice request</Text>
+                <Text style={f.copy}>
+                  Registrar ·{" "}
+                  {queueType === "walkin" ? "Walk-in" : "Appointment"}
+                </Text>
+                <Text style={f.title}>
+                  {item.name} × {quantity}
+                </Text>
+                {rows.map((row, i) => (
+                  <Text key={i} style={f.meta}>
+                    Copy {i + 1}: {row.period} · {row.school_year}
+                  </Text>
+                ))}
+                <View style={s.total}>
+                  <Text style={f.label}>Estimated total</Text>
+                  <Text style={f.heading}>₱{(quantity * 100).toFixed(2)}</Text>
+                </View>
+                <Text style={f.meta}>Example only · no payment is taken.</Text>
+              </View>
+            </TourTarget>
+            <TourTarget id="review-action">
+              <View style={{ gap: 12 }}>
+                <CustomButton
+                  title={
+                    created
+                      ? "Practice ticket created"
+                      : "Create practice ticket"
+                  }
+                  onPress={() => {
+                    setCreated(true);
+                    guide.completeAction("review");
+                  }}
+                />
+                {created && (
+                  <Text accessibilityRole="alert" style={s.success}>
+                    ✓ Sample ticket is ready. Tap Next to view it.
+                  </Text>
+                )}
+              </View>
+            </TourTarget>
+          </>
+        )}
+        {phase === "ticket" && (
+          <>
+            <TourTarget id="ticket">
+              <QueueDetailsCard queue={ticket} />
+            </TourTarget>
+            <QueueServiceItemsList
+              service_items={[
+                {
+                  name: item.name,
+                  quantity,
+                },
+              ]}
+            />
+            <Text style={f.meta}>
+              Sample ticket only. No live queue was joined.
+            </Text>
+          </>
+        )}
+        {phase === "csm" && (
+          <CSMForm
+            office="Registrar (example)"
+            service={item.name}
+            practice
+            onSubmit={() => {}}
+          />
+        )}
+        {!guide.visible && (
+          <CustomButton
+            title="Resume guided walkthrough"
+            onPress={guide.show}
+          />
+        )}
+        <CustomButton title="Exit practice" outlined onPress={exit} />
+      </TutorialScrollView>
+    </View>
+  );
 }
-const s=StyleSheet.create({header:{paddingTop:44,padding:16,backgroundColor:COLORS.primary,flexDirection:'row',alignItems:'center',justifyContent:'space-between'},title:{fontSize:22,fontWeight:'700',color:'#fff'},subtitle:{fontSize:20,fontWeight:'700',color:COLORS.primary},banner:{fontSize:14,lineHeight:21,color:COLORS.primary,backgroundColor:'#f8eeef',padding:16,borderRadius:10,marginBottom:16}});
+const s = StyleSheet.create({
+  header: {
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "#fff",
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  icon: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: COLORS.background,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  banner: {
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: COLORS.primarySoft,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  card: {
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: "#fff",
+    gap: 12,
+  },
+  check: {
+    minHeight: 56,
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  selected: {
+    backgroundColor: COLORS.primarySoft,
+    borderColor: COLORS.primary,
+  },
+  total: {
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    paddingTop: 12,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 8,
+  },
+  success: {
+    fontSize: 14,
+    lineHeight: 21,
+    color: COLORS.success,
+    padding: 12,
+    backgroundColor: COLORS.successLight,
+    borderRadius: 8,
+  },
+});

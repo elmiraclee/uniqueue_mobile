@@ -10,7 +10,7 @@ import { request } from "./api";
 import { Office, officeProblem } from "./domain";
 import { useResource } from "./use-resource";
 import { Button, ChildPicker, Copy, Empty, Notice, Screen, s } from "./ui";
-import { dashboardStyles as d } from "./original-student-styles";
+import { dashboardStyles as d } from "./dashboard-styles";
 const officeIcon = (
   slug: string,
 ): React.ComponentProps<typeof Ionicons>["name"] => {
@@ -27,6 +27,7 @@ export function OfficesContent({ embedded = false }: { embedded?: boolean }) {
   const p = usePortal(),
     params = useLocalSearchParams(),
     [search, setSearch] = useState(""),
+    [searchFocused, setSearchFocused] = useState(false),
     [unavailable, setUnavailable] = useState(false);
   useEffect(() => {
     const id = Number(params.forStudentId);
@@ -76,13 +77,40 @@ export function OfficesContent({ embedded = false }: { embedded?: boolean }) {
           )}
         </View>
       </TourTarget>
-      <TextInput
-        accessibilityLabel="Search offices and events"
-        value={search}
-        onChangeText={setSearch}
-        placeholder="Search offices and events"
-        style={s.input}
-      />
+      <View
+        style={[
+          s.input,
+          {
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 10,
+            paddingVertical: 0,
+          },
+          searchFocused && { borderColor: COLORS.primary, borderWidth: 2 },
+        ]}
+      >
+        <Ionicons name="search-outline" size={20} color={COLORS.gray} />
+        <TextInput
+          accessibilityLabel="Search offices and events"
+          value={search}
+          onChangeText={setSearch}
+          onFocus={() => setSearchFocused(true)}
+          onBlur={() => setSearchFocused(false)}
+          placeholder="Search offices and events"
+          placeholderTextColor={COLORS.gray}
+          style={
+            {
+              flex: 1,
+              minWidth: 0,
+              fontSize: 16,
+              lineHeight: 24,
+              color: COLORS.text,
+              paddingVertical: 14,
+              outlineStyle: "none",
+            } as any
+          }
+        />
+      </View>
       {(r.data?.offices || [])
         .filter(
           (o) =>
@@ -138,25 +166,34 @@ export function OfficesContent({ embedded = false }: { embedded?: boolean }) {
                     `Hours today: ${o.open_time?.slice(0, 5)} – ${o.close_time?.slice(0, 5) || "—"}${o.cutoff_time ? ` · cutoff ${o.cutoff_time.slice(0, 5)}` : ""}`}
                 </Text>
               )}
-              <View style={[d.cardFooter, { gap: 8 }]}>
-                <Button
-                  title="Join Queue"
-                  disabled={!canChoose || !!problem || !!r.error}
-                  onPress={() => go(o)}
-                />
-                <Button
-                  title="Monitor"
-                  secondary
-                  onPress={() =>
-                    router.push({
-                      pathname: `/${p.role}/live-monitor`,
-                      params: {
-                        officeId: String(o.id),
-                        ...(p.child ? { childId: String(p.child.id) } : {}),
-                      },
-                    } as any)
-                  }
-                />
+              <View
+                style={[
+                  d.cardFooter,
+                  { gap: 10, flexDirection: "row", alignItems: "stretch" },
+                ]}
+              >
+                <View style={{ flex: 1.25 }}>
+                  <Button
+                    title="Join Queue"
+                    disabled={!canChoose || !!problem || !!r.error}
+                    onPress={() => go(o)}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Button
+                    title="Monitor"
+                    secondary
+                    onPress={() =>
+                      router.push({
+                        pathname: `/${p.role}/live-monitor`,
+                        params: {
+                          officeId: String(o.id),
+                          ...(p.child ? { childId: String(p.child.id) } : {}),
+                        },
+                      } as any)
+                    }
+                  />
+                </View>
               </View>
               {events.map((e: any) => (
                 <View

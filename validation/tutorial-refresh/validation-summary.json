@@ -1,0 +1,137 @@
+{
+  "date": "2026-10-31",
+  "typecheck": "passed",
+  "unit_checks": {
+    "domain": 41,
+    "resource_lifecycle": 10,
+    "official_CSM": 10,
+    "authentication": 8,
+    "optional_feedback": 9
+  },
+  "navigation_checks": 20,
+  "web_export": "passed",
+  "lint": {
+    "errors": 0,
+    "warnings": 99,
+    "note": "Warnings remain across inherited code and effect-driven UI; not represented as a clean lint pass."
+  },
+  "walkthrough_runs": {
+    "tutorial-refresh": {
+      "passed": 26,
+      "checks": [
+        "01-intro",
+        "02-type-action",
+        "03-type-completed",
+        "04-copy-counter",
+        "05-option-cards",
+        "06-academic-period",
+        "07-academic-year",
+        "08-requirements",
+        "08b-review-summary",
+        "09-review",
+        "10-sample-ticket",
+        "11-csm",
+        "Action-gated full student walkthrough completes without real queue, payment, profile or CSM writes",
+        "320-intro",
+        "320-type",
+        "320-paused",
+        "320px pause/resume, escape and exit",
+        "1100-intro",
+        "1100-type",
+        "1100-paused",
+        "1100px pause/resume, escape and exit",
+        "12-parent-type",
+        "Stored v3 progress restores the correct lesson and still requires its practice action",
+        "13-actual-queue-type",
+        "14-actual-shared-academic-details",
+        "Real form shares tutorial controls; same-details, new copies and individual-copy mode preserve academic values"
+      ],
+      "runtimeErrors": []
+    },
+    "tutorial-compact": {
+      "passed": 26,
+      "checks": [
+        "01-intro",
+        "02-type-action",
+        "03-type-completed",
+        "04-copy-counter",
+        "05-option-cards",
+        "06-academic-period",
+        "07-academic-year",
+        "08-requirements",
+        "08b-review-summary",
+        "09-review",
+        "10-sample-ticket",
+        "11-csm",
+        "Action-gated full student walkthrough completes without real queue, payment, profile or CSM writes",
+        "320-intro",
+        "320-type",
+        "320-paused",
+        "320px pause/resume, escape and exit",
+        "1100-intro",
+        "1100-type",
+        "1100-paused",
+        "1100px pause/resume, escape and exit",
+        "12-parent-type",
+        "Stored v3 progress restores the correct lesson and still requires its practice action",
+        "13-actual-queue-type",
+        "14-actual-shared-academic-details",
+        "Real form shares tutorial controls; same-details, new copies and individual-copy mode preserve academic values"
+      ],
+      "runtimeErrors": []
+    },
+    "tutorial-short": {
+      "passed": 26,
+      "checks": [
+        "01-intro",
+        "02-type-action",
+        "03-type-completed",
+        "04-copy-counter",
+        "05-option-cards",
+        "06-academic-period",
+        "07-academic-year",
+        "08-requirements",
+        "08b-review-summary",
+        "09-review",
+        "10-sample-ticket",
+        "11-csm",
+        "Action-gated full student walkthrough completes without real queue, payment, profile or CSM writes",
+        "320-intro",
+        "320-type",
+        "320-paused",
+        "320px pause/resume, escape and exit",
+        "1100-intro",
+        "1100-type",
+        "1100-paused",
+        "1100px pause/resume, escape and exit",
+        "12-parent-type",
+        "Stored v3 progress restores the correct lesson and still requires its practice action",
+        "13-actual-queue-type",
+        "14-actual-shared-academic-details",
+        "Real form shares tutorial controls; same-details, new copies and individual-copy mode preserve academic values"
+      ],
+      "runtimeErrors": []
+    }
+  },
+  "scope": [
+    "Real Expo Web export with isolated local PHP-contract fixtures",
+    "Full student guide including action gates, sample ticket, CSM preview and finish",
+    "Parent guide entry, role-specific path, queue-type practice and skip",
+    "Pause/resume/escape/exit and stored v3 lesson restoration",
+    "No real queue/payment/profile/CSM submissions from practice; existing notification poll and tutorial progress are allowed",
+    "Real shared form: same-details on/off, additional copies, academic values retained",
+    "Viewport bounds, no horizontal page overflow, spotlight not covered by coach"
+  ],
+  "limitations": [
+    "No live backend mutation or real account used",
+    "No APK/IPA built",
+    "Physical Android/iOS accessibility, keyboard, large text, audio/haptics, push and orientation still require device testing",
+    "Inherited development HTTP deployment still fails production HTTPS release requirements"
+  ],
+  "existing_UI_regression": {
+    "core_checks": 42,
+    "additional_polish_checks": 8,
+    "runtime_exceptions": 0,
+    "note": "The deliberate simulated 503 and blocked external discovery requests are expected isolated-fixture behavior."
+  }
+}

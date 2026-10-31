@@ -1,15 +1,21 @@
-import { clientAlert } from '@/components/client/client-ui';
-import React, { useEffect, useRef, useState } from 'react';
-import { Alert, Modal, StyleSheet, View } from 'react-native';
+import { clientAlert } from "@/components/client/client-ui";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Alert, Modal, StyleSheet, View } from "react-native";
 
-import { API } from '@/constants/backend';
-import { fetchJsonOrNull, safeFetchJson } from '@/utils/api';
-import { COLORS, ICON_SIZES, RADIUS, SHADOWS, SPACING } from '@/constants/theme';
+import { API } from "@/constants/backend";
+import { fetchJsonOrNull, safeFetchJson } from "@/utils/api";
+import {
+  COLORS,
+  ICON_SIZES,
+  RADIUS,
+  SHADOWS,
+  SPACING,
+} from "@/constants/theme";
 
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { TouchableOpacity } from "react-native";
-import QueueModalContent from './queue-modal-content';
+import QueueModalContent from "./queue-modal-content";
 
 interface Props {
   visible: boolean;
@@ -35,10 +41,60 @@ interface QueueDetails {
   priority_reason?: string | null;
 }
 
-export default function CurrentQueueModal({ visible, studentId, onClose, onCancelled, onCompleted }: Props) {
+export default function CurrentQueueModal({
+  visible,
+  studentId,
+  onClose,
+  onCancelled,
+  onCompleted,
+}: Props) {
   const [loading, setLoading] = useState(false);
   const [queue, setQueue] = useState<QueueDetails | null>(null);
   const queueRef = useRef<QueueDetails | null>(null);
+
+  const loadQueue = useCallback(
+    async (silent: boolean = false) => {
+      try {
+        if (!silent) setLoading(true);
+
+        const data = await fetchJsonOrNull(
+          API.getQueueDetails,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ student_id: studentId }),
+          },
+          "Get Queue Details Error",
+        );
+
+        if (data?.success) {
+          setQueue(data.queue);
+          queueRef.current = data.queue;
+        } else {
+          const hadActiveQueue = queueRef.current !== null;
+
+          setQueue(null);
+          queueRef.current = null;
+
+          if (hadActiveQueue) {
+            // The ticket we were showing is no longer active (it was
+            // completed, cleared, etc. on the backend) — dissolve the
+            // modal on its own rather than leaving stale details on screen.
+            onClose();
+            (onCompleted ?? onCancelled)();
+          } else if (!silent) {
+            clientAlert("Error", data.message);
+          }
+        }
+      } catch (error) {
+        console.log("QUEUE DETAILS ERROR:", error);
+        if (!silent) clientAlert("Error", "Unable to load queue details.");
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [studentId, onClose, onCompleted, onCancelled],
+  );
 
   useEffect(() => {
     if (!visible) return;
@@ -51,51 +107,14 @@ export default function CurrentQueueModal({ visible, studentId, onClose, onCance
     const interval = setInterval(() => loadQueue(true), 5000);
 
     return () => clearInterval(interval);
-  }, [visible]);
-
-  const loadQueue = async (silent: boolean = false) => {
-    try {
-      if (!silent) setLoading(true);
-
-      const data = await fetchJsonOrNull(API.getQueueDetails, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ student_id: studentId }),
-      }, 'Get Queue Details Error');
-
-      if (data?.success) {
-        setQueue(data.queue);
-        queueRef.current = data.queue;
-      } else {
-        const hadActiveQueue = queueRef.current !== null;
-
-        setQueue(null);
-        queueRef.current = null;
-
-        if (hadActiveQueue) {
-          // The ticket we were showing is no longer active (it was
-          // completed, cleared, etc. on the backend) — dissolve the
-          // modal on its own rather than leaving stale details on screen.
-          onClose();
-          (onCompleted ?? onCancelled)();
-        } else if (!silent) {
-          clientAlert('Error', data.message);
-        }
-      }
-    } catch (error) {
-      console.log('QUEUE DETAILS ERROR:', error);
-      if (!silent) clientAlert('Error', 'Unable to load queue details.');
-    } finally {
-      if (!silent) setLoading(false);
-    }
-  };
+  }, [visible, loadQueue]);
 
   const confirmCancel = () => {
     if (!queue) return;
 
-    clientAlert('Cancel Queue', 'Are you sure you want to cancel your queue?', [
-      { text: 'No', style: 'cancel' },
-      { text: 'Yes', style: 'destructive', onPress: cancelQueue },
+    clientAlert("Cancel Queue", "Are you sure you want to cancel your queue?", [
+      { text: "No", style: "cancel" },
+      { text: "Yes", style: "destructive", onPress: cancelQueue },
     ]);
   };
 
@@ -105,30 +124,39 @@ export default function CurrentQueueModal({ visible, studentId, onClose, onCance
     try {
       setLoading(true);
 
-      const data = await fetchJsonOrNull(API.cancelQueue, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ student_id: studentId, queue_id: queue.id }),
-      }, 'Cancel Queue Error');
+      const data = await fetchJsonOrNull(
+        API.cancelQueue,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ student_id: studentId, queue_id: queue.id }),
+        },
+        "Cancel Queue Error",
+      );
 
       if (data?.success) {
-        clientAlert('Success', data.message);
+        clientAlert("Success", data.message);
         queueRef.current = null;
         onCancelled();
         onClose();
       } else {
-        clientAlert('Unable to Cancel', data.message);
+        clientAlert("Unable to Cancel", data.message);
       }
     } catch (error) {
       console.log(error);
-      clientAlert('Error', 'Something went wrong.');
+      clientAlert("Error", "Something went wrong.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent
+      onRequestClose={onClose}
+    >
       <View style={styles.overlay}>
         <View style={styles.modal}>
           <TouchableOpacity
@@ -136,11 +164,7 @@ export default function CurrentQueueModal({ visible, studentId, onClose, onCance
             onPress={onClose}
             hitSlop={8}
           >
-            <Ionicons
-              name="close"
-              size={ICON_SIZES.lg}
-              color={COLORS.gray}
-            />
+            <Ionicons name="close" size={ICON_SIZES.lg} color={COLORS.gray} />
           </TouchableOpacity>
           <View style={styles.grabber} />
           <QueueModalContent
@@ -168,19 +192,19 @@ export default function CurrentQueueModal({ visible, studentId, onClose, onCance
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    justifyContent: 'center',
+    justifyContent: "center",
     backgroundColor: COLORS.overlay,
     padding: SPACING.lg,
   },
   modal: {
     backgroundColor: COLORS.cream,
     borderRadius: RADIUS.xxl,
-    maxHeight: '92%',
-    overflow: 'hidden',
+    maxHeight: "92%",
+    overflow: "hidden",
     ...SHADOWS.lg,
   },
   grabber: {
-    alignSelf: 'center',
+    alignSelf: "center",
     width: 40,
     height: 4,
     borderRadius: RADIUS.full,

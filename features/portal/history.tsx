@@ -15,6 +15,7 @@ import { completedStatus } from "./domain";
 import { useResource } from "./use-resource";
 import {
   Button,
+  FilterChip,
   Card,
   ChildPicker,
   Copy,
@@ -134,10 +135,10 @@ export default function HistoryScreen() {
           showsHorizontalScrollIndicator={false}
         >
           {statuses.map(([value, label]) => (
-            <Button
+            <FilterChip
               key={value}
               title={label}
-              secondary={status !== value}
+              selected={status === value}
               onPress={() => {
                 setStatus(value);
                 setPage(1);
@@ -151,10 +152,10 @@ export default function HistoryScreen() {
             ["walkin", "Walk-in"],
             ["appointment", "Appointment"],
           ].map(([value, label]) => (
-            <Button
+            <FilterChip
               key={value}
               title={label}
-              secondary={type !== value}
+              selected={type === value}
               onPress={() => {
                 setType(value);
                 setPage(1);

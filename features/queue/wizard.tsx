@@ -1,3 +1,8 @@
+import {
+  QueueTypeCards,
+  FormProgress,
+  ServiceRequestCard,
+} from "@/components/queue-step/form-ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -152,6 +157,7 @@ function QueueWizard({
     [d, setDraft] = useState<Draft>(newDraft),
     [step, setStep] = useState(0),
     [mode, setMode] = useState<"request" | "payment">("request"),
+    [sameCopies, setSameCopies] = useState<Record<number, boolean>>({}),
     [category, setCategory] = useState("All"),
     [search, setSearch] = useState(""),
     [busy, setBusy] = useState(false),
@@ -754,59 +760,34 @@ function QueueWizard({
               </View>
             </Card>
           )}
-          <Card>
-            <Copy muted>
-              Step {step + 1} of {payment ? 2 : 4} ·{" "}
-              {payment
-                ? ["Queue type", "Payment & confirmation"][step]
+          <FormProgress
+            labels={
+              payment
+                ? ["Queue type", "Payment & confirmation"]
                 : [
                     "Queue type",
                     "Service details",
                     "Requirements",
                     "Review & confirm",
-                  ][step]}
-            </Copy>
-            <View style={{ flexDirection: "row", gap: 8 }}>
-              {Array.from({ length: payment ? 2 : 4 }, (_, i) => (
-                <View
-                  key={i}
-                  style={{
-                    flex: 1,
-                    height: 4,
-                    backgroundColor: i <= step ? "#660810" : "#DED5D7",
-                    borderRadius: 2,
-                  }}
-                />
-              ))}
-            </View>
-          </Card>
+                  ]
+            }
+            current={step}
+          />
           {step === 0 && (
-            <Card>
-              <Heading>How will you queue?</Heading>
-              {flag(o?.walkin_enabled) && (
-                <Check
-                  label="Walk-in · queue in person"
-                  checked={d.type === "walkin"}
-                  onPress={() => patch({ type: "walkin", slip: false })}
-                />
-              )}
-              {flag(o?.appointment_enabled) && (
-                <Check
-                  label="Appointment · bring your appointment slip"
-                  checked={d.type === "appointment"}
-                  onPress={() => patch({ type: "appointment", checks: [] })}
-                />
-              )}
-              <Copy muted>
-                Appointments require your physical appointment confirmation, not
-                a date reservation made by this app.
-              </Copy>
-              <Button
-                title="Continue"
-                disabled={!!r.error || !!officeProblem(o!, actor.role)}
-                onPress={() => setStep(1)}
-              />
-            </Card>
+            <QueueTypeCards
+              value={d.type}
+              walkin={flag(o?.walkin_enabled)}
+              appointment={flag(o?.appointment_enabled)}
+              disabled={!!r.error || !!officeProblem(o!, actor.role)}
+              onChange={(type) =>
+                patch(
+                  type === "walkin"
+                    ? { type, slip: false }
+                    : { type, checks: [] },
+                )
+              }
+              onNext={() => setStep(1)}
+            />
           )}
           {step === 1 && payment && (
             <>
@@ -889,11 +870,30 @@ function QueueWizard({
                   const selected = d.selected.includes(item.id),
                     quantity = d.quantities[item.id] || 1;
                   return (
-                    <Card key={item.id}>
-                      <Check
-                        label={item.name}
-                        checked={selected}
-                        onPress={() =>
+                    <View key={item.id} style={{ gap: 12 }}>
+                      {selected &&
+                        flag(item.use_academic_period, false) &&
+                        (!periods.length ||
+                          !years.length ||
+                          data.academic.error) && (
+                          <Notice
+                            message={
+                              data.academic.error ||
+                              "Academic options are unavailable. Refresh before continuing."
+                            }
+                          />
+                        )}
+                      <ServiceRequestCard
+                        item={{
+                          ...item,
+                          use_academic_period: flag(
+                            item.use_academic_period,
+                            false,
+                          ),
+                        }}
+                        selected={selected}
+                        quantity={quantity}
+                        onToggle={() =>
                           patch({
                             selected: selected
                               ? d.selected.filter((id) => id !== item.id)
@@ -901,96 +901,55 @@ function QueueWizard({
                             checks: [],
                           })
                         }
-                      />
-                      <Copy muted>
-                        {(item.amount ?? item.price) != null
-                          ? `Unit fee: ₱${Number(item.amount ?? item.price).toFixed(2)}`
-                          : "Fee to be confirmed"}
-                        {item.pay_at_cashier ? " · Pay at cashier" : ""}
-                      </Copy>
-                      {selected && (
-                        <>
-                          <Select
-                            label={`Copies · ${item.name}`}
-                            value={String(quantity)}
-                            options={Array.from({ length: 99 }, (_, i) => ({
-                              value: String(i + 1),
-                              label: String(i + 1),
-                            }))}
-                            onChange={(v) =>
-                              patch({
-                                quantities: {
-                                  ...d.quantities,
-                                  [item.id]: Number(v) || 1,
-                                },
-                              })
-                            }
-                          />
-                          {!!item.choices?.length && (
-                            <Select
-                              label={`Option · ${item.name}`}
-                              value={String(d.choices[item.id] || "")}
-                              options={item.choices.map((c) => ({
-                                value: String(c.id),
-                                label: c.label,
-                              }))}
-                              onChange={(v) =>
-                                patch({
-                                  choices: {
-                                    ...d.choices,
-                                    [item.id]: Number(v),
-                                  },
-                                  checks: [],
-                                })
-                              }
-                            />
-                          )}
-                          {flag(item.use_academic_period, false) && (
-                            <>
-                              {(!periods.length ||
-                                !years.length ||
-                                data.academic.error) && (
-                                <Notice
-                                  message={
-                                    data.academic.error ||
-                                    "Academic options are unavailable. Refresh before continuing."
-                                  }
-                                />
-                              )}
-                              {Array.from({ length: quantity }, (_, i) => (
-                                <View key={i} style={{ gap: 8 }}>
-                                  <Copy>Academic details · Copy {i + 1}</Copy>
-                                  {academicFields(
-                                    d.academic[item.id]?.[i] || {
-                                      period: "",
-                                      school_year: "",
-                                    },
-                                    (key, v) => {
-                                      const rows = Array.from(
-                                        { length: quantity },
-                                        (_, j) => ({
-                                          ...(d.academic[item.id]?.[j] || {
-                                            period: "",
-                                            school_year: "",
-                                          }),
+                        onQuantity={(value) =>
+                          patch({
+                            quantities: { ...d.quantities, [item.id]: value },
+                            academic: {
+                              ...d.academic,
+                              [item.id]: Array.from(
+                                { length: value },
+                                (_, i) =>
+                                  sameCopies[item.id]
+                                    ? {
+                                        ...(d.academic[item.id]?.[0] || {
+                                          period: "",
+                                          school_year: "",
                                         }),
-                                      );
-                                      rows[i] = { ...rows[i], [key]: v };
-                                      patch({
-                                        academic: {
-                                          ...d.academic,
-                                          [item.id]: rows,
-                                        },
-                                      });
-                                    },
-                                  )}
-                                </View>
-                              ))}
-                            </>
-                          )}
-                        </>
-                      )}
-                    </Card>
+                                      }
+                                    : {
+                                        ...(d.academic[item.id]?.[i] || {
+                                          period: "",
+                                          school_year: "",
+                                        }),
+                                      },
+                              ),
+                            },
+                          })
+                        }
+                        optionId={d.choices[item.id] || 0}
+                        onOption={(id) =>
+                          patch({
+                            choices: { ...d.choices, [item.id]: id },
+                            checks: [],
+                          })
+                        }
+                        rows={d.academic[item.id] || []}
+                        onAcademic={(rows) =>
+                          patch({
+                            academic: { ...d.academic, [item.id]: rows },
+                          })
+                        }
+                        periods={periodNames.map((v) => ({
+                          value: v,
+                          label: v,
+                        }))}
+                        years={yearNames.map((v) => ({ value: v, label: v }))}
+                        sameForAll={!!sameCopies[item.id]}
+                        onSameForAll={(same) =>
+                          setSameCopies((old) => ({ ...old, [item.id]: same }))
+                        }
+                      />
+                    </View>
                   );
                 })}
               {priority}

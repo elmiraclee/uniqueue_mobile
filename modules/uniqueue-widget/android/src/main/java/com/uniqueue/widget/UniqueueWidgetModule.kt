@@ -17,10 +17,10 @@ class UniqueueWidgetModule : Module() {
     AsyncFunction("update") { data: Map<String, Any?> ->
       val context = appContext.reactContext ?: return@AsyncFunction false
       val prefs = context.getSharedPreferences(UniqueueWidgetProvider.PREFS, 0)
+      WidgetCredentials.write(context,data["authorization"]?.toString().orEmpty())
       prefs.edit()
         .putLong("ticketId", (data["ticketId"] as? Number)?.toLong() ?: 0L)
         .putString("endpoint", data["endpoint"]?.toString().orEmpty())
-        .putString("authorization", data["authorization"]?.toString().orEmpty())
         .putString("ticket", data["ticket"]?.toString().orEmpty())
         .putString("office", data["office"]?.toString().orEmpty())
         .putString("window", data["window"]?.toString().orEmpty())

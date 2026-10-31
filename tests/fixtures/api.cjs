@@ -234,6 +234,10 @@ exports.createFixture = () => {
               ]
             : [],
         });
+      case "verify_queue_alert.php": {
+        const notice=state.notifications.find(n=>n.event_id===body.event_id);
+        return notice ? ok({alert:notice}) : {status:404,data:{success:false,message:'Alert unavailable.'}};
+      }
       case "get_ticket_detail.php":
         return ok({ ticket: state.ticket });
       case "get_student_transaction.php":
@@ -254,7 +258,11 @@ exports.createFixture = () => {
           unread_count: state.notifications.filter((n) => !n.is_read).length,
         });
       case "check_notification.php":
-        return ok({ has_notification: false });
+        return ok({
+          has_notification: state.notifications.some((n) => !n.is_read),
+          notifications: state.notifications,
+          unread_count: state.notifications.filter((n) => !n.is_read).length,
+        });
       case "mark_notification_read.php":
         state.notifications.forEach((n) => {
           if (!body.notification_id || body.notification_id === n.id)

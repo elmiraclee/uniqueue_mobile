@@ -42,7 +42,7 @@ class UniqueueRealtimeService : Service() {
       val prefs = context.getSharedPreferences(UniqueueWidgetProvider.PREFS, 0)
       val ticketId = prefs.getLong("ticketId", 0L)
       val status = prefs.getString("status", "").orEmpty().lowercase(Locale.ROOT)
-      if (ticketId <= 0L || status in setOf("completed", "cancelled", "done")) return
+      if (ticketId <= 0L || status in setOf("completed", "cancelled", "done", "expired")) return
       val intent = Intent(context, UniqueueRealtimeService::class.java)
       try {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -177,7 +177,7 @@ class UniqueueRealtimeService : Service() {
       doOutput = true
       useCaches = false
       setRequestProperty("Content-Type", "application/json")
-      setRequestProperty("Authorization", "Bearer " + prefs.getString("authorization", "").orEmpty())
+      setRequestProperty("Authorization", "Bearer " + WidgetCredentials.read(this@UniqueueRealtimeService))
       setRequestProperty("Cache-Control", "no-cache")
     }
     connection.outputStream.use {
@@ -226,16 +226,9 @@ class UniqueueRealtimeService : Service() {
       buildLiveNotification("Ticket $queueNumber · ${status.ifBlank { "active" }}")
     )
 
-    if (alarmStatus && alarmKey != previousAlarmKey) {
-      prefs.edit().putString("lastRealtimeAlarmKey", alarmKey).apply()
-      vibrateTurnAlarm()
-      manager.notify(
-        ALARM_NOTIFICATION_ID,
-        buildTurnNotification(queueNumber, window, status)
-      )
-    }
+    // Audible alerts have one event-ID owner in the verified notification handler.
 
-    val finished = status in setOf("completed", "cancelled", "done")
+    val finished = status in setOf("completed", "cancelled", "done", "expired")
     return !finished
   }
 
@@ -273,7 +266,7 @@ class UniqueueRealtimeService : Service() {
         enableVibration(true)
         vibrationPattern = longArrayOf(0, 800, 300, 800, 300, 1200)
         if (soundUri != null) setSound(soundUri, audio)
-        lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+        lockscreenVisibility = Notification.VISIBILITY_PRIVATE
       }
     )
   }
@@ -314,7 +307,7 @@ class UniqueueRealtimeService : Service() {
       .setContentText(body)
       .setCategory(Notification.CATEGORY_ALARM)
       .setAutoCancel(true)
-      .setVisibility(Notification.VISIBILITY_PUBLIC)
+      .setVisibility(Notification.VISIBILITY_PRIVATE)
       .setContentIntent(openAppIntent(5302))
       .build()
   }

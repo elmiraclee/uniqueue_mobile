@@ -33,3 +33,37 @@ export async function clearSessionToken(): Promise<void> {
     await SecureStore.deleteItemAsync(SESSION_KEY);
   }
 }
+
+// Failed/offline logout is retained encrypted, independently of the live session.
+const PENDING_LOGOUT_KEY = 'uniqueue-pending-logout-v1';
+let flush: Promise<void> | null = null;
+// Serialize pending-revocation reads/writes so a retry cannot erase a new logout.
+let pendingMutation: Promise<unknown> = Promise.resolve();
+function withPendingLock<T>(work: () => Promise<T>): Promise<T> {
+ const next = pendingMutation.then(work, work);
+ pendingMutation = next.then(() => undefined, () => undefined);
+ return next;
+}
+export async function queuePendingLogout(token: string, pushToken: string) {
+ return withPendingLock(async () => {
+ const raw=await SecureStore.getItemAsync(PENDING_LOGOUT_KEY);
+ const rows: {token:string;pushToken:string}[]=raw?JSON.parse(raw):[];
+ if(!rows.some(r=>r.token===token))rows.push({token,pushToken});
+ await SecureStore.setItemAsync(PENDING_LOGOUT_KEY,JSON.stringify(rows));
+ });
+}
+export async function flushPendingLogout(): Promise<void> {
+ // Web cannot persist old bearer tokens securely. It remains an explicitly online logout.
+ if(Platform.OS==='web')return;
+ if(flush)return flush;
+ flush=withPendingLock(async()=>{
+  const raw=await SecureStore.getItemAsync(PENDING_LOGOUT_KEY);if(!raw)return;
+  const rows: {token:string;pushToken:string}[]=JSON.parse(raw);const pending=[];
+  for(const row of rows){const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),5000);
+   try{const r=await fetch(API_URL+'/logout.php',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+row.token},body:JSON.stringify({push_token:row.pushToken}),signal:controller.signal});
+    if(!r.ok&&r.status!==401)pending.push(row);
+   }catch{pending.push(row);}finally{clearTimeout(timeout);}
+  }
+  if(pending.length)await SecureStore.setItemAsync(PENDING_LOGOUT_KEY,JSON.stringify(pending));else await SecureStore.deleteItemAsync(PENDING_LOGOUT_KEY);
+ }).finally(()=>{flush=null;});return flush;
+}

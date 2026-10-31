@@ -1,20 +1,12 @@
-/*
-|--------------------------------------------------------------------------
-| Background notification task (Android) + background sync fallback
-|--------------------------------------------------------------------------
-| 1. BACKGROUND_NOTIFICATION_TASK runs when a push arrives while the app is
-|    backgrounded or KILLED. It lets us re-post a loud, alarm-channel
-|    notification even if the server sent a silent/data-only payload.
-| 2. BACKGROUND_SYNC_TASK is an OS-scheduled safety net (~15 min minimum,
-|    never exact). It catches the case where a push was dropped. It is a
-|    backup only - the push is the real delivery path.
-|
-| IMPORTANT: this file must be imported at the TOP of app/_layout.tsx so the
-| task is defined before the JS bundle finishes loading in a headless start.
-*/
+/** Data-only remote queue pushes are authenticated and freshness-checked before display.
+ * Requires a native build and OS background execution permission. Force-stop,
+ * battery restrictions and iOS termination can delay/prevent delivery.
+ * Defined at module load; registration happens after sign-in. */
 import { Platform } from "react-native";
 import { getSessionToken } from "../../utils/session-storage";
-import { API } from "../../constants/backend";
+import { API, API_URL } from "../../constants/backend";
+import { AppState } from "react-native";
+import { claimQueueEvent } from "../../utils/queue-alerts";
 
 import {
   CHANNEL_ALARM,
@@ -24,7 +16,6 @@ import {
 } from "./push";
 import {
   updateLiveTicketWidget,
-  vibrateBackgroundAlarm,
 } from "../../utils/live-ticket-widget";
 
 // expo-task-manager is safe in Expo Go; expo-notifications is loaded lazily
@@ -34,7 +25,7 @@ const TaskManager = require("expo-task-manager");
 
 export const BACKGROUND_NOTIFICATION_TASK = "UNIQUEUE_BG_NOTIFICATION";
 
-const ALARM_TYPES = ["next_in_line", "called", "in_progress"];
+const ALARM_TYPES = ["called", "in_progress"];
 
 function isAlarm(type?: string | null) {
   return ALARM_TYPES.includes(String(type ?? "").toLowerCase());
@@ -48,21 +39,22 @@ TaskManager.defineTask(
       return;
     }
     try {
-      const payload =
-        data?.notification?.data?.body ?? // Android FCM shape
-        data?.body ?? // iOS shape
-        {};
       const content = data?.notification?.request?.content ?? {};
-      const extra = payload?.data ?? content?.data ?? payload ?? {};
+      const raw = data?.data?.dataString ?? data?.dataString ?? data?.notification?.data?.body ?? data?.body ?? data?.data ?? content?.data ?? {};
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      const extra = parsed?.data ?? parsed;
+      if(AppState.currentState==='active')return;
       const token=await getSessionToken();
       if(!token || Number(extra?.ticket_id)<=0)return;
       const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),15000);
       try {
-        const response=await fetch(API.getLiveTicketSnapshot,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({ticket_id:Number(extra.ticket_id)}),signal:controller.signal});
+        const response=await fetch(API_URL+'/verify_queue_alert.php',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({event_id:extra.event_id}),signal:controller.signal});
         const verified=await response.json();
         if(!response.ok || !verified?.success || await getSessionToken()!==token)return;
       } finally {clearTimeout(timer);}
 
+
+      if(!await claimQueueEvent(extra))return;
 
       // Keep the home-screen ticket current even when the app UI is asleep.
       // The native widget performs its own API refresh after this cache update.
@@ -76,24 +68,10 @@ TaskManager.defineTask(
         });
       }
 
-      // The server sends a high-priority data-only companion push for every
-      // staff action. It wakes this task even with the UI backgrounded,
-      // refreshes the widget, and provides a native alarm-vibration fallback.
-      if (extra?.widget_sync) {
-        if (isAlarm(extra?.type) || extra?.alarm === true) {
-          await vibrateBackgroundAlarm();
-        }
-        return;
-      }
-
-      // Only re-post when the push carried no visible notification
-      // (data-only). Visible pushes are already shown by the OS.
-      const hasVisible = Boolean(content?.title || payload?.title);
-      if (hasVisible) return;
-
       const N = getNotifications();
       if (!N) return;
 
+      if(await getSessionToken()!==token)return;
       await N.scheduleNotificationAsync({
         content: {
           title: extra?.title ?? "It's your turn",

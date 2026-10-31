@@ -1,3 +1,7 @@
+> **Interactive tutorial update:** See [TUTORIAL_REFRESH.md](TUTORIAL_REFRESH.md). Actual queue forms now share the tutorial controls, and the guide uses action-gated floating spotlights instead of a bottom dock.
+
+> **UI refresh:** Start with [UI_REFRESH.md](UI_REFRESH.md) for the current UI changes, cleanup details, test commands, and native release caveats. Older reports below describe the uploaded baseline.
+
 # UniQueue Mobile — original design + web parity v2.1.0
 
 Complete Expo / React Native source project using the original design from `uniqueue-mobile-fixed-v3-queue-form.zip`, while retaining the rebuilt student and parent/guardian workflows matched to `uniqueue-web-fixed.zip`. This supersedes the earlier redesigned v2.0.0 delivery. It is a replacement project, not a patch to overlay onto an old mobile folder. Extract into a new folder.

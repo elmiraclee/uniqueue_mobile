@@ -66,8 +66,13 @@
     "check:release": "node scripts/check-release.cjs",
     "test:auth": "node tests/google-runtime.cjs",
     "test:navigation": "node tests/route-coverage.cjs",
-    "test": "node tests/rebuild-domain.cjs && node tests/resource-lifecycle.cjs && node tests/csm-validation.cjs && node tests/google-runtime.cjs",
-    "test:ui": "node tests/rebuild-ui.cjs"
+    "test": "node tests/rebuild-domain.cjs && node tests/resource-lifecycle.cjs && node tests/csm-validation.cjs && node tests/google-runtime.cjs && node tests/ui-feedback.cjs",
+    "test:ui": "node tests/rebuild-ui.cjs && node tests/ui-polish.cjs",
+    "test:feedback": "node tests/ui-feedback.cjs",
+    "test:tutorial": "node tests/tutorial-interactive.cjs",
+    "eas-build-pre-install": "node scripts/check-release.cjs",
+    "test:alerts": "node tests/queue-alerts.cjs",
+    "test:logout": "node tests/pending-logout.cjs"
   },
   "expo": {
     "autolinking": {

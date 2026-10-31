@@ -1,9 +1,9 @@
-import { gradeChoices, useGradeOptions } from '@/hooks/use-grade-options';
-import { LegalLinks } from '@/components/legal-links';
-import { clientAlert } from '@/components/client/client-ui';
-import { clientFetch } from '@/utils/client-fetch';
-import { useClientUI } from '@/components/client/client-ui';
-import { useEffect, useState } from 'react';
+import { gradeChoices, useGradeOptions } from "@/hooks/use-grade-options";
+import { LegalLinks } from "@/components/legal-links";
+import { clientAlert } from "@/components/client/client-ui";
+import { clientFetch } from "@/utils/client-fetch";
+import { useClientUI } from "@/components/client/client-ui";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -16,78 +16,73 @@ import {
   StyleSheet,
   Text,
   View,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-import { Ionicons } from '@expo/vector-icons';
-import { Picker } from '@react-native-picker/picker';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useRouter } from 'expo-router';
+import { Ionicons } from "@expo/vector-icons";
+import { Picker } from "@react-native-picker/picker";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useRouter } from "expo-router";
 
-import CustomButton from '../components/ui/custom-button';
-import GoogleLogo from '../components/ui/google-logo';
-import CustomInput from '../components/ui/custom-input';
-import { API } from '../constants/backend';
+import CustomButton from "../components/ui/custom-button";
+import GoogleLogo from "../components/ui/google-logo";
+import CustomInput from "../components/ui/custom-input";
+import { API } from "../constants/backend";
 import {
   completeGoogleAuth,
   useGoogleAuthRequest,
   type GoogleProfile,
-} from '@/utils/google-auth';
-import { registerPushToken } from '@/components/notification/push';
-import PasswordChecklist from '@/components/ui/password-checklist';
-import { passwordError } from '@/utils/password';
-import {
-  COLORS,
-  RADIUS,
-  SHADOWS,
-  SPACING,
-  TYPOGRAPHY,
-} from '../constants/theme';
+} from "@/utils/google-auth";
+import { registerPushToken } from "@/components/notification/push";
+import PasswordChecklist from "@/components/ui/password-checklist";
+import { passwordError } from "@/utils/password";
+import { COLORS, RADIUS, SPACING, TYPOGRAPHY } from "../constants/theme";
 
-type SchoolLevel = 'Elementary' | 'JHS' | 'SHS' | 'College';
+type SchoolLevel = "Elementary" | "JHS" | "SHS" | "College";
 
 const SCHOOL_LEVELS: { label: string; value: SchoolLevel }[] = [
-  { label: 'Elementary', value: 'Elementary' },
-  { label: 'Junior High School (JHS)', value: 'JHS' },
-  { label: 'Senior High School (SHS)', value: 'SHS' },
-  { label: 'College', value: 'College' },
+  { label: "Elementary", value: "Elementary" },
+  { label: "Junior High School (JHS)", value: "JHS" },
+  { label: "Senior High School (SHS)", value: "SHS" },
+  { label: "College", value: "College" },
 ];
 
 // College year level sent to the API, derived from the grade / year pick.
-
 
 const SR_CODE_PATTERN = /^\d{2}-\d{5}$/;
 const NAME_PATTERN = /^[A-Za-zÑñ' -]{1,50}$/;
 
 export default function Signup() {
-  const clientUI=useClientUI();
+  const clientUI = useClientUI();
   const router = useRouter();
 
-  const [srCode, setSrCode] = useState('');
+  const [srCode, setSrCode] = useState("");
   const [refreshing, setRefreshing] = useState(false);
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
 
-  const [collegeId, setCollegeId] = useState('');
-  const [programId, setProgramId] = useState('');
+  const [collegeId, setCollegeId] = useState("");
+  const [programId, setProgramId] = useState("");
 
   const [colleges, setColleges] = useState<any[]>([]);
   const [programs, setPrograms] = useState<any[]>([]);
 
-  const [email, setEmail] = useState('');
-  const [yearLevel, setYearLevel] = useState('');
+  const [email, setEmail] = useState("");
+  const [yearLevel, setYearLevel] = useState("");
 
   // Multi school-level support (web auth/signup.php parity). College is
   // the only level that carries college / program / college year level.
-  const gradeCatalog=useGradeOptions();
-  const [schoolLevel, setSchoolLevel] = useState<SchoolLevel>('College');
-  const [gradeYear, setGradeYear] = useState('');
+  const gradeCatalog = useGradeOptions();
+  const [schoolLevel, setSchoolLevel] = useState<SchoolLevel>("College");
+  const [gradeYear, setGradeYear] = useState("");
   const [consent, setConsent] = useState(false);
 
   const [loading, setLoading] = useState(false);
-  const [googlePending, setGooglePending] = useState<GoogleProfile | null>(null);
+  const [googlePending, setGooglePending] = useState<GoogleProfile | null>(
+    null,
+  );
   const [googleLoading, setGoogleLoading] = useState(false);
 
   const {
@@ -98,16 +93,15 @@ export default function Signup() {
     unavailableReason: googleUnavailableReason,
   } = useGoogleAuthRequest();
 
-
   async function fetchColleges() {
     try {
       const response = await clientFetch(API.getColleges);
       const data = await response.json();
       setColleges(data);
     } catch (error) {
-      console.log('COLLEGES ERROR:', error);
+      console.log("COLLEGES ERROR:", error);
     }
-  };
+  }
 
   async function fetchPrograms(id: string) {
     try {
@@ -115,16 +109,15 @@ export default function Signup() {
       const data = await response.json();
       setPrograms(data);
     } catch (error) {
-      console.log('PROGRAMS ERROR:', error);
+      console.log("PROGRAMS ERROR:", error);
     }
-  };
-
+  }
 
   useEffect(() => {
     fetchColleges();
     (async () => {
       try {
-        const raw = await AsyncStorage.getItem('google_pending');
+        const raw = await AsyncStorage.getItem("google_pending");
         if (raw) {
           const pending = JSON.parse(raw) as GoogleProfile;
           setGooglePending(pending);
@@ -139,32 +132,37 @@ export default function Signup() {
   // Google button on signup screen (same as web "Continue with Google")
   useEffect(() => {
     if (!googleResponse) return;
-    if (googleResponse.type === 'success') {
+    if (googleResponse.type === "success") {
       (async () => {
         setGoogleLoading(true);
         try {
-          const result = await completeGoogleAuth(googleResponse.authentication);
+          const result = await completeGoogleAuth(
+            googleResponse.authentication,
+          );
           if (!result.ok) {
-            clientAlert('Google Sign-Up', result.message);
+            clientAlert("Google Sign-Up", result.message);
             return;
           }
-          if (result.action === 'login') {
-            await AsyncStorage.removeItem('google_pending');
-            await AsyncStorage.setItem('user', JSON.stringify(result.user));
-            await AsyncStorage.setItem('role', 'student');
+          if (result.action === "login") {
+            await AsyncStorage.removeItem("google_pending");
+            await AsyncStorage.setItem("user", JSON.stringify(result.user));
+            await AsyncStorage.setItem("role", "student");
             const id = Number(result.user?.id ?? result.user?.student_id ?? 0);
-            if (id) await registerPushToken({ role: 'student', id });
-            router.replace('/student/home');
+            if (id) await registerPushToken({ role: "student", id });
+            router.replace("/student/home");
             return;
           }
           setGooglePending(result.google);
-          setFirstName(result.google.first_name || '');
-          setLastName(result.google.last_name || '');
-          setEmail(result.google.email || '');
-          await AsyncStorage.setItem('google_pending', JSON.stringify(result.google));
+          setFirstName(result.google.first_name || "");
+          setLastName(result.google.last_name || "");
+          setEmail(result.google.email || "");
+          await AsyncStorage.setItem(
+            "google_pending",
+            JSON.stringify(result.google),
+          );
         } catch (e) {
           console.log(e);
-          clientAlert('Google Sign-Up', 'Something went wrong.');
+          clientAlert("Google Sign-Up", "Something went wrong.");
         } finally {
           setGoogleLoading(false);
         }
@@ -181,24 +179,34 @@ export default function Signup() {
   // Reset the grade / year pick whenever the school level changes so an
   // Elementary child can't keep a "3rd Year" selection.
   useEffect(() => {
-    setGradeYear('');
-    if (schoolLevel !== 'College') {
-      setCollegeId('');
-      setProgramId('');
-      setYearLevel('');
+    setGradeYear("");
+    if (schoolLevel !== "College") {
+      setCollegeId("");
+      setProgramId("");
+      setYearLevel("");
     }
   }, [schoolLevel]);
 
   // College year level is derived from the grade / year selection.
   useEffect(() => {
-    if (schoolLevel !== 'College') return;
-    setYearLevel(String(gradeCatalog.grades.find(g=>g.school_level===schoolLevel&&g.value===gradeYear)?.year_level??''));
+    if (schoolLevel !== "College") return;
+    setYearLevel(
+      String(
+        gradeCatalog.grades.find(
+          (g) => g.school_level === schoolLevel && g.value === gradeYear,
+        )?.year_level ?? "",
+      ),
+    );
   }, [schoolLevel, gradeYear, gradeCatalog.grades]);
 
-  const isCollege = schoolLevel === 'College';
+  const isCollege = schoolLevel === "College";
 
   const handleSignup = async () => {
-    if(gradeCatalog.loading||gradeCatalog.error)return clientAlert('Grade choices','Load the current grade choices before signing up.');
+    if (gradeCatalog.loading || gradeCatalog.error)
+      return clientAlert(
+        "Grade choices",
+        "Load the current grade choices before signing up.",
+      );
     const isGoogle = !!googlePending;
     if (
       !srCode.trim() ||
@@ -209,19 +217,25 @@ export default function Signup() {
       (isCollege && (!collegeId || !programId)) ||
       (!isGoogle && !password.trim())
     ) {
-      clientAlert('Error', 'Please complete all fields.');
+      clientAlert("Error", "Please complete all fields.");
       return;
     }
 
     if (!SR_CODE_PATTERN.test(srCode.trim())) {
-      clientAlert('Invalid SR-Code', 'Use the format YY-NNNNN (e.g. 23-12345).');
+      clientAlert(
+        "Invalid SR-Code",
+        "Use the format YY-NNNNN (e.g. 23-12345).",
+      );
       return;
     }
 
-    if (!NAME_PATTERN.test(firstName.trim()) || !NAME_PATTERN.test(lastName.trim())) {
+    if (
+      !NAME_PATTERN.test(firstName.trim()) ||
+      !NAME_PATTERN.test(lastName.trim())
+    ) {
       clientAlert(
-        'Invalid name',
-        'Names may only contain letters, spaces, apostrophes, and hyphens.'
+        "Invalid name",
+        "Names may only contain letters, spaces, apostrophes, and hyphens.",
       );
       return;
     }
@@ -229,19 +243,19 @@ export default function Signup() {
     if (!isGoogle) {
       const pwErr = passwordError(password);
       if (pwErr) {
-        clientAlert('Weak password', pwErr);
+        clientAlert("Weak password", pwErr);
         return;
       }
       if (password !== confirmPassword) {
-        clientAlert('Password', 'Passwords do not match.');
+        clientAlert("Password", "Passwords do not match.");
         return;
       }
     }
 
     if (!consent) {
       clientAlert(
-        'Consent required',
-        'You must agree to the Terms of Use and Privacy Notice to create an account.'
+        "Consent required",
+        "You must agree to the Terms of Use and Privacy Notice to create an account.",
       );
       return;
     }
@@ -250,9 +264,9 @@ export default function Signup() {
       setLoading(true);
 
       const response = await clientFetch(API.signup, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           consent_privacy: consent ? 1 : 0,
@@ -266,10 +280,12 @@ export default function Signup() {
           college_id: isCollege ? Number(collegeId) : null,
           program_id: isCollege ? Number(programId) : null,
           year_level: isCollege && yearLevel ? Number(yearLevel) : null,
-          password: isGoogle ? (password || '') : password,
+          password: isGoogle ? password || "" : password,
           confirm_password: isGoogle ? undefined : confirmPassword,
           google_signup: isGoogle ? 1 : 0,
-          google_registration_token: isGoogle ? googlePending?.registration_token : undefined,
+          google_registration_token: isGoogle
+            ? googlePending?.registration_token
+            : undefined,
           google_id: isGoogle ? googlePending?.google_id : undefined,
           google_picture: isGoogle ? googlePending?.picture : undefined,
         }),
@@ -277,29 +293,53 @@ export default function Signup() {
 
       const text = await response.text();
 
-
       const data = JSON.parse(text);
 
       if (data.success) {
-        await AsyncStorage.removeItem('google_pending');
+        await AsyncStorage.removeItem("google_pending");
         if (data.user) {
-          await AsyncStorage.setItem('user', JSON.stringify(data.user));
-          await AsyncStorage.setItem('role', 'student');
+          await AsyncStorage.setItem("user", JSON.stringify(data.user));
+          await AsyncStorage.setItem("role", "student");
           const id = Number(data.user?.id ?? data.user?.student_id ?? 0);
-          if (id) await registerPushToken({ role: 'student', id });
-          await AsyncStorage.setItem('client_tour_new',`student:${data.user.id}`);
-          clientUI.success({title:'Account created successfully',message:'Your account is ready. You can now join an office queue and follow your transactions.',confirmLabel:'Continue to Dashboard',onConfirm:()=>router.replace('/student/home')});
+          if (id) await registerPushToken({ role: "student", id });
+          await AsyncStorage.setItem(
+            "client_tour_new",
+            `student:${data.user.id}`,
+          );
+          clientUI.success({
+            title: "Account created successfully",
+            message:
+              "Your account is ready. You can now join an office queue and follow your transactions.",
+            confirmLabel: "Continue to Dashboard",
+            onConfirm: () => router.replace("/student/home"),
+          });
         } else {
-          clientAlert('Success', 'Account created successfully!', [
-            { text: 'OK', onPress: () => router.replace('/login') },
+          clientAlert("Success", "Account created successfully!", [
+            { text: "OK", onPress: () => router.replace("/login") },
           ]);
         }
       } else {
-        if(data.next_action==='activate'||data.next_action==='login'){clientAlert('Student account',data.message,[{text:'Cancel',style:'cancel'},{text:data.next_action==='activate'?'Activate account':'Student Login',onPress:()=>router.replace(data.next_action==='activate'?'/activate-account':'/login')}]);}else clientAlert('Signup Failed', data.message);
+        if (data.next_action === "activate" || data.next_action === "login") {
+          clientAlert("Student account", data.message, [
+            { text: "Cancel", style: "cancel" },
+            {
+              text:
+                data.next_action === "activate"
+                  ? "Activate account"
+                  : "Student Login",
+              onPress: () =>
+                router.replace(
+                  data.next_action === "activate"
+                    ? "/activate-account"
+                    : "/login",
+                ),
+            },
+          ]);
+        } else clientAlert("Signup Failed", data.message);
       }
     } catch (error) {
       console.log(error);
-      clientAlert('Error', 'Cannot connect to server');
+      clientAlert("Error", "Cannot connect to server");
     } finally {
       setLoading(false);
     }
@@ -307,7 +347,7 @@ export default function Signup() {
 
   const renderSectionLabel = (
     icon: keyof typeof Ionicons.glyphMap,
-    label: string
+    label: string,
   ) => (
     <View style={styles.sectionLabelRow}>
       <Ionicons name={icon} size={12} color={COLORS.primary} />
@@ -320,14 +360,30 @@ export default function Signup() {
     selectedValue: string,
     onValueChange: (value: string) => void,
     items: { label: string; value: string }[],
-    enabled = true
+    enabled = true,
   ) => (
     <View style={styles.pickerField}>
       <Text style={styles.pickerLabel}>{label}</Text>
       <View style={[styles.pickerContainer, !enabled && styles.pickerDisabled]}>
-        <Picker selectedValue={selectedValue} onValueChange={onValueChange} enabled={enabled}>
+        <Picker
+          accessibilityLabel={label}
+          style={{
+            height: Platform.OS === "ios" ? 180 : 48,
+            width: "100%",
+            color: COLORS.text,
+            fontSize: 16,
+            paddingHorizontal: 12,
+          }}
+          selectedValue={selectedValue}
+          onValueChange={onValueChange}
+          enabled={enabled}
+        >
           {items.map((item) => (
-            <Picker.Item key={item.value || item.label} label={item.label} value={item.value} />
+            <Picker.Item
+              key={item.value || item.label}
+              label={item.label}
+              value={item.value}
+            />
           ))}
         </Picker>
       </View>
@@ -347,218 +403,270 @@ export default function Signup() {
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView
         style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 40 : 0}
       >
-      <ScrollView
-        contentContainerStyle={styles.scrollContainer}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={['#660810']}
-            tintColor="#660810"
-          />
-        }
-      >
-        <View style={styles.card}>
-          {/* Header */}
-          <View style={styles.header}>
-            <Image source={require('../assets/images/logo.png')} style={styles.logo} />
-            <View>
-              <Text style={styles.title}>Create Account</Text>
-              <Text style={styles.subtitle}>Sign up with your student details</Text>
-            </View>
-          </View>
-
-          {/* Account Details */}
-          <View style={styles.panel}>
-            {renderSectionLabel('person-outline', 'Account Details')}
-            
-        {googlePending ? (
-          <View style={styles.googleBanner}>
-            <Text style={styles.googleBannerText}>
-              Signed in with Google as{' '}
-              <Text style={{ fontWeight: '700' }}>{googlePending.email}</Text>
-            </Text>
-            <Pressable
-              onPress={async () => {
-                setGooglePending(null);
-                await AsyncStorage.removeItem('google_pending');
-              }}
-            >
-              <Text style={styles.googleBannerLink}>Not you? Use a different method</Text>
-            </Pressable>
-          </View>
-        ) : (
-          <>
-            <Pressable
-              style={[styles.googleButton, googleLoading && styles.googleButtonDisabled]}
-              disabled={googleLoading || loading}
-              onPress={async () => {
-                if (!googleReady || !googleRequest) {
-                  clientAlert(
-                    'Google Sign-Up',
-                    googleUnavailableReason
-                  );
-                  return;
-                }
-                try {
-                  setGoogleLoading(true);
-                  await promptGoogle();
-                } catch (e) {
-                  console.log(e);
-                  clientAlert('Google Sign-Up', 'Could not open Google sign-in.');
-                } finally {
-                  setGoogleLoading(false);
-                }
-              }}
-            >
-              {googleLoading ? (
-                <ActivityIndicator color="#1f1f1f" />
-              ) : (
-                <View style={styles.googleButtonInner}>
-                  <GoogleLogo size={20} />
-                  <Text style={styles.googleButtonText}>Continue with Google</Text>
-                </View>
-              )}
-            </Pressable>
-            <View style={styles.orRow}>
-              <View style={styles.orLine} />
-              <Text style={styles.orText}>or fill the form</Text>
-              <View style={styles.orLine} />
-            </View>
-          </>
-        )}
-
-<CustomInput placeholder="SR-Code" value={srCode} onChangeText={setSrCode} />
-            <CustomInput
-              placeholder="Email Address"
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
+        <ScrollView
+          contentContainerStyle={styles.scrollContainer}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={["#660810"]}
+              tintColor="#660810"
             />
-            <View style={styles.row}>
-              <View style={styles.rowItem}>
-                <CustomInput placeholder="First Name" value={firstName} onChangeText={setFirstName} />
-              </View>
-              <View style={styles.rowItem}>
-                <CustomInput placeholder="Last Name" value={lastName} onChangeText={setLastName} />
+          }
+        >
+          <View style={styles.card}>
+            {/* Header */}
+            <View style={styles.header}>
+              <Image
+                source={require("../assets/images/logo.png")}
+                style={styles.logo}
+              />
+              <View>
+                <Text style={styles.title}>Create Account</Text>
+                <Text style={styles.subtitle}>
+                  Sign up with your student details
+                </Text>
               </View>
             </View>
-          </View>
 
-          {/* Academic Information */}
-          <View style={styles.panel}>
-            {renderSectionLabel('library-outline', 'Academic Information')}
-            {gradeCatalog.loading&&<Text>Loading grade choices…</Text>}
-            {!!gradeCatalog.error&&<><Text style={{color:'#ad2132',fontSize:14}}>{gradeCatalog.error}</Text><CustomButton title="Retry grade choices" outlined onPress={()=>void gradeCatalog.reload()}/></>}
+            {/* Account Details */}
+            <View style={styles.panel}>
+              {renderSectionLabel("person-outline", "Account Details")}
 
-            {renderPickerField(
-              'School Level',
-              schoolLevel,
-              (value) => setSchoolLevel(value as SchoolLevel),
-              SCHOOL_LEVELS
-            )}
+              {googlePending ? (
+                <View style={styles.googleBanner}>
+                  <Text style={styles.googleBannerText}>
+                    Signed in with Google as{" "}
+                    <Text style={{ fontWeight: "700" }}>
+                      {googlePending.email}
+                    </Text>
+                  </Text>
+                  <Pressable
+                    onPress={async () => {
+                      setGooglePending(null);
+                      await AsyncStorage.removeItem("google_pending");
+                    }}
+                  >
+                    <Text style={styles.googleBannerLink}>
+                      Not you? Use a different method
+                    </Text>
+                  </Pressable>
+                </View>
+              ) : (
+                <>
+                  <Pressable
+                    style={[
+                      styles.googleButton,
+                      googleLoading && styles.googleButtonDisabled,
+                    ]}
+                    disabled={googleLoading || loading}
+                    onPress={async () => {
+                      if (!googleReady || !googleRequest) {
+                        clientAlert("Google Sign-Up", googleUnavailableReason);
+                        return;
+                      }
+                      try {
+                        setGoogleLoading(true);
+                        await promptGoogle();
+                      } catch (e) {
+                        console.log(e);
+                        clientAlert(
+                          "Google Sign-Up",
+                          "Could not open Google sign-in.",
+                        );
+                      } finally {
+                        setGoogleLoading(false);
+                      }
+                    }}
+                  >
+                    {googleLoading ? (
+                      <ActivityIndicator color="#1f1f1f" />
+                    ) : (
+                      <View style={styles.googleButtonInner}>
+                        <GoogleLogo size={20} />
+                        <Text style={styles.googleButtonText}>
+                          Continue with Google
+                        </Text>
+                      </View>
+                    )}
+                  </Pressable>
+                  <View style={styles.orRow}>
+                    <View style={styles.orLine} />
+                    <Text style={styles.orText}>or fill the form</Text>
+                    <View style={styles.orLine} />
+                  </View>
+                </>
+              )}
 
-            {renderPickerField(
-              'Grade / Year Level',
-              gradeYear,
-              setGradeYear,
-              [
-                { label: 'Select grade / year level', value: '' },
-                ...gradeChoices(gradeCatalog.grades,schoolLevel).map(g=>({label:g.label,value:g.value})),
-              ]
-            )}
+              <CustomInput
+                placeholder="SR-Code"
+                value={srCode}
+                onChangeText={setSrCode}
+              />
+              <CustomInput
+                placeholder="Email Address"
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+              <View style={styles.row}>
+                <View style={styles.rowItem}>
+                  <CustomInput
+                    placeholder="First Name"
+                    value={firstName}
+                    onChangeText={setFirstName}
+                  />
+                </View>
+                <View style={styles.rowItem}>
+                  <CustomInput
+                    placeholder="Last Name"
+                    value={lastName}
+                    onChangeText={setLastName}
+                  />
+                </View>
+              </View>
+            </View>
 
-            {isCollege && (
-            <>
-            {renderPickerField(
-              'College',
-              collegeId,
-              (value) => {
-                setCollegeId(value);
-                setProgramId('');
-              },
-              [
-                { label: 'Select College', value: '' },
-                ...colleges.map((college) => ({
-                  label: college.college_name,
-                  value: college.college_id.toString(),
-                })),
-              ]
-            )}
-            <View style={styles.row}>
-              <View style={styles.rowItemWide}>
-                {renderPickerField(
-                  'Program',
-                  programId,
-                  setProgramId,
-                  [
-                    { label: 'Select Program', value: '' },
-                    ...programs.map((program) => ({
-                      label: program.program_name,
-                      value: program.program_id.toString(),
-                    })),
-                  ],
-                  !!collegeId
+            {/* Academic Information */}
+            <View style={styles.panel}>
+              {renderSectionLabel("library-outline", "Academic Information")}
+              {gradeCatalog.loading && <Text>Loading grade choices…</Text>}
+              {!!gradeCatalog.error && (
+                <>
+                  <Text style={{ color: "#ad2132", fontSize: 14 }}>
+                    {gradeCatalog.error}
+                  </Text>
+                  <CustomButton
+                    title="Retry grade choices"
+                    outlined
+                    onPress={() => void gradeCatalog.reload()}
+                  />
+                </>
+              )}
+
+              {renderPickerField(
+                "School Level",
+                schoolLevel,
+                (value) => setSchoolLevel(value as SchoolLevel),
+                SCHOOL_LEVELS,
+              )}
+
+              {renderPickerField(
+                "Grade / Year Level",
+                gradeYear,
+                setGradeYear,
+                [
+                  { label: "Select grade / year level", value: "" },
+                  ...gradeChoices(gradeCatalog.grades, schoolLevel).map(
+                    (g) => ({ label: g.label, value: g.value }),
+                  ),
+                ],
+              )}
+
+              {isCollege && (
+                <>
+                  {renderPickerField(
+                    "College",
+                    collegeId,
+                    (value) => {
+                      setCollegeId(value);
+                      setProgramId("");
+                    },
+                    [
+                      { label: "Select College", value: "" },
+                      ...colleges.map((college) => ({
+                        label: college.college_name,
+                        value: college.college_id.toString(),
+                      })),
+                    ],
+                  )}
+                  <View style={styles.row}>
+                    <View style={styles.rowItemWide}>
+                      {renderPickerField(
+                        "Program",
+                        programId,
+                        setProgramId,
+                        [
+                          { label: "Select Program", value: "" },
+                          ...programs.map((program) => ({
+                            label: program.program_name,
+                            value: program.program_id.toString(),
+                          })),
+                        ],
+                        !!collegeId,
+                      )}
+                    </View>
+                  </View>
+                </>
+              )}
+            </View>
+
+            {/* Security */}
+            <View style={styles.panel}>
+              {renderSectionLabel("lock-closed-outline", "Security")}
+              <CustomInput
+                placeholder="Password"
+                secureTextEntry
+                value={password}
+                onChangeText={setPassword}
+              />
+              {!googlePending && (
+                <>
+                  <CustomInput
+                    placeholder="Confirm password"
+                    secureTextEntry
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                  />
+                  <PasswordChecklist
+                    password={password}
+                    confirm={confirmPassword}
+                  />
+                </>
+              )}
+            </View>
+
+            <LegalLinks />
+            {/* Terms / Privacy consent — required on the web too */}
+            <Pressable
+              style={styles.consentRow}
+              onPress={() => setConsent(!consent)}
+            >
+              <View
+                style={[styles.consentBox, consent && styles.consentBoxChecked]}
+              >
+                {consent && (
+                  <Ionicons name="checkmark" size={14} color="#fff" />
                 )}
               </View>
-            </View>
-            </>
-            )}
-          </View>
+              <Text style={styles.consentText}>
+                I agree to the Terms of Use and Privacy Notice.
+              </Text>
+            </Pressable>
 
-          {/* Security */}
-          <View style={styles.panel}>
-            {renderSectionLabel('lock-closed-outline', 'Security')}
-            <CustomInput
-              placeholder="Password"
-              secureTextEntry
-              value={password}
-              onChangeText={setPassword}
+            <CustomButton
+              title={
+                loading
+                  ? "Creating Account..."
+                  : googlePending
+                    ? "Finish Creating Account"
+                    : "Sign Up"
+              }
+              onPress={handleSignup}
             />
-            {!googlePending && (
-              <>
-                <CustomInput
-                  placeholder="Confirm password"
-                  secureTextEntry
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                />
-                <PasswordChecklist password={password} confirm={confirmPassword} />
-              </>
-            )}
-          </View>
 
-          <LegalLinks />
-          {/* Terms / Privacy consent — required on the web too */}
-          <Pressable
-            style={styles.consentRow}
-            onPress={() => setConsent(!consent)}
-          >
-            <View style={[styles.consentBox, consent && styles.consentBoxChecked]}>
-              {consent && <Ionicons name="checkmark" size={14} color="#fff" />}
-            </View>
-            <Text style={styles.consentText}>
-              I agree to the Terms of Use and Privacy Notice.
+            <Text style={styles.linkText} onPress={() => router.push("/login")}>
+              Already have an account?{" "}
+              <Text style={styles.linkTextStrong}>Login</Text>
             </Text>
-          </Pressable>
-
-          <CustomButton
-            title={loading ? 'Creating Account...' : (googlePending ? 'Finish Creating Account' : 'Sign Up')}
-            onPress={handleSignup}
-          />
-
-          <Text style={styles.linkText} onPress={() => router.push('/login')}>
-            Already have an account? <Text style={styles.linkTextStrong}>Login</Text>
-          </Text>
-        </View>
-      </ScrollView>
+          </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -572,66 +680,73 @@ const styles = StyleSheet.create({
 
   scrollContainer: {
     flexGrow: 1,
-    justifyContent: 'center',
+    justifyContent: "center",
     padding: SPACING.sm,
   },
 
   card: {
+    width: "100%",
+    maxWidth: 600,
+    alignSelf: "center",
     backgroundColor: COLORS.white,
-    padding: SPACING.md,
-    borderRadius: RADIUS.lg,
-    borderTopWidth: 3,
+    borderRadius: 12,
+    padding: 20,
+    borderWidth: 1,
+    borderTopWidth: 4,
     borderTopColor: COLORS.primary,
-    ...SHADOWS.md,
+    borderColor: COLORS.border,
   },
 
   // ----- Header -----
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     marginBottom: SPACING.md,
   },
   logo: {
     width: 40,
     height: 40,
-    resizeMode: 'contain',
+    resizeMode: "contain",
     marginRight: SPACING.sm,
   },
   title: {
-    ...TYPOGRAPHY.h2,
-    fontSize: 17,
+    fontSize: 24,
+    lineHeight: 31,
+    fontWeight: "700",
+    letterSpacing: -0.6,
     color: COLORS.text,
   },
   subtitle: {
-    fontSize: 12,
-    fontWeight: '500',
+    fontSize: 14,
+    fontWeight: "500",
     color: COLORS.gray,
     marginTop: 1,
   },
 
   // ----- Panels -----
   panel: {
-    backgroundColor: '#FAFAFA',
-    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.white,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#EDEDED',
-    padding: SPACING.sm + 2,
-    marginBottom: SPACING.sm,
+    borderColor: COLORS.border,
+    padding: 16,
+    marginBottom: 16,
   },
   sectionLabelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 5,
     marginBottom: SPACING.xs + 2,
   },
   sectionLabel: {
-    ...TYPOGRAPHY.eyebrow,
-    fontSize: 10,
-    color: COLORS.primary,
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: "600",
+    color: COLORS.gray,
   },
 
   row: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: SPACING.sm,
   },
   rowItem: {
@@ -645,8 +760,8 @@ const styles = StyleSheet.create({
   },
 
   consentRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: SPACING.sm,
     marginBottom: SPACING.md,
     paddingHorizontal: 2,
@@ -657,8 +772,8 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     borderWidth: 1.5,
     borderColor: COLORS.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   consentBoxChecked: {
     backgroundColor: COLORS.primary,
@@ -670,66 +785,66 @@ const styles = StyleSheet.create({
   },
 
   pickerField: {
-    marginBottom: 0,
+    marginBottom: 12,
   },
   pickerLabel: {
     ...TYPOGRAPHY.caption,
-    fontSize: 10,
+    fontSize: 14,
     color: COLORS.gray,
     marginBottom: 3,
   },
   pickerContainer: {
     backgroundColor: COLORS.white,
     borderWidth: 1,
-    borderColor: '#E4E4E4',
+    borderColor: "#858D9A",
     borderRadius: RADIUS.md,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   pickerDisabled: {
     opacity: 0.5,
   },
 
   linkText: {
-    textAlign: 'center',
+    textAlign: "center",
     marginTop: SPACING.sm,
     color: COLORS.gray,
-    fontSize: 12,
+    fontSize: 14,
   },
   linkTextStrong: {
     color: COLORS.primary,
-    fontWeight: '700',
+    fontWeight: "700",
   },
 
   googleBanner: {
-    backgroundColor: 'rgba(66,133,244,0.08)',
+    backgroundColor: "rgba(66,133,244,0.08)",
     borderRadius: 12,
     padding: 12,
     marginBottom: 14,
     borderWidth: 1,
-    borderColor: 'rgba(66,133,244,0.2)',
+    borderColor: "rgba(66,133,244,0.2)",
   },
   googleBannerText: {
     color: COLORS.text,
-    fontSize: 13,
+    fontSize: 14,
     marginBottom: 6,
   },
   googleBannerLink: {
     color: COLORS.primary,
-    fontSize: 12,
-    fontWeight: '700',
+    fontSize: 14,
+    fontWeight: "700",
   },
   googleButton: {
-    backgroundColor: '#ffffff',
+    backgroundColor: "#ffffff",
     borderWidth: 1,
-    borderColor: '#dadce0',
+    borderColor: "#dadce0",
     borderRadius: 12,
     paddingVertical: 12,
     paddingHorizontal: 16,
     minHeight: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     marginBottom: 4,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.08,
     shadowRadius: 2,
@@ -739,31 +854,31 @@ const styles = StyleSheet.create({
     opacity: 0.55,
   },
   googleButtonInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     gap: 12,
   },
   googleButtonText: {
     fontSize: 15,
-    fontWeight: '600',
-    color: '#3c4043',
+    fontWeight: "600",
+    color: "#3c4043",
     letterSpacing: 0.15,
   },
   orRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     marginVertical: 14,
     gap: 10,
   },
   orLine: {
     flex: 1,
     height: 1,
-    backgroundColor: 'rgba(102,8,16,0.12)',
+    backgroundColor: "rgba(102,8,16,0.12)",
   },
   orText: {
     color: COLORS.gray,
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: "600",
   },
 });

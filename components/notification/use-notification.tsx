@@ -33,9 +33,16 @@ import {
   registerPushToken,
 } from './push';
 import { registerBackgroundNotificationTask } from './background-task';
+import { claimQueueEvent, isFresh, playQueueCue, stopQueueAlarm } from '@/utils/queue-alerts';
+import { flushPendingLogout } from '@/utils/session-storage';
+import { API_URL } from '@/constants/backend';
 
 export interface QueueNotification {
   id: number;
+  event_id?: string;
+  expires_at?: number;
+  ahead?: number;
+  reason?: string;
   ticket_id: number;
   type:
     | 'position_update'
@@ -44,7 +51,7 @@ export interface QueueNotification {
     | 'in_progress'
     | 'completed'
     | 'cancelled'
-    | 'relationship_unlinked';
+    | 'relationship_unlinked' | 'moved' | 'priority_bump' | 'appointment_bump' | 'conflict_deferred' | 'conflict_resolved' | 'activated' | 'expired' | 'requeued' | 'rejoined' | 'ticket_created' | 'reserved' | 'queue_policy_changed' | 'status_update';
   title: string;
   message: string;
   queue_number: string;
@@ -139,11 +146,10 @@ function loadPushModules(): {
 |--------------------------------------------------------------------------
 | PROVIDER — mount this ONCE near the root of the app (e.g. app/_layout.tsx)
 |--------------------------------------------------------------------------
-| Polls the API for in-app notifications and posts a real system
-| notification for anything new, so the device's own notification sound
-| plays whether the app is open, backgrounded, or on the home screen.
-| Remote push (server-sent) covers the fully-closed case and only works in
-| a development / production build, never in Expo Go.
+| Polls in-app events and deduplicates remote push with the same event ID.
+| Foreground cues use queue-alerts; background work uses OS notifications.
+| Remote data-push needs a native build and remains subject to OS delivery
+| restrictions; fully-closed delivery is not guaranteed.
 */
 export function NotificationProvider({
   children,
@@ -160,40 +166,37 @@ export function NotificationProvider({
   const readBusy = useRef(false);
   const accountKeyRef = useRef<string | null>(null);
   const seenIdsRef = useRef<Set<number>>(new Set());
-  // `${ticket_id}:${type}` keys already shown as a system notification,
+  // Event IDs already handled in this provider,
   // so a locally-posted alert and the server's push never double-ring.
   const presentedKeysRef = useRef<Set<string>>(new Set());
   const isFirstLoadRef = useRef(true);
   const isPollingRef = useRef(false);
   const lastPollWarningRef = useRef<string | null>(null);
   const pushRegisteredRef = useRef(false);
+  const foregroundEventRef = useRef<(n: QueueNotification) => Promise<void>>(async () => {});
   const appStateRef = useRef<AppStateStatus>(currentAppState());
 
-  // Foreground presentation: still show the banner and play the device's
-  // notification sound instead of silently swallowing it.
+  // Foreground cues have one shared owner; suppress duplicate OS presentation.
   useEffect(() => {
     const mods = loadPushModules();
     if (!mods) return;
     const { Notifications } = mods;
 
     Notifications.setNotificationHandler({
-      handleNotification: async () => ({
-        shouldShowAlert: true,
-        shouldPlaySound: true,
-        shouldSetBadge: true,
-        shouldShowBanner: true,
-        shouldShowList: true,
-      }),
+      handleNotification: async (event: any) => {
+        const d=event?.request?.content?.data||{};
+        const show=currentAppState()!=='active' && isFresh(d) && !!await getSessionToken();
+        return { shouldShowAlert: show, shouldPlaySound: show, shouldSetBadge: true, shouldShowBanner: show, shouldShowList: show };
+      },
     });
 
     ensureChannels().catch(() => {});
 
     // A server push already rang for this event — don't post a local copy.
     const sub = Notifications.addNotificationReceivedListener((event: any) => {
-      const data = event?.request?.content?.data ?? {};
-      if (data?.ticket_id && data?.type) {
-        presentedKeysRef.current.add(`${data.ticket_id}:${data.type}`);
-      }
+      const raw = event?.request?.content?.data ?? {};
+      const data=typeof raw.dataString==='string'?JSON.parse(raw.dataString):raw;
+      if(currentAppState()==='active' && data.event_id)void foregroundEventRef.current({ ...data, message:data.message||data.body||'',id:0 });
     });
 
     return () => {
@@ -260,18 +263,19 @@ export function NotificationProvider({
   }, []);
 
   /**
-   * Post a system notification for a freshly-created queue update.
-   * Uses the device notification sound via the channel (Android) or
-   * `sound: 'default'` (iOS) — never media playback.
+   * Verify a fresh event and claim it once before foreground audio/vibration.
+   * If the app backgrounds during verification, use a local OS notification.
    */
   const presentLocalNotification = useCallback(
     async (n: QueueNotification) => {
-      const mods = loadPushModules();
-      if (!mods) return;
-
-      const key = n.ticket_id ? `${n.ticket_id}:${n.type}` : `account:${n.id}`;
-      if (presentedKeysRef.current.has(key)) return;
-      presentedKeysRef.current.add(key);
+      if(currentAppState()!=='active' || !isFresh(n))return;
+      // Recheck server audience/freshness before presenting remote or polled events.
+      if(n.ticket_id){
+        try{const check=await clientFetch(API_URL+'/verify_queue_alert.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({event_id:n.event_id})});if(!check.ok)return;}catch{return;}
+      }
+      if(!await claimQueueEvent(n))return;
+      if(currentAppState()==='active'){await playQueueCue(n);return;}
+      const mods=loadPushModules();if(!mods)return;
 
       try {
         await mods.Notifications.scheduleNotificationAsync({
@@ -279,9 +283,10 @@ export function NotificationProvider({
             title: n.child_name ? `${n.child_name}: ${n.title}` : n.title,
             body: n.message,
             // Android ignores this (the CHANNEL owns the sound); iOS uses it.
-            sound: isAlarmType(n.type) ? 'alarm.wav' : 'notify.wav',
+            sound: ['called','in_progress'].includes(n.type) ? 'alarm.wav' : 'notify.wav',
             priority: mods.Notifications.AndroidNotificationPriority?.MAX,
             data: {
+              event_id: n.event_id, expires_at: n.expires_at, ahead: n.ahead,
               type: n.type,
               ticket_id: n.ticket_id,
               queue_number: n.queue_number,
@@ -292,7 +297,7 @@ export function NotificationProvider({
           trigger:
             Platform.OS === 'android'
               ? {
-                  channelId: isAlarmType(n.type) ? CHANNEL_ALARM : CHANNEL_DEFAULT,
+                  channelId: ['called','in_progress'].includes(n.type) ? CHANNEL_ALARM : CHANNEL_DEFAULT,
                 }
               : null,
         } as any);
@@ -303,14 +308,17 @@ export function NotificationProvider({
     []
   );
 
+  foregroundEventRef.current = presentLocalNotification;
+
   const poll = useCallback(async () => {
     const revision = readRevision.current;
     if (isPollingRef.current) return;
     isPollingRef.current = true;
 
     try {
+      await flushPendingLogout();
       const session = await getSession();
-      if (!session) {pushRegisteredRef.current=false;setNotifications([]);setUnreadCount(0);accountKeyRef.current=null;seenIdsRef.current.clear();presentedKeysRef.current.clear();isFirstLoadRef.current=true;return;}
+      if (!session) {stopQueueAlarm();pushRegisteredRef.current=false;setNotifications([]);setUnreadCount(0);accountKeyRef.current=null;seenIdsRef.current.clear();presentedKeysRef.current.clear();isFirstLoadRef.current=true;return;}
       const accountKey=session.role+':'+session.id;
       if(accountKeyRef.current!==accountKey){pushRegisteredRef.current=false;accountKeyRef.current=accountKey;seenIdsRef.current.clear();presentedKeysRef.current.clear();isFirstLoadRef.current=true;setNotifications([]);setUnreadCount(0)}
 
@@ -385,11 +393,12 @@ export function NotificationProvider({
       // the device's notification sound. Alarm-worthy updates
       // (next_in_line / called / in_progress) go to the MAX-importance
       // channel; ordinary position updates use the normal one.
-      if (newOnes.length > 0 && !isFirstLoadRef.current) {
-        for (const n of newOnes) {
-          presentLocalNotification(n);
-        }
-      }
+      const candidates = isFirstLoadRef.current
+        ? newOnes.filter(n=>!n.is_read && isFresh(n))
+            .sort((a,b)=>(['called','in_progress'].includes(b.type)?2:b.type==='next_in_line'?1:0)-(['called','in_progress'].includes(a.type)?2:a.type==='next_in_line'?1:0))
+            .filter((n,i,all)=>all.findIndex(other=>other.ticket_id===n.ticket_id)===i)
+        : newOnes;
+      for (const n of [...candidates].reverse()) await presentLocalNotification(n);
       isFirstLoadRef.current = false;
 
       if (revision !== readRevision.current) return;
@@ -453,6 +462,7 @@ export function NotificationProvider({
 
     const sub = AppState.addEventListener('change', (next) => {
       const prev = appStateRef.current;
+      if(next!=='active')stopQueueAlarm();
       appStateRef.current = next;
       if (next === 'active' && prev !== 'active') {
         poll();

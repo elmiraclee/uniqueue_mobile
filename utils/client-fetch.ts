@@ -1,11 +1,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
+import { Platform } from 'react-native';
+import { stopQueueAlarm } from './queue-alerts';
 import { API_URL } from '@/constants/backend';
 import { clearLiveTicketWidget } from './live-ticket-widget';
-import { clearSessionToken, getSessionToken, saveSessionToken } from './session-storage';
+import { clearSessionToken, getSessionToken, saveSessionToken, queuePendingLogout, flushPendingLogout } from './session-storage';
 export { getSessionToken } from './session-storage';
 
 export async function clearClientSession() {
+  stopQueueAlarm();
   await clearSessionToken();
   await AsyncStorage.multiRemove(['user','role','google_pending','push_token_registered_for']);
   await clearLiveTicketWidget();
@@ -17,11 +20,14 @@ export async function clearClientSession() {
   } catch { /* Native notifications are optional. */ }
 }
 export async function logoutClient() {
-  try {
-    const cached=await AsyncStorage.getItem('push_token_registered_for');
-    const pushToken=cached?.split(':').slice(2).join(':') || '';
-    await clientFetch(API_URL+'/logout.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({push_token:pushToken})});
-  } finally { await clearClientSession();router.replace('/login'); }
+  const token=await getSessionToken();
+  const cached=await AsyncStorage.getItem('push_token_registered_for');
+  const pushToken=cached?.split(':').slice(2).join(':') || '';
+  if(Platform.OS==='web'){
+    const response=await clientFetch(API_URL+'/logout.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({push_token:pushToken})});
+    if(!response.ok)throw new Error('Could not confirm logout. Reconnect and retry.');
+  }else if(token){await queuePendingLogout(token,pushToken);void flushPendingLogout();}
+  await clearClientSession();router.replace('/login');
 }
 export async function clientFetch(input:RequestInfo|URL,init?:RequestInit):Promise<Response> {
   const url=typeof input==='string'?input:input instanceof URL?input.toString():input.url;

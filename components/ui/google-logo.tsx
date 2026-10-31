@@ -1,17 +1,15 @@
-import React from 'react';
-import { Image, StyleSheet, View } from 'react-native';
+import React from "react";
+import { Image, StyleSheet, View } from "react-native";
 
 /**
  * Official Google "G" mark.
- * Uses Google's hosted brand asset (same one used in Sign in with Google docs).
+ * Bundled from Google's public sign-in asset so the mark also renders offline.
  */
 export default function GoogleLogo({ size = 20 }: { size?: number }) {
   return (
     <View style={[styles.wrap, { width: size, height: size }]}>
       <Image
-        source={{
-          uri: 'https://developers.google.com/identity/images/g-logo.png',
-        }}
+        source={require("../../assets/images/google-g.png")}
         style={{ width: size, height: size }}
         resizeMode="contain"
         accessibilityLabel="Google"
@@ -22,7 +20,7 @@ export default function GoogleLogo({ size = 20 }: { size?: number }) {
 
 const styles = StyleSheet.create({
   wrap: {
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

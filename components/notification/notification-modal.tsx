@@ -1,9 +1,9 @@
+import { useReducedMotion } from "@/hooks/use-reduced-motion";
 import { router, usePathname } from "expo-router";
 import { serverDate } from "@/utils/server-time";
 import {
   TourTarget,
   TutorialStage,
-  TutorialCoach,
   useTutorial,
 } from "@/components/tutorial/tutorial";
 import { Ionicons } from "@expo/vector-icons";
@@ -15,6 +15,7 @@ import {
   Text,
   TouchableOpacity,
   View,
+  ActivityIndicator,
 } from "react-native";
 
 import {
@@ -25,6 +26,7 @@ import {
   STATUS_COLORS,
   TYPOGRAPHY,
 } from "../../constants/theme";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { QueueNotification, useNotifications } from "./use-notification";
 
 interface NotificationModalProps {
@@ -34,12 +36,14 @@ interface NotificationModalProps {
 
 // Maps a notification `type` to an icon + the status-color pair it
 // should borrow from theme.ts (STATUS_COLORS / STATUS_BG).
-const TYPE_META: Record<
-  QueueNotification["type"],
-  {
-    icon: keyof typeof Ionicons.glyphMap;
-    statusKey: keyof typeof STATUS_COLORS;
-  }
+const TYPE_META: Partial<
+  Record<
+    QueueNotification["type"],
+    {
+      icon: keyof typeof Ionicons.glyphMap;
+      statusKey: keyof typeof STATUS_COLORS;
+    }
+  >
 > = {
   relationship_unlinked: { icon: "unlink-outline", statusKey: "cancelled" },
   position_update: { icon: "people-outline", statusKey: "waiting" },
@@ -64,6 +68,8 @@ export default function NotificationModal({
   visible,
   onClose,
 }: NotificationModalProps) {
+  const insets = useSafeAreaInsets();
+  const reducedMotion = useReducedMotion();
   const guide = useTutorial(),
     pathname = usePathname();
   const {
@@ -88,6 +94,8 @@ export default function NotificationModal({
 
     return (
       <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel={`${item.is_read ? "Read" : "Unread"}: ${item.title}. ${item.message}`}
         style={[styles.item, !item.is_read && styles.itemUnread]}
         activeOpacity={0.7}
         onPress={() => !item.is_read && markAsRead(item.id)}
@@ -121,7 +129,7 @@ export default function NotificationModal({
   return (
     <Modal
       visible={visible}
-      animationType="slide"
+      animationType={reducedMotion ? "none" : "slide"}
       transparent
       onRequestClose={onClose}
     >
@@ -131,10 +139,12 @@ export default function NotificationModal({
             <Pressable
               style={[
                 styles.sheet,
+                { paddingBottom: Math.max(insets.bottom, 16) },
                 guide.notificationStep && { maxHeight: "100%" },
               ]}
               onPress={(e) => e.stopPropagation()}
             >
+              <View style={styles.handle} />
               <View style={styles.header}>
                 <Text style={styles.headerTitle}>
                   Notifications
@@ -144,6 +154,8 @@ export default function NotificationModal({
                 <View style={styles.headerActions}>
                   {unreadCount > 0 && (
                     <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel="Mark all read"
                       onPress={markAllAsRead}
                       style={styles.markAllBtn}
                     >
@@ -207,7 +219,13 @@ export default function NotificationModal({
                   View all notifications →
                 </Text>
               </Pressable>
-              {notifications.length === 0 ? (
+              {loading && notifications.length === 0 ? (
+                <ActivityIndicator
+                  accessibilityLabel="Loading notifications"
+                  color={COLORS.primary}
+                  style={{ padding: 32 }}
+                />
+              ) : notifications.length === 0 ? (
                 <View style={styles.emptyState}>
                   <Ionicons
                     name="notifications-off-outline"
@@ -230,13 +248,20 @@ export default function NotificationModal({
             </Pressable>
           </Pressable>
         </TutorialStage>
-        <TutorialCoach modal />
       </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  handle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: COLORS.border,
+    alignSelf: "center",
+    marginTop: 10,
+  },
   backdrop: {
     flex: 1,
     backgroundColor: COLORS.overlay,
@@ -247,12 +272,18 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     borderTopLeftRadius: RADIUS.xl,
     borderTopRightRadius: RADIUS.xl,
-    maxHeight: "75%",
+    maxHeight: "85%",
+    width: "100%",
+    maxWidth: 640,
+    alignSelf: "center",
+    flexShrink: 1,
     paddingBottom: SPACING.xl,
   },
 
   header: {
     flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: SPACING.xl,
@@ -263,7 +294,8 @@ const styles = StyleSheet.create({
   },
 
   headerTitle: {
-    ...TYPOGRAPHY.h1,
+    ...TYPOGRAPHY.h2,
+    flexShrink: 1,
     color: COLORS.primary,
   },
 
@@ -273,7 +305,9 @@ const styles = StyleSheet.create({
   },
 
   markAllBtn: {
-    marginRight: SPACING.md,
+    minHeight: 44,
+    justifyContent: "center",
+    marginRight: SPACING.sm,
   },
 
   markAllText: {
@@ -282,7 +316,10 @@ const styles = StyleSheet.create({
   },
 
   closeBtn: {
-    padding: SPACING.xs,
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   list: {
@@ -296,10 +333,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
     borderRadius: RADIUS.lg,
     marginBottom: SPACING.sm,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
 
   itemUnread: {
-    backgroundColor: COLORS.primarySoft,
+    backgroundColor: COLORS.white,
+    borderLeftWidth: 3,
+    borderLeftColor: COLORS.primary,
   },
 
   iconWrap: {
@@ -308,7 +349,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.full,
     justifyContent: "center",
     alignItems: "center",
-    marginRight: SPACING.md,
+    marginRight: SPACING.sm,
   },
 
   itemBody: {

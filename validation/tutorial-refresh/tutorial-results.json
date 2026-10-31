@@ -1,0 +1,32 @@
+{
+  "passed": 26,
+  "checks": [
+    "01-intro",
+    "02-type-action",
+    "03-type-completed",
+    "04-copy-counter",
+    "05-option-cards",
+    "06-academic-period",
+    "07-academic-year",
+    "08-requirements",
+    "08b-review-summary",
+    "09-review",
+    "10-sample-ticket",
+    "11-csm",
+    "Action-gated full student walkthrough completes without real queue, payment, profile or CSM writes",
+    "320-intro",
+    "320-type",
+    "320-paused",
+    "320px pause/resume, escape and exit",
+    "1100-intro",
+    "1100-type",
+    "1100-paused",
+    "1100px pause/resume, escape and exit",
+    "12-parent-type",
+    "Stored v3 progress restores the correct lesson and still requires its practice action",
+    "13-actual-queue-type",
+    "14-actual-shared-academic-details",
+    "Real form shares tutorial controls; same-details, new copies and individual-copy mode preserve academic values"
+  ],
+  "runtimeErrors": []
+}

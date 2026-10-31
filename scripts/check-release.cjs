@@ -15,7 +15,7 @@ if(webArg>=0){
  if(web.profile!==cfg.profile)failures.push('PHP/mobile profile name mismatch');
  }catch{failures.push('Cannot read --web-dir deployment.json');}
 }
-if(process.argv.includes('--ios')){
+if(process.argv.includes('--ios') || process.env.EAS_BUILD_PLATFORM==='ios'){
  const id=process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID||'';
  if(!id.endsWith('.apps.googleusercontent.com')||/placeholder|YOUR_/i.test(id))failures.push('Set the actual EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID for iOS Google sign-in');
 }

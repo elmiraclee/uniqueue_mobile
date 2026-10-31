@@ -1,0 +1,14 @@
+{
+  "passed": 8,
+  "checks": [
+    "30-compact-home",
+    "31-login",
+    "32-parent-login",
+    "33-signup",
+    "34-activation",
+    "35-validation-dialog",
+    "36-parent-signup",
+    "37-password-recovery"
+  ],
+  "runtimeErrors": []
+}

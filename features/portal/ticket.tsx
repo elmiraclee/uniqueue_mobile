@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, router } from "expo-router";
+import { formatDuration } from "@/utils/format-duration";
 import { useClientUI } from "@/components/client/client-ui";
 import FeedbackModal from "@/components/feedback/feedback-modal";
 import {
@@ -18,7 +19,17 @@ import {
 } from "./domain";
 import { request } from "./api";
 import { useResource } from "./use-resource";
-import { Button, Card, Copy, Heading, Notice, Screen, Status, s } from "./ui";
+import {
+  Button,
+  Card,
+  Copy,
+  Heading,
+  Metric,
+  Notice,
+  Screen,
+  Status,
+  s,
+} from "./ui";
 export default function TicketScreen() {
   const p = usePortal(),
     params = useLocalSearchParams(),
@@ -190,6 +201,27 @@ export default function TicketScreen() {
                       : t.estimated_label ||
                         "Live estimate is not available yet."}
                   </Copy>
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      flexWrap: "wrap",
+                      gap: 20,
+                      paddingVertical: 8,
+                    }}
+                  >
+                    <Metric
+                      label="People ahead"
+                      value={
+                        t.people_ahead == null
+                          ? "Unavailable / on hold"
+                          : t.people_ahead
+                      }
+                    />
+                    <Metric
+                      label="Estimated wait"
+                      value={formatDuration(t.estimated_wait_minutes)}
+                    />
+                  </View>
                   {!t.all_windows_closed && t.estimated_call_time && (
                     <Copy muted>Estimated call: {t.estimated_call_time}</Copy>
                   )}
@@ -202,21 +234,36 @@ export default function TicketScreen() {
             {completedStatus(t.status) && (
               <>
                 <Copy>
-                  Thank you. You can complete the client satisfaction survey for
-                  this transaction.
+                  {t.has_feedback
+                    ? "Your CSM has already been submitted. View it in History."
+                    : "Thank you. You can complete the client satisfaction survey for this transaction."}
                 </Copy>
                 <Button
-                  title="Open CSM"
+                  title={
+                    t.has_feedback
+                      ? "View submitted CSM in History"
+                      : "Complete CSM"
+                  }
                   disabled={!!r.error}
                   onPress={() =>
-                    setFeedback({
-                      ticket_id: t.id,
-                      queue_number: t.queue_number,
-                      type: t.type,
-                      office_name: t.office_name,
-                      done_at: null,
-                      created_at: t.created_at || "",
-                    })
+                    t.has_feedback
+                      ? router.push({
+                          pathname: `/${p.role}/history`,
+                          params: {
+                            ticketId: String(t.id),
+                            ...(p.role === "parent"
+                              ? { childId: String(t.student_id) }
+                              : {}),
+                          },
+                        } as any)
+                      : setFeedback({
+                          ticket_id: t.id,
+                          queue_number: t.queue_number,
+                          type: t.type,
+                          office_name: t.office_name,
+                          done_at: t.done_at || null,
+                          created_at: t.created_at || "",
+                        })
                   }
                 />
               </>
@@ -241,6 +288,9 @@ export default function TicketScreen() {
                   {a.school_year}
                 </Copy>
               ))}
+              {!(item.requirements || []).length && (
+                <Copy muted>No specific requirements listed.</Copy>
+              )}
               {(item.requirements || []).map((req: string, i: number) => (
                 <Copy key={i}>• {req}</Copy>
               ))}
@@ -251,6 +301,7 @@ export default function TicketScreen() {
             {[
               ["Joined", t.joined_at || t.created_at],
               ["Called", t.called_at],
+              ["Completed / closed", t.done_at],
             ]
               .filter(([, v]) => v)
               .map(([label, v]) => (

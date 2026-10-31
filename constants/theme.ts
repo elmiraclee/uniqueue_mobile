@@ -2,50 +2,52 @@
 
 export const COLORS = {
   // Brand
-  primary: '#660810',
-  primaryLight: '#8a2e35',
-  primaryDark: '#450509',
-  secondary: '#270707',
+  primary: "#660810",
+  primaryLight: "#8A2E35",
+  primaryDark: "#450509",
+  secondary: "#1D2939",
 
   // Neutrals
-  background: '#f1ebeb',
-  accent: '#d6c0b1',
-  white: '#FFFFFF',
-  text: '#1f1f1f',
-  gray: '#625B5D',
-  lightGray: '#f2f2f2',
-  border: 'rgba(102,8,16,0.08)',
-  overlay: 'rgba(39,7,7,0.55)',
+  background: "#FAF7F7",
+  accent: "#E9E1E2",
+  white: "#FFFFFF",
+  text: "#182230",
+  gray: "#5D6878",
+  lightGray: "#EFF2F5",
+  border: "#E3E7ED",
+  overlay: "rgba(16,24,40,0.48)",
 
   // Cream surfaces — used instead of flat white so cards feel
   // warmer and sit naturally on the maroon/cream brand palette.
-  cream: '#faf6f3',
-  creamDark: '#efe4dc',
-  accentSoft: 'rgba(214,192,177,0.35)',
-  primarySoft: 'rgba(102,8,16,0.06)',
-  primaryTint: 'rgba(102,8,16,0.10)',
+  cream: "#FFFFFF",
+  creamDark: "#F0F3F6",
+  accentSoft: "#F2E8E8",
+  primarySoft: "#F7F3F3",
+  primaryTint: "#F3EBEC",
 
   // Status / feedback
-  success: '#2E7D32',
-  successLight: '#DFF6DD',
-  warning: '#F39C12',
-  warningLight: '#FCEED8',
-  info: '#1976D2',
-  infoLight: '#DCEBFB',
-  purple: '#7B1FA2',
-  purpleLight: '#F0E0F6',
-  danger: '#C62828',
-  dangerLight: '#FBE0E0',
-  dangerDark: '#D32F2F',
+  success: "#166448",
+  successLight: "#E9F5EE",
+  warning: "#805218",
+  warningLight: "#FFF4E1",
+  info: "#245EA8",
+  infoLight: "#EBF2FC",
+  purple: "#6842A0",
+  purpleLight: "#F1EBF9",
+  danger: "#B42334",
+  dangerLight: "#FDECEE",
+  dangerDark: "#B42334",
 
   // Skeleton loading
-  skeletonBase: '#e8dfda',
-  skeletonHighlight: '#f5efeb',
+  skeletonBase: "#E3E7ED",
+  skeletonHighlight: "#F7F8FA",
 };
 
 // Maps a queue status string to its display color, used across
 // the home screen badge and the queue details card.
 export const STATUS_COLORS: Record<string, string> = {
+  reserved: COLORS.info,
+  expired: COLORS.gray,
   waiting: COLORS.warning,
   next: COLORS.info,
   called: COLORS.info,
@@ -58,6 +60,8 @@ export const STATUS_COLORS: Record<string, string> = {
 // Soft tinted background to pair with each STATUS_COLORS entry,
 // used for pill / badge backgrounds.
 export const STATUS_BG: Record<string, string> = {
+  reserved: COLORS.infoLight,
+  expired: COLORS.lightGray,
   waiting: COLORS.warningLight,
   next: COLORS.infoLight,
   called: COLORS.infoLight,
@@ -80,9 +84,9 @@ export const SPACING = {
 export const RADIUS = {
   sm: 8,
   md: 12,
-  lg: 16,
-  xl: 20,
-  xxl: 24,
+  lg: 12,
+  xl: 12,
+  xxl: 12,
   full: 999,
 };
 
@@ -90,7 +94,7 @@ export const RADIUS = {
 // elevation so cards read as "floating" consistently on both.
 export const SHADOWS = {
   none: {
-    shadowColor: 'transparent',
+    shadowColor: "transparent",
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0,
     shadowRadius: 0,
@@ -99,30 +103,30 @@ export const SHADOWS = {
   sm: {
     shadowColor: COLORS.secondary,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
+    shadowOpacity: 0.025,
     shadowRadius: 6,
-    elevation: 2,
+    elevation: 1,
   },
   md: {
     shadowColor: COLORS.secondary,
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.04,
     shadowRadius: 14,
-    elevation: 4,
+    elevation: 2,
   },
   lg: {
     shadowColor: COLORS.secondary,
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.12,
+    shadowOpacity: 0.04,
     shadowRadius: 22,
-    elevation: 8,
+    elevation: 3,
   },
   glow: {
     shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18,
+    shadowOpacity: 0.04,
     shadowRadius: 18,
-    elevation: 6,
+    elevation: 2,
   },
 };
 
@@ -131,48 +135,48 @@ export const SHADOWS = {
 export const TYPOGRAPHY = {
   display: {
     fontSize: 28,
-    fontWeight: '800' as const,
+    fontWeight: "700" as const,
     lineHeight: 34,
     letterSpacing: -0.3,
   },
   h1: {
     fontSize: 22,
-    fontWeight: '800' as const,
+    fontWeight: "700" as const,
     lineHeight: 28,
     letterSpacing: -0.2,
   },
   h2: {
     fontSize: 18,
-    fontWeight: '700' as const,
+    fontWeight: "700" as const,
     lineHeight: 24,
   },
   title: {
     fontSize: 16,
-    fontWeight: '700' as const,
+    fontWeight: "700" as const,
     lineHeight: 22,
   },
   body: {
-    fontSize: 14,
-    fontWeight: '500' as const,
-    lineHeight: 21,
+    fontSize: 16,
+    fontWeight: "400" as const,
+    lineHeight: 24,
   },
   bodyStrong: {
-    fontSize: 14,
-    fontWeight: '700' as const,
+    fontSize: 16,
+    fontWeight: "700" as const,
     lineHeight: 20,
   },
   caption: {
-    fontSize: 12,
-    fontWeight: '600' as const,
-    lineHeight: 16,
+    fontSize: 14,
+    fontWeight: "600" as const,
+    lineHeight: 20,
     letterSpacing: 0.3,
   },
   eyebrow: {
-    fontSize: 11,
-    fontWeight: '700' as const,
-    lineHeight: 14,
+    fontSize: 14,
+    fontWeight: "700" as const,
+    lineHeight: 20,
     letterSpacing: 0.8,
-    textTransform: 'uppercase' as const,
+    textTransform: "uppercase" as const,
   },
 };
 
@@ -199,4 +203,21 @@ export const OPACITY = {
   subtle: 0.6,
 };
 // Expo template compatibility; app components use the shared COLORS palette.
-export const Colors = {light:{text:COLORS.text,background:COLORS.background,tint:COLORS.primary,icon:COLORS.gray,tabIconDefault:COLORS.gray,tabIconSelected:COLORS.primary},dark:{text:'#fff',background:'#191919',tint:'#e5b9bc',icon:'#bbb',tabIconDefault:'#bbb',tabIconSelected:'#e5b9bc'}};
+export const Colors = {
+  light: {
+    text: COLORS.text,
+    background: COLORS.background,
+    tint: COLORS.primary,
+    icon: COLORS.gray,
+    tabIconDefault: COLORS.gray,
+    tabIconSelected: COLORS.primary,
+  },
+  dark: {
+    text: "#fff",
+    background: "#191919",
+    tint: "#e5b9bc",
+    icon: "#bbb",
+    tabIconDefault: "#bbb",
+    tabIconSelected: "#e5b9bc",
+  },
+};

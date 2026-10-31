@@ -1,2 +1,5 @@
-import TransactionHistory from '@/components/history/transaction-history';
-export default function ParentTransactions(){return <TransactionHistory role="parent"/>}
+import { Redirect, useLocalSearchParams } from "expo-router";
+export default function LegacyRoute() {
+  const params = useLocalSearchParams();
+  return <Redirect href={{ pathname: "/parent/(tabs)/history", params }} />;
+}

@@ -1,126 +1,168 @@
+export type TourAction =
+  | "queue-type"
+  | "service"
+  | "quantity"
+  | "period"
+  | "year"
+  | "requirements"
+  | "review";
 export type TourStep = {
   screen: string;
   target: string;
   title: string;
   body: string;
   phase?: string;
+  action?: TourAction;
+  task?: string;
 };
-const step = (
-  screen: string,
-  title: string,
-  body: string,
-  target = "portal",
-  phase?: string,
-): TourStep => ({ screen, target, title, body, phase });
-/** Rebuilt route map. Practice is isolated and can never submit a real transaction. */
+/** V3 guided actions are all isolated in practice; real transactions are never submitted. */
 export function clientTourSteps(role: "student" | "parent"): TourStep[] {
   return [
-    step(
-      `${role}/home`,
-      "Welcome to UniQueue",
-      "Use the original mobile navigation. Students have Home, Transactions and Profile; parents have Home, Add, History, Alerts and Profile. The help icon replays this guide.",
-    ),
-    step(
-      `${role}/home`,
-      role === "parent" ? "Choose the right child" : "Your active tickets",
-      role === "parent"
-        ? "Select a linked child to inspect all their active and reserved tickets. Each child has separate queues and records."
-        : "Home shows every active ticket, including reserved tickets waiting on another office. Open a ticket for its live estimate and controls.",
-    ),
+    {
+      screen: `${role}/home`,
+      target: "help",
+      title: "A guide you can try",
+      body: "Follow the highlighted controls. Queue practice uses sample data and never creates a real ticket.",
+    },
+    {
+      screen: `${role}/home`,
+      target: "dashboard",
+      title:
+        role === "parent" ? "Your family’s queues" : "Your queue at a glance",
+      body:
+        role === "parent"
+          ? "Each linked child has separate tickets and records. Choose the correct child before queueing."
+          : "Home keeps your active tickets, queue estimates and available offices together.",
+    },
     ...(role === "parent"
       ? [
-          step(
-            "parent/add-child",
-            "Add or link a child",
-            "Add creates an Elementary profile. Link existing uses an exact school-record name and SR Code. Activated accounts require student approval at every level.",
-          ),
+          {
+            screen: "parent/add-child",
+            target: "header",
+            title: "Add or link a child",
+            body: "Create an Elementary profile or request permission to link an existing student account.",
+          },
         ]
       : []),
-    step(
-      role === "student" ? "student/offices" : "parent/queue",
-      "Choose an office or event",
-      "Availability, cutoff times, capacity and parent-queue rules come from the server. Events may span several offices. Request unavailable services from the button below the office list.",
-    ),
-    step(
-      "client-practice",
-      "Practice safely",
-      "These are examples only. No ticket, payment, feedback or profile update can be submitted.",
-      "queue-type",
-      "type",
-    ),
-    step(
-      "client-practice",
-      "Queue type",
-      "Walk-in joins the queue in person. An appointment requires your physical appointment slip.",
-      "queue-type",
-      "type",
-    ),
-    step(
-      "client-practice",
-      "Services and quantities",
-      "Select your services and copy counts. Some services have required options and academic details for every copy.",
-      "service-1",
-      "services",
-    ),
-    step(
-      "client-practice",
-      "Academic details",
-      "Choose a period and school year for each requested copy.",
-      "academic-1",
-      "academic",
-    ),
-    step(
-      "client-practice",
-      "Requirements",
-      "Confirm the listed requirements. Appointment holders confirm their appointment slip instead.",
-      "requirements",
-      "requirements",
-    ),
-    step(
-      "client-practice",
-      "Review before joining",
-      "Check services, options, copies, fees and priority. Unknown fees are not shown as a complete total. Parent queueing also requires physical ID / authorization confirmation.",
-      "review",
-      "review",
-    ),
-    step(
-      "client-practice",
-      "Your ticket",
-      "Follow the assigned window when called. ETA can change. Reserved tickets activate after the previous office completes. Skipped tickets need a rejoin or cancel response.",
-      "ticket",
-      "ticket",
-    ),
-    step(
-      `${role}/live-monitor`,
-      "Live office monitor",
-      "Choose an office and window. Expand tickets for details. Manage office visibility on this device; chimes are optional and separate from system notifications.",
-    ),
-    step(
-      `${role}/history`,
-      "History and feedback",
-      "Search and filter tickets, open timelines and read submitted CSM comments. Pending CSM for an office must be completed before queueing there again.",
-    ),
-    step(
-      "client-practice",
-      "Official CSM",
-      "CSM uses the official multi-section form, not a star-only rating. Practice cannot submit a response.",
-      "csm",
-      "csm",
-    ),
-    step(
-      `${role}/notifications`,
-      "Notifications",
-      "Unread updates include queue calls and account notices. Open the associated ticket or mark the notice as read.",
-    ),
-    step(
-      `${role}/profile`,
-      "Profile and account security",
-      "Edit your profile, change your password, and manage linked accounts. Unlinking ends parent access but does not delete profiles or history.",
-    ),
-    step(
-      `${role}/home`,
-      "You’re ready",
-      "Practice created no records. Replay Help whenever you need a refresher. Sign out on shared devices and only approve guardians you recognise.",
-    ),
+    {
+      screen: role === "parent" ? "parent/queue" : "student/offices",
+      target: "offices",
+      title: "Start with an office",
+      body: "Check availability and office hours before joining. Events may include several offices.",
+    },
+    {
+      screen: "client-practice",
+      target: "queue-type-walkin",
+      phase: "type",
+      title: "Choose how you’ll queue",
+      body: "Walk-in joins the office queue. Appointment is for a scheduled visit with a physical slip.",
+      action: "queue-type",
+      task: "Tap the Walk-in card to try it.",
+    },
+    {
+      screen: "client-practice",
+      target: "service-1",
+      phase: "services",
+      title: "Pick a service",
+      body: "Select a service card to reveal its copies and academic details.",
+      action: "service",
+      task: "Select Document Request (example).",
+    },
+    {
+      screen: "client-practice",
+      target: "quantity-1",
+      phase: "services",
+      title: "Set your copy count",
+      body: "The + and − controls update the number of copies you’re requesting.",
+      action: "quantity",
+      task: "Use + to request two copies.",
+    },
+    {
+      screen: "client-practice",
+      target: "period-1",
+      phase: "academic",
+      title: "Choose an academic period",
+      body: "Use “same details for all copies” when both copies cover the same period.",
+      action: "period",
+      task: "Select an academic period.",
+    },
+    {
+      screen: "client-practice",
+      target: "school-year-1",
+      phase: "academic",
+      title: "Choose the school year",
+      body: "Academic details are checked for every copy before a real request can continue.",
+      action: "year",
+      task: "Select a school year.",
+    },
+    {
+      screen: "client-practice",
+      target: "requirements",
+      phase: "requirements",
+      title: "Prepare your requirements",
+      body: "Only confirm documents you will bring to the office.",
+      action: "requirements",
+      task: "Check both sample requirements.",
+    },
+    {
+      screen: "client-practice",
+      target: "review-summary",
+      phase: "review",
+      title: "Check your request",
+      body: "Check the office, copies, academic details and estimated total before confirming.",
+    },
+    {
+      screen: "client-practice",
+      target: "review-action",
+      phase: "review",
+      title: "Review, then try it",
+      body: "Review your selections and create a sample ticket. This action cannot submit a real queue.",
+      action: "review",
+      task: "Tap Create practice ticket.",
+    },
+    {
+      screen: "client-practice",
+      target: "ticket",
+      phase: "ticket",
+      title: "This is your sample ticket",
+      body: "A real ticket shows the queue number, assigned window and live status. This one is only a preview.",
+    },
+    {
+      screen: `${role}/live-monitor`,
+      target: "header",
+      title: "Watch the live monitor",
+      body: "Choose offices and windows to follow. Monitor chimes are optional and separate from device notifications.",
+    },
+    {
+      screen: `${role}/history`,
+      target: "header",
+      title: "Find past transactions",
+      body: "Search and filter your tickets, open timelines, and read submitted CSM feedback.",
+    },
+    {
+      screen: "client-practice",
+      target: "csm",
+      phase: "csm",
+      title: "Official feedback form",
+      body: "A completed transaction opens the official multi-section CSM survey, not just a star rating. This preview never submits feedback.",
+    },
+    {
+      screen: `${role}/notifications`,
+      target: "header",
+      title: "Never miss an update",
+      body: "The inbox keeps queue calls and account notices together. Open a ticket or mark a notice as read.",
+    },
+    {
+      screen: `${role}/profile`,
+      target: "header",
+      title: "Your account controls",
+      body: "Edit your profile, manage linked accounts, and choose optional interface sounds and haptics.",
+    },
+    {
+      screen: `${role}/home`,
+      target: "help",
+      title: "Ready for the real thing",
+      body: "Practice created no records. Tap Finish to return to the app, or replay this guide from Help.",
+    },
   ];
 }

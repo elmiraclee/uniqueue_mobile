@@ -156,7 +156,7 @@ class UniqueueWidgetProvider : AppWidgetProvider() {
           readTimeout = 8000
           doOutput = true
           setRequestProperty("Content-Type", "application/json")
-      setRequestProperty("Authorization", "Bearer " + p.getString("authorization", "").orEmpty())
+      setRequestProperty("Authorization", "Bearer " + WidgetCredentials.read(context))
         }
         connection.outputStream.use { it.write("{\"ticket_id\":$ticketId,\"queue_id\":$ticketId}".toByteArray()) }
         if (connection.responseCode == 401 || connection.responseCode == 403) {

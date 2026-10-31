@@ -19,8 +19,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { COLORS } from "@/constants/theme";
 import { ASSET_BASE_URL } from "@/constants/backend";
 import { TourTarget } from "@/components/tutorial/tutorial";
-import { dashboardStyles as d } from "./original-student-styles";
-import { parentStyles as ps } from "./original-parent-styles";
+import { dashboardStyles as d } from "./dashboard-styles";
+import { parentStyles as ps } from "./parent-styles";
 import { OfficesContent } from "./offices";
 import { updateLiveTicketWidget } from "@/utils/live-ticket-widget";
 import FeedbackModal from "@/components/feedback/feedback-modal";
@@ -40,7 +40,7 @@ export default function HomeScreen() {
         p.role === "parent"
           ? { parent_id: p.user.id }
           : { student_id: p.user.id };
-      const [offices, feedback, queues] = await Promise.all([
+      const [offices, feedback, queues, links] = await Promise.all([
         request("get_offices.php", undefined, signal),
         request(
           `${p.role === "parent" ? "get_parent_pending_feedback.php" : "get_pending_feedback.php"}?${query(idFields)}`,
@@ -75,6 +75,13 @@ export default function HomeScreen() {
             }));
           }),
         ).then((groups) => ({ queues: groups.flat() })),
+        p.role === "parent"
+          ? request(
+              `get_parent_link_requests.php?parent_id=${p.user.id}`,
+              undefined,
+              signal,
+            )
+          : Promise.resolve({ requests: [] }),
       ]);
       const liveQueues = await Promise.all(
         (queues.queues || []).map(async (q: any) => {
@@ -96,6 +103,7 @@ export default function HomeScreen() {
       );
       return {
         offices,
+        pendingLinks: links.requests || [],
         feedback:
           p.role === "parent"
             ? feedback.pending || []
@@ -160,7 +168,12 @@ export default function HomeScreen() {
     >
       <TourTarget id="dashboard">
         <Text
-          style={{ fontSize: 16, fontWeight: "700", color: COLORS.primary }}
+          style={{
+            fontSize: 14,
+            lineHeight: 20,
+            fontWeight: "600",
+            color: COLORS.gray,
+          }}
         >
           Queue overview
         </Text>
@@ -168,50 +181,54 @@ export default function HomeScreen() {
       {p.role === "student" ? (
         <View style={d.greetingCard}>
           <View style={d.profileRow}>
-            <View style={d.profileIcon}>
-              {photo ? (
-                <Image source={{ uri: photo }} style={d.profileImage} />
-              ) : (
-                <Ionicons name="person" size={24} color={COLORS.primary} />
-              )}
-            </View>
             <View style={d.profileText}>
               <Text style={d.greetingLabel}>{greeting}</Text>
               <Text style={d.studentName}>{fullName}</Text>
             </View>
-            <View style={d.todayChip}>
-              <Ionicons name="calendar-outline" size={14} color="#fff" />
-              <Text style={d.todayChipText}>
-                {new Date().toLocaleDateString("en-US", {
-                  month: "short",
-                  day: "numeric",
-                })}
-              </Text>
+            <View style={d.profileIcon}>
+              {photo ? (
+                <Image source={{ uri: photo }} style={d.profileImage} />
+              ) : (
+                <Ionicons
+                  name="person-outline"
+                  size={24}
+                  color={COLORS.white}
+                />
+              )}
             </View>
           </View>
           <View style={d.greetingDivider} />
           <View style={d.bottomRow}>
             <View style={d.portalRow}>
               <Ionicons
-                name="school-outline"
+                name="calendar-outline"
                 size={15}
-                color="rgba(255,255,255,.85)"
+                color="rgba(255,255,255,0.85)"
               />
-              <Text style={d.subtitle}>UniQueue Student Portal</Text>
+              <Text style={d.subtitle}>
+                {new Date().toLocaleDateString(undefined, {
+                  month: "short",
+                  day: "numeric",
+                })}
+              </Text>
             </View>
             <View
               style={[
                 d.statusPill,
-                { backgroundColor: "rgba(255,255,255,.14)" },
+                {
+                  backgroundColor: "rgba(255,255,255,0.16)",
+                },
               ]}
             >
               <View
                 style={[
                   d.statusDot,
-                  { backgroundColor: current ? "#FCEED8" : "#DFF6DD" },
+                  {
+                    backgroundColor: current ? COLORS.white : "#9EE5BF",
+                  },
                 ]}
               />
-              <Text style={d.statusText}>
+              <Text style={[d.statusText, { color: COLORS.white }]}>
                 {current ? "On queue" : "Ready to queue"}
               </Text>
             </View>
@@ -256,6 +273,28 @@ export default function HomeScreen() {
         />
       )}
       {r.loading && <ActivityIndicator color={COLORS.primary} />}
+      {p.role === "parent" && !!r.data?.pendingLinks.length && (
+        <View
+          style={{
+            gap: 12,
+            padding: 20,
+            backgroundColor: COLORS.white,
+            borderWidth: 1,
+            borderColor: COLORS.border,
+            borderRadius: 12,
+          }}
+        >
+          <Heading>Pending parent links · {r.data.pendingLinks.length}</Heading>
+          <Copy>
+            Waiting for student approval. No access is granted until approved.
+          </Copy>
+          <Button
+            title="View pending links"
+            secondary
+            onPress={() => router.push("/parent/profile")}
+          />
+        </View>
+      )}
       {!!r.data?.feedback.length && <Heading>Complete your CSM</Heading>}
       {(r.data?.feedback || [])
         .filter(
@@ -305,7 +344,7 @@ export default function HomeScreen() {
                         {(c.first_name?.[0] || "") + (c.last_name?.[0] || "")}
                       </Text>
                     </View>
-                    <View style={{ flex: 1, gap: 3 }}>
+                    <View style={{ flex: 1, minWidth: 150, gap: 3 }}>
                       <Text style={ps.cardTitle}>
                         {c.first_name} {c.last_name}
                       </Text>
@@ -466,19 +505,38 @@ export default function HomeScreen() {
                     <Status status={t.status} />
                   </View>
                   <View style={d.queueBody}>
-                    <Text style={d.queueNumberLarge}>{t.queue_number}</Text>
-                    <View style={d.queueDivider} />
-                    <View style={d.queueInfoCol}>
-                      <Text style={d.queueOffice}>{t.office_name}</Text>
-                      <Text style={d.queueWindow}>
-                        {t.window_name || "Not yet assigned"}
-                      </Text>
+                    <View style={{ flex: 1, minWidth: 0, gap: 6 }}>
+                      <Text style={d.queueNumberLarge}>{t.queue_number}</Text>
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          flexWrap: "wrap",
+                          alignItems: "center",
+                          gap: 8,
+                        }}
+                      >
+                        <Text style={d.queueOffice}>{t.office_name}</Text>
+                        <Text style={d.queueWindow}>
+                          {t.window_name || "Not yet assigned"}
+                        </Text>
+                      </View>
                     </View>
-                    <Ionicons
-                      name="chevron-forward"
-                      size={18}
-                      color={COLORS.gray}
-                    />
+                    <View
+                      style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: 18,
+                        backgroundColor: COLORS.primarySoft,
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Ionicons
+                        name="arrow-forward"
+                        size={18}
+                        color={COLORS.primary}
+                      />
+                    </View>
                   </View>
                   {t.status !== "reserved" && (
                     <View style={d.liveGrid}>

@@ -1,3 +1,4 @@
+import FeedbackPreferences from "@/components/ui/feedback-preferences";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -415,7 +416,7 @@ export default function ProfileScreen() {
               height: 72,
               width: 72,
               borderRadius: 36,
-              backgroundColor: "#f8eeef",
+              backgroundColor: COLORS.primarySoft,
               alignItems: "center",
               justifyContent: "center",
               overflow: "hidden",
@@ -451,8 +452,9 @@ export default function ProfileScreen() {
               style={{
                 fontSize: 22,
                 lineHeight: 28,
+                letterSpacing: -0.5,
                 fontWeight: "700",
-                color: COLORS.primary,
+                color: COLORS.text,
               }}
             >
               {profile?.full_name ||
@@ -646,17 +648,18 @@ export default function ProfileScreen() {
           />
         )}
       </Card>
+      <FeedbackPreferences />
       <Relationships />
       <Button
-        title="Sign out"
+        title="Logout"
         secondary
         disabled={busy}
         onPress={() =>
           ui.confirm({
-            title: "Sign out of this device?",
+            title: "Logout from this device?",
             message:
               "Your account remains active. This device’s stored session and live-ticket widget will be cleared.",
-            confirmLabel: "Sign out",
+            confirmLabel: "Logout",
             onConfirm: () => void logoutClient(),
           })
         }

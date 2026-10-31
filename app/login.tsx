@@ -1,7 +1,7 @@
-import { clientAlert } from '@/components/client/client-ui';
-import { clientFetch } from '@/utils/client-fetch';
-import { getSessionToken } from '@/utils/session-storage';
-import { useEffect, useState } from 'react';
+import { clientAlert } from "@/components/client/client-ui";
+import { clientFetch } from "@/utils/client-fetch";
+import { getSessionToken } from "@/utils/session-storage";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -14,22 +14,19 @@ import {
   StyleSheet,
   Text,
   View,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useRouter } from 'expo-router';
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useRouter } from "expo-router";
 
-import CustomButton from '../components/ui/custom-button';
-import GoogleLogo from '../components/ui/google-logo';
-import CustomInput from '../components/ui/custom-input';
-import { API } from '../constants/backend';
-import { COLORS } from '../constants/theme';
-import {
-  completeGoogleAuth,
-  useGoogleAuthRequest,
-} from '@/utils/google-auth';
-import { registerPushToken } from '@/components/notification/push';
+import CustomButton from "../components/ui/custom-button";
+import GoogleLogo from "../components/ui/google-logo";
+import CustomInput from "../components/ui/custom-input";
+import { API } from "../constants/backend";
+import { COLORS } from "../constants/theme";
+import { completeGoogleAuth, useGoogleAuthRequest } from "@/utils/google-auth";
+import { registerPushToken } from "@/components/notification/push";
 
 export default function Login() {
   const router = useRouter();
@@ -41,10 +38,10 @@ export default function Login() {
     unavailableReason: googleUnavailableReason,
   } = useGoogleAuthRequest();
 
-  const [srCode, setSrCode] = useState('');
+  const [srCode, setSrCode] = useState("");
   const [refreshing, setRefreshing] = useState(false);
-  const [password, setPassword] = useState('');
-  const [loginRole, setLoginRole] = useState<'student' | 'parent'>('student');
+  const [password, setPassword] = useState("");
+  const [loginRole, setLoginRole] = useState<"student" | "parent">("student");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
@@ -54,12 +51,12 @@ export default function Login() {
     let cancelled = false;
     (async () => {
       try {
-        const user = await AsyncStorage.getItem('user');
-        const role = await AsyncStorage.getItem('role');
+        const user = await AsyncStorage.getItem("user");
+        const role = await AsyncStorage.getItem("role");
         const token = await getSessionToken();
         // Match the protected layouts: cached user data alone is not a session.
         if (!cancelled && user && token) {
-          router.replace(role === 'parent' ? '/parent/home' : '/student/home');
+          router.replace(role === "parent" ? "/parent/home" : "/student/home");
           return;
         }
       } catch {
@@ -77,59 +74,67 @@ export default function Login() {
   useEffect(() => {
     if (!googleResponse) return;
 
-    if (googleResponse.type === 'success') {
+    if (googleResponse.type === "success") {
       (async () => {
         setGoogleLoading(true);
         try {
-          const result = await completeGoogleAuth(googleResponse.authentication);
+          const result = await completeGoogleAuth(
+            googleResponse.authentication,
+          );
           if (!result.ok) {
-            clientAlert('Google Sign-In', result.message);
+            clientAlert("Google Sign-In", result.message);
             return;
           }
-          if (result.action === 'login') {
-            await AsyncStorage.setItem('user', JSON.stringify(result.user));
-            await AsyncStorage.setItem('role', 'student');
+          if (result.action === "login") {
+            await AsyncStorage.setItem("user", JSON.stringify(result.user));
+            await AsyncStorage.setItem("role", "student");
             const id = Number(result.user?.id ?? result.user?.student_id ?? 0);
-            if (id) await registerPushToken({ role: 'student', id });
-            router.replace('/student/home');
+            if (id) await registerPushToken({ role: "student", id });
+            router.replace("/student/home");
             return;
           }
           // New Google account → finish signup (same as web)
-          await AsyncStorage.setItem('google_pending', JSON.stringify(result.google));
-          router.push('/signup');
+          await AsyncStorage.setItem(
+            "google_pending",
+            JSON.stringify(result.google),
+          );
+          router.push("/signup");
         } catch (e) {
-          console.log('Google login error', e);
-          clientAlert('Google Sign-In', 'Something went wrong. Please try again.');
+          console.log("Google login error", e);
+          clientAlert(
+            "Google Sign-In",
+            "Something went wrong. Please try again.",
+          );
         } finally {
           setGoogleLoading(false);
         }
       })();
-    } else if (googleResponse.type === 'error') {
+    } else if (googleResponse.type === "error") {
       clientAlert(
-        'Google Sign-In',
-        googleResponse.error?.message || 'Sign-in was cancelled or failed.'
+        "Google Sign-In",
+        googleResponse.error?.message || "Sign-in was cancelled or failed.",
       );
     }
   }, [googleResponse]);
 
   const handleLogin = async () => {
     if (!srCode.trim() || !password.trim()) {
-      clientAlert('Error', 'Please fill in all fields.');
+      clientAlert("Error", "Please fill in all fields.");
       return;
     }
 
     try {
       setLoading(true);
 
-      const endpoint = loginRole === 'parent' ? API.parentLogin : API.login;
+      const endpoint = loginRole === "parent" ? API.parentLogin : API.login;
       const body =
-        loginRole === 'parent'
+        loginRole === "parent"
           ? { email: srCode.trim(), password }
           : { username: srCode.trim(), password };
 
       const response = await clientFetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
 
@@ -138,31 +143,28 @@ export default function Login() {
       try {
         data = JSON.parse(rawText);
       } catch (e) {
-        clientAlert('Server Error', 'Invalid JSON response from server');
+        clientAlert("Server Error", "Invalid JSON response from server");
         return;
       }
 
       if (!data.success) {
-        clientAlert('Login Failed', data.message || 'Invalid credentials');
+        clientAlert("Login Failed", data.message || "Invalid credentials");
         return;
       }
 
-      await AsyncStorage.setItem('user', JSON.stringify(data.user));
-      const signedInRole = data.role === 'parent' ? 'parent' : loginRole;
-      await AsyncStorage.setItem('role', signedInRole);
+      await AsyncStorage.setItem("user", JSON.stringify(data.user));
+      const signedInRole = data.role === "parent" ? "parent" : loginRole;
+      await AsyncStorage.setItem("role", signedInRole);
       const ownerId = Number(
-        data.user?.id ??
-          data.user?.student_id ??
-          data.user?.parent_id ??
-          0,
+        data.user?.id ?? data.user?.student_id ?? data.user?.parent_id ?? 0,
       );
       if (ownerId) {
         await registerPushToken({ role: signedInRole, id: ownerId });
       }
-      router.replace(loginRole === 'parent' ? '/parent/home' : '/student/home');
+      router.replace(loginRole === "parent" ? "/parent/home" : "/student/home");
     } catch (error) {
-      console.log('LOGIN ERROR:', error);
-      clientAlert('Connection Error', 'Cannot connect to server');
+      console.log("LOGIN ERROR:", error);
+      clientAlert("Connection Error", "Cannot connect to server");
     } finally {
       setLoading(false);
     }
@@ -170,10 +172,7 @@ export default function Login() {
 
   const handleGooglePress = async () => {
     if (!googleReady || !googleRequest) {
-      clientAlert(
-        'Google Sign-In',
-        googleUnavailableReason
-      );
+      clientAlert("Google Sign-In", googleUnavailableReason);
       return;
     }
     try {
@@ -181,7 +180,7 @@ export default function Login() {
       await promptGoogle();
     } catch (e) {
       console.log(e);
-      clientAlert('Google Sign-In', 'Could not open Google sign-in.');
+      clientAlert("Google Sign-In", "Could not open Google sign-in.");
     } finally {
       setGoogleLoading(false);
     }
@@ -194,7 +193,12 @@ export default function Login() {
 
   if (checkingSession) {
     return (
-      <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+      <SafeAreaView
+        style={[
+          styles.container,
+          { justifyContent: "center", alignItems: "center" },
+        ]}
+      >
         <ActivityIndicator size="large" color={COLORS.primary} />
       </SafeAreaView>
     );
@@ -204,8 +208,8 @@ export default function Login() {
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView
         style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 40 : 0}
       >
         <ScrollView
           contentContainerStyle={styles.scrollContainer}
@@ -215,49 +219,75 @@ export default function Login() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              colors={['#660810']}
+              colors={["#660810"]}
               tintColor="#660810"
             />
           }
         >
           <View style={styles.card}>
             <Image
-              source={require('../assets/images/logo.png')}
+              source={require("../assets/images/logo.png")}
               style={styles.logo}
             />
 
             <Text style={styles.title}>UniQueue</Text>
             <Text style={styles.subtitle}>
-              {loginRole === 'parent'
-                ? 'Sign in as Parent / Guardian'
-                : 'Sign in using your SR-Code'}
+              {loginRole === "parent"
+                ? "Sign in as Parent / Guardian"
+                : "Sign in using your SR-Code"}
             </Text>
 
             <View style={styles.roleRow}>
               <Pressable
-                style={[styles.roleChip, loginRole === 'student' && styles.roleChipActive]}
-                onPress={() => setLoginRole('student')}
+                style={[
+                  styles.roleChip,
+                  loginRole === "student" && styles.roleChipActive,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Student sign in"
+                accessibilityState={{ selected: loginRole === "student" }}
+                onPress={() => setLoginRole("student")}
               >
-                <Text style={[styles.roleChipText, loginRole === 'student' && styles.roleChipTextActive]}>
+                <Text
+                  style={[
+                    styles.roleChipText,
+                    loginRole === "student" && styles.roleChipTextActive,
+                  ]}
+                >
                   Student
                 </Text>
               </Pressable>
               <Pressable
-                style={[styles.roleChip, loginRole === 'parent' && styles.roleChipActive]}
-                onPress={() => setLoginRole('parent')}
+                style={[
+                  styles.roleChip,
+                  loginRole === "parent" && styles.roleChipActive,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Parent sign in"
+                accessibilityState={{ selected: loginRole === "parent" }}
+                onPress={() => setLoginRole("parent")}
               >
-                <Text style={[styles.roleChipText, loginRole === 'parent' && styles.roleChipTextActive]}>
+                <Text
+                  style={[
+                    styles.roleChipText,
+                    loginRole === "parent" && styles.roleChipTextActive,
+                  ]}
+                >
                   Parent
                 </Text>
               </Pressable>
             </View>
 
             <CustomInput
-              placeholder={loginRole === 'parent' ? 'Email or contact number' : 'SR-Code'}
+              placeholder={
+                loginRole === "parent" ? "Email or contact number" : "SR-Code"
+              }
               value={srCode}
               onChangeText={setSrCode}
               autoCapitalize="none"
-              keyboardType={loginRole === 'parent' ? 'email-address' : 'default'}
+              keyboardType={
+                loginRole === "parent" ? "email-address" : "default"
+              }
             />
 
             <CustomInput
@@ -268,25 +298,77 @@ export default function Login() {
             />
 
             <CustomButton
-              title={loading ? 'Logging in...' : 'Login'}
+              title={loading ? "Logging in..." : "Login"}
               onPress={handleLogin}
             />
 
-            <Pressable onPress={() => router.push('/forgot-password')} style={{ marginTop: 12, alignItems: 'center' }}>
-              <Text style={{ color: COLORS.primary, fontWeight: '600' }}>Forgot password?</Text>
+            <Pressable
+              onPress={() => router.push("/forgot-password")}
+              style={{
+                marginTop: 4,
+                minHeight: 44,
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+            >
+              <Text
+                style={{
+                  color: COLORS.primary,
+                  fontWeight: "600",
+                  fontSize: 14,
+                  lineHeight: 20,
+                  textAlign: "center",
+                }}
+              >
+                Forgot password?
+              </Text>
             </Pressable>
 
-            {loginRole === 'student' && (
-              <Pressable onPress={() => router.push('/activate-account')} style={{ marginTop: 12, alignItems: 'center' }}>
-                <Text style={{ color: COLORS.primary, fontWeight: '600' }}>
+            {loginRole === "student" && (
+              <Pressable
+                onPress={() => router.push("/activate-account")}
+                style={{
+                  marginTop: 4,
+                  minHeight: 44,
+                  justifyContent: "center",
+                  alignItems: "center",
+                }}
+              >
+                <Text
+                  style={{
+                    color: COLORS.primary,
+                    fontWeight: "600",
+                    fontSize: 14,
+                    lineHeight: 20,
+                    textAlign: "center",
+                  }}
+                >
                   Parent made your profile? Activate your account
                 </Text>
               </Pressable>
             )}
 
-            {loginRole === 'parent' && (
-              <Pressable onPress={() => router.push('/parent-signup')} style={{ marginTop: 12, alignItems: 'center' }}>
-                <Text style={{ color: COLORS.primary, fontWeight: '600' }}>Create parent account</Text>
+            {loginRole === "parent" && (
+              <Pressable
+                onPress={() => router.push("/parent-signup")}
+                style={{
+                  marginTop: 4,
+                  minHeight: 44,
+                  justifyContent: "center",
+                  alignItems: "center",
+                }}
+              >
+                <Text
+                  style={{
+                    color: COLORS.primary,
+                    fontWeight: "600",
+                    fontSize: 14,
+                    lineHeight: 20,
+                    textAlign: "center",
+                  }}
+                >
+                  Create parent account
+                </Text>
               </Pressable>
             )}
 
@@ -312,14 +394,16 @@ export default function Login() {
               ) : (
                 <View style={styles.googleButtonInner}>
                   <GoogleLogo size={20} />
-                  <Text style={styles.googleButtonText}>Continue with Google</Text>
+                  <Text style={styles.googleButtonText}>
+                    Continue with Google
+                  </Text>
                 </View>
               )}
             </Pressable>
 
-            <Pressable onPress={() => router.push('/signup')}>
+            <Pressable onPress={() => router.push("/signup")}>
               <Text style={styles.linkText}>
-                Don’t have an account?{' '}
+                Don’t have an account?{" "}
                 <Text style={styles.linkTextStrong}>Sign Up</Text>
               </Text>
             </Pressable>
@@ -335,123 +419,126 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
-  scrollContainer: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    padding: 15,
-  },
+  scrollContainer: { flexGrow: 1, justifyContent: "center", padding: 24 },
   roleRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 16,
+    flexDirection: "row",
+    gap: 4,
+    padding: 4,
+    backgroundColor: COLORS.lightGray,
+    borderRadius: 12,
+    marginBottom: 24,
   },
   roleChip: {
+    minHeight: 46,
+    justifyContent: "center",
     flex: 1,
     paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: '#e5e7eb',
-    alignItems: 'center',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "transparent",
+    alignItems: "center",
   },
   roleChipActive: {
-    borderColor: '#660810',
-    backgroundColor: 'rgba(102,8,16,0.08)',
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.primary,
   },
   roleChipText: {
-    fontWeight: '600',
-    color: '#6b7280',
+    fontSize: 16,
+    lineHeight: 24,
+    fontWeight: "600",
+    color: "#6b7280",
   },
-  roleChipTextActive: {
-    color: '#660810',
-  },
+  roleChipTextActive: { color: COLORS.white },
   card: {
+    width: "100%",
+    maxWidth: 480,
+    alignSelf: "center",
     backgroundColor: COLORS.white,
-    padding: 25,
-    borderRadius: 20,
-    borderTopWidth: 3,
+    padding: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderTopWidth: 4,
     borderTopColor: COLORS.primary,
-    elevation: 4,
+    borderColor: COLORS.border,
   },
   logo: {
-    width: 110,
-    height: 110,
-    resizeMode: 'contain',
-    alignSelf: 'center',
-    marginBottom: 10,
+    width: 60,
+    height: 66,
+    resizeMode: "contain",
+    alignSelf: "flex-start",
+    marginBottom: 24,
   },
   title: {
-    fontSize: 35,
-    fontWeight: '700',
-    color: COLORS.primary,
-    textAlign: 'center',
+    fontSize: 30,
+    lineHeight: 38,
+    letterSpacing: -1,
+    fontWeight: "700",
+    color: COLORS.text,
+    textAlign: "left",
   },
   subtitle: {
-    textAlign: 'center',
+    fontSize: 16,
+    lineHeight: 24,
+    textAlign: "left",
     color: COLORS.gray,
-    marginBottom: 30,
-    marginTop: 10,
+    marginBottom: 28,
+    marginTop: 8,
   },
   linkText: {
-    textAlign: 'center',
+    textAlign: "center",
     marginTop: 20,
     color: COLORS.gray,
     fontSize: 15,
   },
   linkTextStrong: {
     color: COLORS.primary,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   orRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     marginVertical: 18,
     gap: 12,
   },
   orLine: {
     flex: 1,
     height: StyleSheet.hairlineWidth,
-    backgroundColor: 'rgba(60,64,67,0.25)',
+    backgroundColor: "rgba(60,64,67,0.25)",
   },
   orText: {
-    color: '#5f6368',
-    fontSize: 12,
-    fontWeight: '500',
+    color: "#5f6368",
+    fontSize: 14,
+    fontWeight: "500",
     letterSpacing: 0.2,
   },
   googleButton: {
-    backgroundColor: '#ffffff',
+    backgroundColor: COLORS.white,
     borderWidth: 1,
-    borderColor: '#dadce0',
+    borderColor: COLORS.border,
     borderRadius: 12,
-    paddingVertical: 12,
+    paddingVertical: 13,
     paddingHorizontal: 16,
-    minHeight: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    // soft shadow — matches Material / Google button feel
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 2,
-    elevation: 1,
+    minHeight: 50,
+    alignItems: "center",
+    justifyContent: "center",
   },
   googleButtonPressed: {
-    backgroundColor: '#f8f9fa',
-    borderColor: '#c6c9ce',
+    backgroundColor: "#f8f9fa",
+    borderColor: "#c6c9ce",
   },
   googleButtonDisabled: {
     opacity: 0.55,
   },
   googleButtonInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     gap: 12,
   },
   googleButtonText: {
     fontSize: 15,
-    fontWeight: '600',
-    color: '#3c4043',
+    fontWeight: "600",
+    color: "#3c4043",
     letterSpacing: 0.15,
   },
 });

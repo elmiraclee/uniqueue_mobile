@@ -68,14 +68,14 @@
             "./assets/sounds/alarm.wav",
             "./assets/sounds/notify.wav"
           ],
-          "defaultChannel": "queue_updates_v5"
+          "defaultChannel": "queue_updates_v6"
         }
       ],
       [
         "expo-build-properties",
         {
           "android": {
-            "usesCleartextTraffic": true
+            "usesCleartextTraffic": false
           }
         }
       ],

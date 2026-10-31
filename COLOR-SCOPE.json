@@ -1,0 +1,16 @@
+{
+  "changedMobileFiles": [
+    "constants/theme.ts",
+    "features/portal/dashboard-styles.ts",
+    "features/portal/parent-styles.ts",
+    "features/portal/ui.tsx"
+  ],
+  "backendFilesUnchanged": 1826,
+  "brandTokens": {
+    "primary": "#660810",
+    "primaryLight": "#8A2E35",
+    "primaryDark": "#450509"
+  },
+  "liveSiteVerified": false,
+  "source": "Uploaded web source: public/assets/css/theme.css"
+}

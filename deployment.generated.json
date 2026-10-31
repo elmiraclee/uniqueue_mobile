@@ -1,6 +1,6 @@
 {
-  "profile": "server",
-  "web_url": "http://136.239.220.71/uniqueue/public",
-  "api_url": "http://136.239.220.71/uniqueue/uniqueue_api",
-  "allow_insecure_http": true
+  "profile": "hostinger",
+  "web_url": "https://uni-queue.site/uniqueue/public",
+  "api_url": "https://uni-queue.site/uniqueue/uniqueue_api",
+  "allow_insecure_http": false
 }

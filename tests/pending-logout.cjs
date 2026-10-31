@@ -1,0 +1,14 @@
+/** Isolated native logout race regression: no production requests. */
+const fs=require('fs'),os=require('os'),path=require('path'),assert=require('assert/strict'),Module=require('module'),esbuild=require('esbuild');
+const root=path.resolve(__dirname,'..'),tmp=fs.mkdtempSync(path.join(os.tmpdir(),'uq-logout-'));
+global.__logout={data:{},os:'android'};
+const mocks={storage:`module.exports={getItem:async(k)=>global.__logout.data[k]||null,setItem:async(k,v)=>{global.__logout.data[k]=v},removeItem:async(k)=>{delete global.__logout.data[k]}}`,secure:`exports.getItemAsync=async(k)=>global.__logout.data[k]||null;exports.setItemAsync=async(k,v)=>{global.__logout.data[k]=v};exports.deleteItemAsync=async(k)=>{delete global.__logout.data[k]}`,native:`exports.Platform={get OS(){return global.__logout.os}}`,backend:`exports.API_URL='https://isolated.invalid/api'`};
+for(const [k,v]of Object.entries(mocks))fs.writeFileSync(path.join(tmp,k+'.js'),v);
+const r=esbuild.buildSync({entryPoints:[path.join(root,'utils/session-storage.ts')],bundle:true,write:false,platform:'node',format:'cjs',alias:{'@react-native-async-storage/async-storage':path.join(tmp,'storage.js'),'expo-secure-store':path.join(tmp,'secure.js'),'react-native':path.join(tmp,'native.js'),'@/constants/backend':path.join(tmp,'backend.js')}});
+const filename=path.join(root,'utils/session-storage-test.cjs'),mod=new Module(filename,module);mod.paths=module.paths;mod._compile(r.outputFiles[0].text,filename);const q=mod.exports;const original=global.fetch;
+(async()=>{let checks=0;function test(ok,label){assert(ok,label);checks++;console.log('PASS',label)}
+await q.queuePendingLogout('old-fixture','push-fixture');await q.queuePendingLogout('old-fixture','push-fixture');let key='uniqueue-pending-logout-v1';test(JSON.parse(global.__logout.data[key]).length===1,'same pending logout is deduplicated');
+let started,release;const ready=new Promise(r=>started=r),hold=new Promise(r=>release=r);global.fetch=async()=>{started();await hold;throw Error('isolated offline');};const flush=q.flushPendingLogout();await ready;const added=q.queuePendingLogout('new-fixture','push-new');release();await Promise.all([flush,added]);const rows=JSON.parse(global.__logout.data[key]);test(rows.length===2,'new logout cannot be erased by concurrent retry');test(rows.some(r=>r.token==='old-fixture'),'failed logout remains pending');
+let calls=0;global.fetch=async()=>{calls++;return{ok:true,status:200}};await q.flushPendingLogout();test(calls===2&&!global.__logout.data[key],'successful retry clears both revoked sessions');
+global.__logout.os='web';await q.flushPendingLogout();test(calls===2,'web never flushes stored native credentials');console.log(`${checks} isolated pending-logout checks passed.`);
+})().catch(e=>{console.error(e);process.exitCode=1}).finally(()=>{global.fetch=original;delete global.__logout;fs.rmSync(tmp,{recursive:true,force:true})});

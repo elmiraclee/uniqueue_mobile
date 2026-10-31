@@ -1,0 +1,22 @@
+{
+  "typecheck": "passed",
+  "domain_checks": 41,
+  "resource_lifecycle_checks": 10,
+  "csm_validation_checks": 10,
+  "auth_runtime_checks": 8,
+  "optional_feedback_checks": 9,
+  "route_adapters_checked": 20,
+  "browser_checks": 50,
+  "browser_runtime_errors": [],
+  "viewports_tested": [
+    320,
+    390,
+    1100
+  ],
+  "screenshots": 37,
+  "web_export": "passed",
+  "lint": "0 errors; 104 non-blocking warnings",
+  "production_release_gate": "Blocked by retained original HTTP development deployment, not by duplicate app folders.",
+  "native_device_validation": "Not performed; test sounds, haptics, push delivery, safe areas and large text on physical Android/iOS devices.",
+  "real_backend_validation": "Not performed; browser and domain tests used isolated fixtures."
+}

@@ -25,6 +25,7 @@ type Portal = {
   updateUser: (user: any) => Promise<void>;
 };
 const Context = createContext<Portal | null>(null);
+export const useOptionalPortal = () => useContext(Context);
 export const usePortal = () => {
   const v = useContext(Context);
   if (!v) throw new Error("PortalProvider is required");

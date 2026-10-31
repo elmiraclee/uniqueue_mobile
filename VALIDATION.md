@@ -1,54 +1,21 @@
-# Validation and release handoff
+# Validation — maroon mobile update
 
-## Completed on the delivered source
+## Passed
+- TypeScript: `npm run typecheck` (no errors).
+- Core/domain/resource/CSM/Google-runtime/interface-feedback isolated checks: 78.
+- Foreground queue audio/vibration/event checks: 22. Includes held repeating vibration, stale-owner cleanup, background release/resume, acknowledgement cancellation, audio-timeout independence, and late-audio initialization after OK.
+- Prompt policy isolated checks: 27. Includes 5→1, invalid positions, live-state matching, cancelled/completed/held tickets, next/turn priority, and ticket identity.
+- Empty-queue API checks: 11; pending native logout checks: 5.
+- New maroon/header/countdown browser checks: 73 at 320px and 390px for student and parent. Includes profile menu, cancel Logout, full header Logout/session clearing, countdown acknowledgements, updating an open modal, stale-position rejection, cancelled-ticket dismissal, and actual-turn shortcut.
+- Existing browser UI checks: 42; additional auth/compact states: 8; navigation-label cases: 6 at 320/390/1440px; prior approved state cases: 9; empty-state cases: 8; interactive tutorial checks: 25.
+- Expo Web export and Android JavaScript/Hermes export.
+- Existing release configuration check (configuration only).
+- Lint: 0 errors, 106 warnings remain. This is not a warning-free codebase.
+- Seven key text-color pairs meet WCAG AA normal-text contrast 4.5:1.
+- Backend hash comparison: 1,826 files unchanged. No server/database configuration or queue policy changes.
+- Archives tested for ZIP integrity and checked against known private credential values from the original upload; private environment files and dependencies/build caches are excluded.
 
-| Check | Result |
-| --- | --- |
-| TypeScript `npm run typecheck` | Passed |
-| Domain/request-model tests | 41 passed |
-| Resource lifecycle tests | 10 passed |
-| Official CSM validation tests | 10 passed |
-| Google runtime boundary tests | 8 passed |
-| Route adapter/navigation structure | 20 role adapters, original student/parent tab sets and all queue modes verified |
-| Expo Web export | Passed |
-| Android JavaScript/Hermes export | Passed |
-| iOS JavaScript/Hermes export | Passed |
-| Browser workflows with isolated API fixtures | 38 checks passed, 26 screenshots |
-| ESLint | 0 errors, 94 warnings; warning-free lint is not claimed |
+## Test boundaries
+Browser tests render the real Expo Web application with isolated API fixtures. External requests are intercepted/blocked; these are not live production account/queue tests. The deliberate 503 response in the browser log tests the connection-error UI. Representative changed mobile states were visually inspected individually; the supplied combined preview is a handoff image, not a native-device capture.
 
-This validation is for v2.1.0 (original design restored). The 69 unit/lifecycle checks exercise the actual model/hooks/CSM/auth-boundary code. Browser tests run the real exported Expo Web bundle with deterministic local fixtures; no live login, queue mutation, account edit, payment or API call was performed. External requests are blocked/intercepted by that harness. No server database or physical device was used.
-
-Screenshots in `validation/original-design/` cover student Home/discovery/service-details/requirements/review/success/ticket/retry/history/monitor/preferences/notifications/profile/events/cashier, parent Home/required-child/proof/link/account/empty states, and an 1100px desktop layout, plus the restored student Transactions tab, notification sheet, read-only profile and photo viewer. They were visually inspected against locally rendered original mobile reference screens. The original header, dashboard styling, office cards, avatars and role-specific navigation were restored; clipped tab labels and a duplicate empty-child invitation were corrected. Each browser screenshot also checks horizontal overflow; the suite checks uncaught page errors, actor payloads, duplicate-submit prevention, feedback normalization, notification ID preservation and key interactive transitions.
-
-## Reproduce
-
-```sh
-npm ci
-npm run typecheck
-npm test
-npm run test:navigation
-npm run lint
-npx expo export --platform web
-# Install Playwright Chromium if not already available:
-npx playwright install chromium
-npm run test:ui
-# Or use an installed sandbox/local Chromium:
-PLAYWRIGHT_CHROMIUM_EXECUTABLE=/path/to/chromium npm run test:ui
-npx expo export --platform android --platform ios --output-dir native-export
-npm run check:release
-```
-
-Browser results/screenshots are regenerated in `validation/original-design` (override using `UQ_TEST_OUTPUT`). Exported bundles and node_modules are intentionally not in the source ZIP. Included logs record the validation run, not a deployment certificate.
-
-## Required before production
-
-1. **HTTPS:** replace inherited HTTP API and public-web URLs with your real HTTPS deployment and set `allow_insecure_http=false`; align PHP/mobile profiles and rebuild native clients. Included configuration intentionally fails the release gate.
-2. **Live staging API/database:** exercise both roles and all server-configured school levels, appointments/slots/cutoffs/capacity policies, hybrid offices, cashier paid/unpaid transitions, current/future event steps, reservation dependencies and eligibility failures. Verify actual endpoint response shapes and permissions against your deployed revision.
-3. **Relationships:** test pending/accepted/declined/revoked links across active versus profile-only students, approval races, exact-record matching, child creation, unlinking during an open form, and unauthorized actor attempts.
-4. **Authentication:** verify login/signup/activation/reset/logout, session expiry, Google OAuth with your signing identities/redirects and secure on-device storage. Supply the actual iOS Google client ID if enabling it.
-5. **Native build/device:** produce signed APK/AAB/IPA using your EAS/native toolchain. JavaScript export is not a compiled Android/iOS binary or store approval. Verify keyboard/pickers/date controls, photo permissions/upload, safe areas, hardware Back and real screen-reader behavior.
-6. **Notifications/background/widget:** test push permissions, Firebase/APNs delivery, foreground call prompts, notification deep links, app background/resume/termination, optional monitor sound, and Android widget update/clear behavior on physical devices. Web polling is not proof of background notification delivery.
-7. **Reliability:** test real latency/disconnection, ambiguous server success after timeout (do not blindly retry), duplicate taps, concurrent office/relationship changes and multi-device updates. Cancellable reads are tested, but network cancellation cannot roll back a server write already received.
-8. **Security/release ownership:** verify Firebase/EAS/application identifiers and signing, legal links, backend access enforcement, production logging, rate limits and data protection. Use only synthetic accounts until transport is secured.
-
-Known lint warnings include inherited hook-dependency/unused diagnostics and React compiler effect/ref advice; they remain visible rather than being reported as a clean warning-free audit. No physical-device, live-server or end-to-end production-readiness claim is made.
+**Not performed:** physical-device haptic/audio testing, signed APK/AAB build, Gradle/Kotlin/native compilation, live backend/DB/push E2E validation, iOS native testing, or production deployment. Android export passing establishes JS bundling, not native installability. Follow the device acceptance checklist in README-MAROON-MOBILE.md before deployment. Foreground repeating vibration is implemented, but cannot be demonstrated or guaranteed on a physical phone from browser screenshots or mocked Vibration tests.

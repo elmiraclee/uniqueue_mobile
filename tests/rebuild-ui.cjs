@@ -8,8 +8,7 @@ const { chromium } = require("playwright"),
   { createFixture } = require("./fixtures/api.cjs");
 const root = path.resolve(__dirname, ".."),
   dist = path.join(root, "dist"),
-  out =
-    process.env.UQ_TEST_OUTPUT || path.join(root, "validation/original-design");
+  out = process.env.UQ_TEST_OUTPUT || path.join(root, "validation/ui-refresh");
 if (!fs.existsSync(dist))
   throw Error("Build first: npx expo export --platform web");
 fs.mkdirSync(out, { recursive: true });
@@ -177,8 +176,18 @@ const server = http.createServer((req, res) => {
     await page
       .getByRole("checkbox", { name: "Transcript of Records", exact: true })
       .click();
-    await page.getByLabel("Copies · Transcript of Records").selectOption("2");
-    await page.getByLabel("Option · Transcript of Records").selectOption("2");
+    await page
+      .getByRole("button", {
+        name: "Increase copies · Transcript of Records",
+        exact: true,
+      })
+      .click();
+    await page
+      .getByRole("radio", {
+        name: "Option · Transcript of Records · Official copy",
+        exact: true,
+      })
+      .click();
     for (const combo of await page
       .getByLabel("Academic period", { exact: true })
       .all())
@@ -244,7 +253,7 @@ const server = http.createServer((req, res) => {
     await page
       .getByText("Clear instructions and helpful staff.", { exact: true })
       .waitFor();
-    await page.getByText("Timeline", { exact:true }).scrollIntoViewIfNeeded();
+    await page.getByText("Timeline", { exact: true }).scrollIntoViewIfNeeded();
     await snap("09-history-expanded");
     await go("/student/live-monitor");
     await page.getByText("Now serving", { exact: true }).waitFor();
@@ -356,7 +365,12 @@ const server = http.createServer((req, res) => {
     await b.page
       .getByRole("checkbox", { name: "Transcript of Records", exact: true })
       .click();
-    await b.page.getByLabel("Option · Transcript of Records").selectOption("2");
+    await b.page
+      .getByRole("radio", {
+        name: "Option · Transcript of Records · Official copy",
+        exact: true,
+      })
+      .click();
     await b.page
       .getByLabel("Academic period", { exact: true })
       .selectOption("First Semester");
@@ -430,6 +444,71 @@ const server = http.createServer((req, res) => {
     await desktop.page.getByText("Current Queue", { exact: true }).waitFor();
     await desktop.snap("22-desktop-responsive");
     await desktop.ctx.close();
+    const modern = await session("student");
+    await modern.go("/student/profile");
+    const sound = modern.page.getByRole("switch", { name: "Interface sounds" });
+    await sound.scrollIntoViewIfNeeded();
+    assert.equal(await sound.isChecked(), false);
+    await sound.click();
+    await modern.page.waitForFunction(
+      () =>
+        JSON.parse(localStorage.getItem("uniqueue-ui-feedback-v1") || "{}")
+          .sound === true,
+    );
+    await modern.snap("27-feedback-preferences");
+    await modern.go("/student/profile");
+    await modern.page
+      .getByRole("switch", { name: "Interface sounds" })
+      .scrollIntoViewIfNeeded();
+    assert.equal(
+      await modern.page
+        .getByRole("switch", { name: "Interface sounds" })
+        .isChecked(),
+      true,
+    );
+    await modern.page
+      .getByRole("button", { name: "Logout", exact: true })
+      .click();
+    await modern.page
+      .getByText("Logout from this device?", { exact: true })
+      .waitFor();
+    await modern.snap("28-confirmation-dialog");
+    await modern.page
+      .getByRole("button", { name: "Cancel", exact: true })
+      .click();
+    assert.equal(
+      await modern.page
+        .getByText("Logout from this device?", { exact: true })
+        .count(),
+      0,
+    );
+    modern.state.notifications = [
+      {
+        id: 76,
+        event_id: 'fixture-called-event-76',
+        expires_at: Math.floor(Date.now()/1000)+120,
+        ticket_id: 41,
+        type: "called",
+        title: "Your turn",
+        message: "Please proceed to Window 1.",
+        is_read: false,
+        created_at: "2026-10-31 12:00:00",
+      },
+    ];
+    modern.state.ticket = { ...modern.state.ticket, status: "called" };
+    await modern.go("/student/home");
+    await modern.page
+      .getByText("Please Proceed Now", { exact: true })
+      .waitFor();
+    await modern.snap("29-queue-call-alert");
+    await modern.page.getByText("OK — I'm Going", { exact: true }).click();
+    await modern.page
+      .getByText("Please Proceed Now", { exact: true })
+      .waitFor({ state: "hidden" });
+    results.push(
+      "persisted optional feedback settings, cancellable dialog, queue call acknowledgement",
+    );
+    await modern.ctx.close();
     assert.deepEqual(errors, [], "Runtime exceptions");
     fs.writeFileSync(
       path.join(out, "ui-results.json"),
